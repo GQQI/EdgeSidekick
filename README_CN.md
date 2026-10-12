@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="./website/index.html">官网（本地）</a> ·
-  <a href="https://YOUR_USER.github.io/EdgeSidekick/">GitHub Pages（占位）</a> ·
+  <a href="https://gqqi.github.io/SideKick/">GitHub Pages</a> ·
   <a href="./website/docs/user-guide.zh.html">使用手册</a> ·
   <a href="./LICENSE">MIT 许可证</a>
 </p>
@@ -26,7 +26,7 @@
 
 > **网站地址**
 > - **仓库内可立即打开：** [website/index.html](./website/index.html) — 或在 website/ 目录执行 python -m http.server 8080，访问 http://127.0.0.1:8080/
-> - **计划中的公开地址（尚未发布）：** https://YOUR_USER.github.io/EdgeSidekick/ — 启用 GitHub Pages 后将 YOUR_USER 换成你的用户名。发布前请使用上面的本地路径。
+> - **公开网站（GitHub Pages）：** https://gqqi.github.io/SideKick/
 
 **EdgeSidekick** 是开源的**本机多智能体 AI 工作台**。打开本机文件夹，在浏览器或桌面端对话，由主智能体与子智能体协作搜索、编辑文件——变更需你确认；支持可丢入的 Skills、长期 Memory、MCP 工具，以及浏览器沙盒。
 

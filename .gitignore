@@ -115,3 +115,5 @@ docs/CLEANUP-final.md
 scripts/screenshot-logo-style.mjs
 /tests/
 /landing.html
+*.bak
+scripts/verify_group_chat/

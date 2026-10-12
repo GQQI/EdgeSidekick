@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="./website/index.html">Website (local)</a> ·
-  <a href="https://YOUR_USER.github.io/EdgeSidekick/">GitHub Pages (placeholder)</a> ·
+  <a href="https://gqqi.github.io/SideKick/">GitHub Pages</a> ·
   <a href="./website/docs/user-guide.en.html">User guide</a> ·
   <a href="./LICENSE">MIT License</a>
 </p>
@@ -26,7 +26,7 @@
 
 > **Website address**
 > - **Ship with the repo (open now):** [website/index.html](./website/index.html) — or serve the folder: python -m http.server 8080 inside website/, then visit http://127.0.0.1:8080/
-> - **Planned public URL (not published yet):** https://YOUR_USER.github.io/EdgeSidekick/ — replace YOUR_USER after you enable GitHub Pages. Until then, use the local path above.
+> - **Public site (GitHub Pages):** https://gqqi.github.io/SideKick/
 
 **EdgeSidekick** is an open-source **local multi-agent AI workbench**. Open a folder on your disk, chat in the browser or desktop shell, and let a main agent plus sub-agents search and edit files — with human approval, drop-in Skills, Memory that sticks, MCP tools, and a browser sandbox.
 
