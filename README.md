@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="./website/index.html">Website (local)</a> ·
-  <a href="https://gqqi.github.io/SideKick/">GitHub Pages</a> ·
+  <a href="https://gqqi.github.io/EdgeSidekick/">GitHub Pages</a> ·
   <a href="./website/docs/user-guide.en.html">User guide</a> ·
   <a href="./LICENSE">MIT License</a>
 </p>

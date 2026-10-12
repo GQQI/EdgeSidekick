@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="./website/index.html">官网（本地）</a> ·
-  <a href="https://gqqi.github.io/SideKick/">GitHub Pages</a> ·
+  <a href="https://gqqi.github.io/EdgeSidekick/">GitHub Pages</a> ·
   <a href="./website/docs/user-guide.zh.html">使用手册</a> ·
   <a href="./LICENSE">MIT 许可证</a>
 </p>
