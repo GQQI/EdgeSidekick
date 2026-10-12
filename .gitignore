@@ -109,3 +109,9 @@ src/data/**/sessions*
 src/data/**/fs_undo*
 src/data/**/memory*
 scripts/capture-*.mjs
+docs/CLEANUP-final.md
+/package.json
+/pytest.ini
+scripts/screenshot-logo-style.mjs
+/tests/
+/landing.html

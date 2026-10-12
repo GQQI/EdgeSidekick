@@ -48,7 +48,6 @@ website/
 - Logo：`assets/favicon.svg`（来自 `ui/public/favicon.svg`）
 - 截图：浅色清爽 / 深色沉浸（`gallery-workbench-light/dark.png`）
 - 无外部付费 CDN；系统字体
-- 根目录旧版 `landing.html` 已改为指向本目录的引导页（未删除内容备份逻辑）
 
 ## 双语 / i18n
 
