@@ -24,10 +24,6 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-yellow" />
 </p>
 
-> **Website address**
-> - **Ship with the repo (open now):** [website/index.html](./website/index.html) — or serve the folder: python -m http.server 8080 inside website/, then visit http://127.0.0.1:8080/
-> - **Public site (GitHub Pages):** https://gqqi.github.io/SideKick/
-
 **EdgeSidekick** is an open-source **local multi-agent AI workbench**. Open a folder on your disk, chat in the browser or desktop shell, and let a main agent plus sub-agents search and edit files — with human approval, drop-in Skills, Memory that sticks, MCP tools, and a browser sandbox.
 
 Built to be **forked** (clear Python + Vite layers) and **cheap to run** (context compression, on-demand Skills, separate main / sub / compress models).

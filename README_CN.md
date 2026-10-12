@@ -24,10 +24,6 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-yellow" />
 </p>
 
-> **网站地址**
-> - **仓库内可立即打开：** [website/index.html](./website/index.html) — 或在 website/ 目录执行 python -m http.server 8080，访问 http://127.0.0.1:8080/
-> - **公开网站（GitHub Pages）：** https://gqqi.github.io/SideKick/
-
 **EdgeSidekick** 是开源的**本机多智能体 AI 工作台**。打开本机文件夹，在浏览器或桌面端对话，由主智能体与子智能体协作搜索、编辑文件——变更需你确认；支持可丢入的 Skills、长期 Memory、MCP 工具，以及浏览器沙盒。
 
 为**二开**而设计（Python + Vite 分层清楚），也为**省 Token**而设计（上下文压缩、Skills 按需调用、主 / 子 / 压缩模型可拆开配置）。
