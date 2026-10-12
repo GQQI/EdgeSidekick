@@ -54,29 +54,29 @@ More product pages and the bilingual marketing site live under [website/](./webs
 
 **Windows (PowerShell)**
 
-`powershell
+```powershell
 cd path\to\Sidekick
 python -m pip install -r requirements.txt
 python main.py
-`
+```
 
 Or double-click **start.bat**.
 
 **macOS / Linux**
 
-`ash
+```bash
 cd /path/to/Sidekick
 python3 -m pip install -r requirements.txt
 python3 main.py
-`
+```
 
 Open **http://127.0.0.1:8787** → pick a workspace folder → Settings → Model → API key.
 
 ### Desktop app
 
-`powershell
+```powershell
 .\start-desktop.bat
-`
+```
 
 Creates a project-local .venv, installs Python + Playwright Chromium if needed, builds the UI, and launches Electron with a live embedded browser preview.
 
@@ -85,7 +85,7 @@ See [desktop/README.md](./desktop/README.md) and [docs/browser-sandbox.md](./doc
 ### Offline installers
 
 - **Windows:** .\scripts\build-windows.bat → desktop/dist/EdgeSidekick-Setup-<version>-win-x64.exe — [packaging/windows/README.md](./packaging/windows/README.md)
-- **Kylin / Linux:** ash scripts/build-kylin.sh → .deb / AppImage / tar.gz — [packaging/kylin/README.md](./packaging/kylin/README.md)
+- **Kylin / Linux:** bash scripts/build-kylin.sh → .deb / AppImage / tar.gz — [packaging/kylin/README.md](./packaging/kylin/README.md)
 
 Installed app data defaults to %APPDATA%\EdgeSidekick\ (Windows) or ~/.config/EdgeSidekick/ (Linux).
 
@@ -107,7 +107,7 @@ Streaming chat (SSE), attachments, stop / edit-resend, content search, and a det
 Session-oriented chat UI alongside the classic workbench — same local runtime, different layout for conversation-first use.
 
 **3. Browser sandbox**  
-Desktop: live Electron BrowserView. Web: Playwright-backed preview. Select Mode sends DOM picks to the agent; agents can use rowser_* tools.
+Desktop: live Electron BrowserView. Web: Playwright-backed preview. Select Mode sends DOM picks to the agent; agents can use browser_* tools.
 
 **4. Skills**  
 Drop skill packs under src/skills/ (or tenant skill dirs) and invoke with /skill <name>. Book → Skill can distill PDF/EPUB offline — see [docs/book-to-skill.md](./docs/book-to-skill.md).
@@ -137,22 +137,39 @@ History, Memory (MEMORY.md), workspaces, and configs stay on disk you control. B
 
 ## Architecture (short)
 
-`
-Sidekick/
-├── src/metateam/      # API, agents, tools, approval, compression
-├── src/skills/       # drop-in Skills
-├── src/memory/       # MEMORY.md
-├── src/data/         # runtime data (local; not committed)
-├── src/sessions/     # chat sessions (local; not committed)
-├── ui/               # Vite + React control UI
-├── desktop/          # Electron shell
-├── packaging/        # Windows / Kylin offline packaging notes
-├── website/          # static marketing site + handbooks
-├── docs/
-├── main.py
-├── start.bat
-└── start-desktop.bat
-`
+```mermaid
+flowchart TB
+  subgraph Client["Clients"]
+    UI["Web UI (ui/, Vite + React)"]
+    DESK["Desktop shell (desktop/, Electron)"]
+  end
+  subgraph Server["Backend: python main.py (127.0.0.1:8787)"]
+    API["REST + SSE API (src/metateam/api)"]
+    AGENT["Main agent: plan, tools, approval, compression"]
+    SUB["Sub-agents (delegate)"]
+    BROWSER["Browser sandbox (Playwright / CDP)"]
+    MCP["MCP servers"]
+  end
+  subgraph Disk["Local disk"]
+    WS["Workspace folder"]
+    SKILLS["Skills (src/skills)"]
+    MEM["Memory (src/memory)"]
+    DATA["Runtime data and model config (src/data, not committed)"]
+  end
+  LLM["Your model API (OpenAI-compatible)"]
+  UI --> API
+  DESK --> API
+  API --> AGENT
+  AGENT --> SUB
+  AGENT --> BROWSER
+  AGENT --> MCP
+  AGENT --> WS
+  AGENT --> SKILLS
+  AGENT --> MEM
+  AGENT --> DATA
+  AGENT --> LLM
+  SUB --> LLM
+```
 
 ## Contributing
 
@@ -175,28 +192,9 @@ Placeholders until channels are published:
 
 Please report vulnerabilities privately per [SECURITY.md](./SECURITY.md). Do not post exploits in public issues.
 
-## License & third-party notices
+## License
 
-This repository is licensed under the [MIT License](./LICENSE).
-
-### Project license
-
-| Component | License |
-|-----------|---------|
-| EdgeSidekick (this repo) | **MIT** |
-
-### Notable direct dependencies (scan of 
-equirements.txt + ui/package.json + desktop/package.json)
-
-| Package | Typical license |
-|---------|-----------------|
-| fastapi, pydantic, mcp, pytest, react, react-dom, react-markdown, remark-gfm, rehype-highlight, mermaid, vite, electron, electron-builder | MIT |
-| openai, playwright, python-multipart, cryptography (Apache portion), typescript | Apache-2.0 |
-| httpx, uvicorn, python-dotenv, sse-starlette, pypdf, highlight.js | BSD-style |
-| cryptography | Apache-2.0 / BSD |
-
-Exact texts ship inside each package (and under .venv / 
-ode_modules when installed). This table is a convenience notice, not a substitute for upstream LICENSE files.
+EdgeSidekick is released under the [MIT License](LICENSE).
 
 ---
 

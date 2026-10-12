@@ -54,29 +54,29 @@
 
 **Windows（PowerShell）**
 
-`powershell
+```powershell
 cd path\to\Sidekick
 python -m pip install -r requirements.txt
 python main.py
-`
+```
 
 或双击 **start.bat**。
 
 **macOS / Linux**
 
-`ash
+```bash
 cd /path/to/Sidekick
 python3 -m pip install -r requirements.txt
 python3 main.py
-`
+```
 
 打开 **http://127.0.0.1:8787** → 选择工作区文件夹 → 设置 → 模型 → API Key。
 
 ### 桌面应用
 
-`powershell
+```powershell
 .\start-desktop.bat
-`
+```
 
 自动创建项目内 .venv、按需安装 Python 依赖与 Playwright Chromium、构建 UI，并启动带实时内嵌浏览器预览的 Electron。
 
@@ -85,7 +85,7 @@ python3 main.py
 ### 离线安装包
 
 - **Windows：** .\scripts\build-windows.bat → desktop/dist/EdgeSidekick-Setup-<version>-win-x64.exe — [packaging/windows/README.md](./packaging/windows/README.md)
-- **麒麟 / Linux：** ash scripts/build-kylin.sh → .deb / AppImage / tar.gz — [packaging/kylin/README.md](./packaging/kylin/README.md)
+- **麒麟 / Linux：** bash scripts/build-kylin.sh → .deb / AppImage / tar.gz — [packaging/kylin/README.md](./packaging/kylin/README.md)
 
 安装后数据默认在 %APPDATA%\EdgeSidekick\（Windows）或 ~/.config/EdgeSidekick/（Linux）。
 
@@ -107,7 +107,7 @@ SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工�
 面向会话的聊天布局，与经典工作台共用同一本地运行时。
 
 **3. 浏览器沙盒**  
-桌面端：Electron BrowserView 实况预览。Web：Playwright 预览。Select Mode 可将 DOM 点选发给 Agent；Agent 可使用 rowser_* 工具。
+桌面端：Electron BrowserView 实况预览。Web：Playwright 预览。Select Mode 可将 DOM 点选发给 Agent；Agent 可使用 browser_* 工具。
 
 **4. Skills**  
 将技能包放入 src/skills/（或租户技能目录），用 /skill <名称> 调用。Book → Skill 可将 PDF/EPUB 离线蒸馏为技能 — 见 [docs/book-to-skill.md](./docs/book-to-skill.md)。
@@ -137,22 +137,39 @@ SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工�
 
 ## 架构（简）
 
-`
-Sidekick/
-├── src/metateam/      # API、智能体、工具、审批、压缩
-├── src/skills/       # 可丢入的 Skills
-├── src/memory/       # MEMORY.md
-├── src/data/         # 运行时数据（本地，不提交）
-├── src/sessions/     # 会话（本地，不提交）
-├── ui/               # Vite + React 控制界面
-├── desktop/          # Electron 桌面壳
-├── packaging/        # Windows / 麒麟离线打包说明
-├── website/          # 静态官网 + 使用手册
-├── docs/
-├── main.py
-├── start.bat
-└── start-desktop.bat
-`
+```mermaid
+flowchart TB
+  subgraph Client["界面"]
+    UI["Web 界面 (ui/, Vite + React)"]
+    DESK["桌面端 (desktop/, Electron)"]
+  end
+  subgraph Server["后端: python main.py (127.0.0.1:8787)"]
+    API["REST + SSE 接口 (src/metateam/api)"]
+    AGENT["主智能体: 规划 / 工具 / 审批 / 压缩"]
+    SUB["子智能体 (委派)"]
+    BROWSER["浏览器沙盒 (Playwright / CDP)"]
+    MCP["MCP 服务器"]
+  end
+  subgraph Disk["本机磁盘"]
+    WS["工作区文件夹"]
+    SKILLS["Skills (src/skills)"]
+    MEM["记忆库 (src/memory)"]
+    DATA["运行时数据与模型配置 (src/data, 不提交)"]
+  end
+  LLM["你的模型 API (OpenAI 兼容)"]
+  UI --> API
+  DESK --> API
+  API --> AGENT
+  AGENT --> SUB
+  AGENT --> BROWSER
+  AGENT --> MCP
+  AGENT --> WS
+  AGENT --> SKILLS
+  AGENT --> MEM
+  AGENT --> DATA
+  AGENT --> LLM
+  SUB --> LLM
+```
 
 ## 参与贡献
 
@@ -175,28 +192,9 @@ Sidekick/
 
 请按 [SECURITY.md](./SECURITY.md) **私下**报告漏洞，勿在公开 Issue 中贴利用细节。
 
-## 许可证与第三方声明
+## 许可证
 
-本仓库采用 [MIT License](./LICENSE)。
-
-### 本项目
-
-| 组件 | 许可证 |
-|------|--------|
-| EdgeSidekick（本仓库） | **MIT** |
-
-### 主要直接依赖（扫描 
-equirements.txt + ui/package.json + desktop/package.json）
-
-| 包 | 常见许可证 |
-|----|------------|
-| fastapi、pydantic、mcp、pytest、react、react-dom、react-markdown、remark-gfm、rehype-highlight、mermaid、vite、electron、electron-builder | MIT |
-| openai、playwright、python-multipart、cryptography（Apache 部分）、typescript | Apache-2.0 |
-| httpx、uvicorn、python-dotenv、sse-starlette、pypdf、highlight.js | BSD 系 |
-| cryptography | Apache-2.0 / BSD |
-
-完整文本以各包自带 LICENSE 为准（安装后见 .venv / 
-ode_modules）。上表仅为便利性第三方声明。
+EdgeSidekick 采用 [MIT 许可证](LICENSE) 发布。
 
 ---
 
