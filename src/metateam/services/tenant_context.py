@@ -113,6 +113,14 @@ def tenant_mcp_path(user_id: Optional[str] = None) -> Path:
     return tenant_dir(user_id) / "mcp.json"
 
 
+def tenant_prefs_path(user_id: Optional[str] = None) -> Path:
+    return tenant_dir(user_id) / "prefs.json"
+
+
+def tenant_schedules_path(user_id: Optional[str] = None) -> Path:
+    return tenant_dir(user_id) / "schedules.json"
+
+
 def tenant_skills_dir(user_id: Optional[str] = None) -> Path:
     p = tenant_dir(user_id) / "skills"
     p.mkdir(parents=True, exist_ok=True)

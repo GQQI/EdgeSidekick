@@ -395,17 +395,41 @@ export function declaredDelegateSlotCount(messages: ChatMsg[], stage: number): n
   return total;
 }
 
+/** One pass over the thread: stage → canvas roots. Avoids O(stages × n) per render. */
+export function groupCanvasRootsByStage(messages: ChatMsg[]): Map<number, SubNode[]> {
+  const byStage = new Map<number, SubNode[]>();
+  const delegateCounts = new Map<number, number>();
+  for (const message of messages) {
+    const stage = message.stage ?? 0;
+    if (message.role === "subagent" && message.subagent) {
+      const list = byStage.get(stage);
+      if (list) list.push(message.subagent);
+      else byStage.set(stage, [message.subagent]);
+    } else if (
+      message.role === "tool" &&
+      message.tool &&
+      DELEGATE_TOOL_NAMES.has(message.tool.name)
+    ) {
+      delegateCounts.set(
+        stage,
+        (delegateCounts.get(stage) || 0) +
+          delegateSlotCount(message.tool.name, message.tool.args),
+      );
+    }
+  }
+  const out = new Map<number, SubNode[]>();
+  for (const [stage, nodes] of byStage) {
+    const declared = delegateCounts.get(stage) || 0;
+    out.set(
+      stage,
+      nestHelperAgents(dedupeCanvasNodes(limitCanvasRoots(nodes, declared))),
+    );
+  }
+  return out;
+}
+
 export function canvasRootsForStage(messages: ChatMsg[], stage: number): SubNode[] {
-  const nodes = messages
-    .filter(
-      (message) =>
-        message.role === "subagent" &&
-        message.subagent &&
-        (message.stage ?? 0) === stage,
-    )
-    .map((message) => message.subagent!);
-  const declared = declaredDelegateSlotCount(messages, stage);
-  return nestHelperAgents(dedupeCanvasNodes(limitCanvasRoots(nodes, declared)));
+  return groupCanvasRootsByStage(messages).get(stage) || [];
 }
 
 export function isDelegateToolMsg(message: ChatMsg): boolean {
@@ -833,7 +857,7 @@ function canvasItemToNode(raw: unknown): SubNode | null {
     rec.kind === "party" || rec.kind === "talk" || rec.kind === "task" ? rec.kind : "task";
   const kids = Array.isArray(rec.children) ? rec.children : [];
   const transcriptRaw = Array.isArray(rec.transcript) ? rec.transcript : [];
-  const transcript = transcriptRaw.flatMap((item, i) => {
+  const transcript: SubTranscriptItem[] = transcriptRaw.flatMap((item, i): SubTranscriptItem[] => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return [];
     const row = item as Record<string, unknown>;
     if (row.kind === "tool") {

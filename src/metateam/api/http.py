@@ -27,15 +27,18 @@ def require_session(session_id: str) -> ChatSession:
 
 def raise_fs_http(exc: BaseException) -> NoReturn:
     """Map filesystem / path errors to HTTP status codes."""
+    from ..services.fs_api import describe_fs_error
+
+    detail = describe_fs_error(exc)
     if isinstance(exc, FileNotFoundError):
-        raise HTTPException(404, str(exc)) from exc
+        raise HTTPException(404, detail) from exc
     if isinstance(exc, FileExistsError):
-        raise HTTPException(409, f"already exists: {exc}") from exc
+        raise HTTPException(409, detail) from exc
     if isinstance(exc, ValueError):
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, detail) from exc
     if isinstance(exc, OSError):
-        raise HTTPException(500, str(exc)) from exc
-    raise HTTPException(500, str(exc)) from exc
+        raise HTTPException(500, detail) from exc
+    raise HTTPException(500, detail) from exc
 
 
 @contextmanager
@@ -55,10 +58,12 @@ def workspace_override(workspace: Optional[str]) -> Iterator[None]:
 
     try:
         folder = Path(raw).expanduser().resolve()
-        if not folder.is_dir():
-            yield
-            return
     except Exception:
+        # Soft-fallback like resolve_panel_workspace: a deleted/missing chat
+        # folder must not break the file panel mid-request.
+        yield
+        return
+    if not folder.is_dir():
         yield
         return
     token = bind_active_workspace(folder)

@@ -368,7 +368,7 @@ function Build-Ui {
 function Stop-SidekickBuildLockers {
   # Product exe name is 3 CJK chars; built from codepoints so this file stays ASCII-safe for PS 5.1.
   $productProc = -join @([char]0x9A6D, [char]0x5929, [char]0x72FC)
-  $names = @("electron", "sidekick", "yutianlang", "app-builder", $productProc)
+  $names = @("electron", "EdgeSidekick", "app-builder", $productProc)
   foreach ($name in $names) {
     Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
       Write-Host ("  stopping PID {0} ({1}) to unlock dist files" -f $_.Id, $_.ProcessName)
@@ -432,7 +432,7 @@ function Build-Installer {
     # yields: EPERM open '...dist\win-unpacked.tmp\d3dcompiler_47.dll'
     $packOut = $dist
     if (Test-PathHasNonAscii $dist) {
-      $packOut = Join-Path $env:LOCALAPPDATA "sidekick-electron-dist"
+      $packOut = Join-Path $env:LOCALAPPDATA "edgesidekick-electron-dist"
       Write-Host "  output dir (ASCII to avoid EPERM on DLL extract): $packOut"
     }
 
@@ -479,7 +479,7 @@ function Build-Installer {
 
 # ---- main ----
 Write-Host ""
-Write-Host " Sidekick Windows offline installer"
+Write-Host " EdgeSidekick Windows offline installer"
 Write-Host " ----------------------------------"
 Write-Host " Repo: $RepoRoot"
 Ensure-Dir $CacheDir

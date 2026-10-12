@@ -5,16 +5,20 @@ import { HistoryPanel } from "./HistoryPanel";
 import { BrowserPanel, type BrowserOpenRequest } from "./BrowserPanel";
 import { GitPanel } from "./GitPanel";
 import { UndoTimeline } from "./UndoTimeline";
-import { IconBook, IconClock, IconFiles, IconGit, IconGlobe, IconSearch, IconSettings, IconTerminal, IconUndo, IconX } from "./icons";
+import { IconBook, IconCalendar, IconChevronRight, IconClock, IconFiles, IconGit, IconGlobe, IconSearch, IconSettings, IconTerminal, IconUndo, IconX } from "./icons";
 import { ShellJobsPanel } from "./ShellJobsPanel";
+import { SchedulesPanel } from "./SchedulesPanel";
 import { IconRobotCube } from "./IconRobotCube";
-import { useMemo } from "react";
 import type { SessionItem, WorkspaceItem } from "../api";
 import { fileToDetail } from "../utils/chatHelpers";
 import type { MsgKey } from "../i18n";
 import type { DomElementPayload } from "../browser/protocol";
 
 export type ActivitySidebarProps = {
+  /** Hide left icon rail; show only panel body (for social collab pane). */
+  embedded?: boolean;
+  /** When embedded, force this panel. */
+  forcedPanel?: SidePanel;
   t: (key: MsgKey, ...args: string[]) => string;
   sidePanel: SidePanel;
   setSidePanel: (panel: SidePanel) => void;
@@ -31,12 +35,15 @@ export type ActivitySidebarProps = {
   sessionsPage: number;
   sessionsTotalPages: number;
   sessionsTotal: number;
+  navBusy?: boolean;
   onOpenHistoryPanel: () => void;
   onRefreshSessions: (page?: number) => void;
   onOpenSession: (id: string) => void;
   onNewChat: () => void;
-  /** Switch the active chat/workspace to `path` (opens an existing tab or starts a new one). */
+  /** Switch the active chat/workspace to `path` (opens an existing chat or starts a new one). */
   onSwitchWorkspace?: (path: string) => void;
+  /** Pick a folder on disk and switch the project to it. */
+  onBrowseWorkspace?: () => void;
   /** Remove a folder from the recent/hub workspace list. */
   onForgetWorkspace?: (path: string) => void;
   onDeleteSession: (id: string) => Promise<void>;
@@ -56,9 +63,13 @@ export type ActivitySidebarProps = {
   jobsRunning?: number;
   jobsFocusId?: string;
   jobsRefreshKey?: number;
+  schedulesCount?: number;
+  schedulesRefreshKey?: number;
 };
 
 export function ActivitySidebar({
+  embedded = false,
+  forcedPanel,
   t,
   sidePanel,
   setSidePanel,
@@ -68,18 +79,18 @@ export function ActivitySidebar({
   fsRefresh,
   activeWs,
   workspaces = [],
-  openTabWorkspaces = [],
   sessions,
   sessionId,
   sessionsPage,
   sessionsTotalPages,
   sessionsTotal,
+  navBusy = false,
   onOpenHistoryPanel,
   onRefreshSessions,
   onOpenSession,
   onNewChat,
   onSwitchWorkspace,
-  onForgetWorkspace,
+  onBrowseWorkspace,
   onDeleteSession,
   onOpenSettings,
   onOpenFile,
@@ -96,45 +107,30 @@ export function ActivitySidebar({
   jobsRunning = 0,
   jobsFocusId = "",
   jobsRefreshKey = 0,
+  schedulesCount = 0,
+  schedulesRefreshKey = 0,
 }: ActivitySidebarProps) {
+  const sidePanelEff = forcedPanel ?? sidePanel;
+  const explorerCollapsedEff = embedded ? false : explorerCollapsed;
   const showChat = () => onOpenChat?.();
 
-  const hubWorkspaces = useMemo(() => {
-    const byPath = new Map<string, { path: string; name: string; running: number }>();
-    const bump = (path: string, name: string) => {
-      if (!path) return;
-      if (byPath.has(path)) return;
-      byPath.set(path, { path, name: name || path, running: 0 });
-    };
-    // Only "known" workspaces (recent list + currently-open chat tabs) show
-    // up here — removing a workspace drops its tabs too, so it disappears
-    // from this row immediately instead of lingering via old chat history.
-    if (activeWs?.path) bump(activeWs.path, activeWs.name);
-    for (const w of workspaces) bump(w.path, w.name);
-    for (const w of openTabWorkspaces) bump(w.path, w.name);
-    for (const w of openTabWorkspaces) {
-      if (w.running && byPath.has(w.path)) byPath.get(w.path)!.running += 1;
-    }
-    return [...byPath.values()];
-  }, [activeWs, workspaces, openTabWorkspaces]);
-
-  const showHub = hubWorkspaces.length > 1;
-  const hubRow = showHub ? (
-    <WorkspaceHubRow
-      workspaces={hubWorkspaces}
+  const projectSwitch = (
+    <ProjectSwitch
       activePath={activeWs?.path || ""}
+      workspaces={workspaces}
       onPick={(path) => onSwitchWorkspace?.(path)}
-      onRemove={onForgetWorkspace}
+      onBrowse={onBrowseWorkspace}
     />
-  ) : null;
+  );
 
   return (
     <>
-      <nav className="activity-rail" aria-label="Sidekick">
+      {!embedded && (
+      <nav className={`activity-rail${explorerCollapsedEff ? " icons-only" : ""}`} aria-label="EdgeSidekick">
         <button
           type="button"
           className="activity-brand"
-          title="Sidekick"
+          title="EdgeSidekick"
           onClick={() => {
             setSidePanel("files");
             setExplorerCollapsed(false);
@@ -145,7 +141,7 @@ export function ActivitySidebar({
         <div className="activity-top">
           <button
             type="button"
-            className={`activity-btn${sidePanel === "search" && !explorerCollapsed ? " active" : ""}`}
+            className={`activity-btn${sidePanelEff === "search" && !explorerCollapsedEff ? " active" : ""}`}
             title={t("navSearch")}
             onClick={() => {
               setSidePanel("search");
@@ -157,10 +153,10 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanel === "files" && !explorerCollapsed ? " active" : ""}`}
+            className={`activity-btn${sidePanelEff === "files" && !explorerCollapsedEff ? " active" : ""}`}
             title={t("navFiles")}
             onClick={() => {
-              if (sidePanel === "files" && !explorerCollapsed) {
+              if (sidePanelEff === "files" && !explorerCollapsedEff) {
                 setExplorerCollapsed(true);
               } else {
                 setSidePanel("files");
@@ -173,10 +169,10 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanel === "browser" && !explorerCollapsed ? " active" : ""}`}
+            className={`activity-btn${sidePanelEff === "browser" && !explorerCollapsedEff ? " active" : ""}`}
             title={t("navBrowser")}
             onClick={() => {
-              if (sidePanel === "browser" && !explorerCollapsed) {
+              if (sidePanelEff === "browser" && !explorerCollapsedEff) {
                 setExplorerCollapsed(true);
               } else {
                 setSidePanel("browser");
@@ -190,10 +186,10 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanel === "git" && !explorerCollapsed ? " active" : ""}`}
+            className={`activity-btn${sidePanelEff === "git" && !explorerCollapsedEff ? " active" : ""}`}
             title={t("navGit")}
             onClick={() => {
-              if (sidePanel === "git" && !explorerCollapsed) {
+              if (sidePanelEff === "git" && !explorerCollapsedEff) {
                 setExplorerCollapsed(true);
               } else {
                 setSidePanel("git");
@@ -206,11 +202,11 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanel === "jobs" && !explorerCollapsed ? " active" : ""}${jobsRunning > 0 ? " has-badge" : ""}`}
+            className={`activity-btn${sidePanelEff === "jobs" && !explorerCollapsedEff ? " active" : ""}${jobsRunning > 0 ? " has-badge" : ""}`}
             title={t("navJobs")}
             onClick={() => {
               showChat();
-              if (sidePanel === "jobs" && !explorerCollapsed) {
+              if (sidePanelEff === "jobs" && !explorerCollapsedEff) {
                 setExplorerCollapsed(true);
               } else {
                 setSidePanel("jobs");
@@ -227,11 +223,32 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanel === "undo" && !explorerCollapsed ? " active" : ""}`}
+            className={`activity-btn${sidePanelEff === "schedules" && !explorerCollapsedEff ? " active" : ""}${schedulesCount > 0 ? " has-badge" : ""}`}
+            title={t("navSchedules")}
+            onClick={() => {
+              showChat();
+              if (sidePanelEff === "schedules" && !explorerCollapsedEff) {
+                setExplorerCollapsed(true);
+              } else {
+                setSidePanel("schedules");
+                setExplorerCollapsed(false);
+              }
+            }}
+            data-panel="schedules"
+          >
+            <span className="activity-ico">
+              <IconCalendar size={18} />
+              {schedulesCount > 0 ? <i className="activity-badge">{schedulesCount > 9 ? "9+" : schedulesCount}</i> : null}
+            </span>
+            <span>{t("navSchedules")}</span>
+          </button>
+          <button
+            type="button"
+            className={`activity-btn${sidePanelEff === "undo" && !explorerCollapsedEff ? " active" : ""}`}
             title={t("navUndo")}
             onClick={() => {
               showChat();
-              if (sidePanel === "undo" && !explorerCollapsed) {
+              if (sidePanelEff === "undo" && !explorerCollapsedEff) {
                 setExplorerCollapsed(true);
               } else {
                 setSidePanel("undo");
@@ -256,11 +273,11 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanel === "history" && !explorerCollapsed && mainView !== "memory" ? " active" : ""}`}
+            className={`activity-btn${sidePanelEff === "history" && !explorerCollapsedEff && mainView !== "memory" ? " active" : ""}`}
             title={t("history")}
             onClick={() => {
               showChat();
-              if (sidePanel === "history" && !explorerCollapsed) {
+              if (sidePanelEff === "history" && !explorerCollapsedEff) {
                 setExplorerCollapsed(true);
               } else {
                 onOpenHistoryPanel();
@@ -274,6 +291,15 @@ export function ActivitySidebar({
         <div className="activity-bottom">
           <button
             type="button"
+            className="activity-btn activity-collapse"
+            title={explorerCollapsedEff ? t("sidebarExpand") : t("sidebarToIcons")}
+            aria-label={explorerCollapsedEff ? t("sidebarExpand") : t("sidebarToIcons")}
+            onClick={() => setExplorerCollapsed(!explorerCollapsedEff)}
+          >
+            <IconChevronRight size={18} />
+          </button>
+          <button
+            type="button"
             className="activity-btn"
             title={t("navSettings")}
             onClick={onOpenSettings}
@@ -283,12 +309,12 @@ export function ActivitySidebar({
           </button>
         </div>
       </nav>
+      )}
 
-      {!explorerCollapsed && (
+      {!explorerCollapsedEff && (
         <>
-          {sidePanel === "search" ? (
-            <div className="side-panel-wrap ws-hub-wrap" style={{ width: explorerWidth }}>
-              {hubRow}
+          {sidePanelEff === "search" ? (
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
               <FileSearchPanel
                 refreshKey={fsRefresh}
                 activeFilePath={activeFilePath}
@@ -296,9 +322,9 @@ export function ActivitySidebar({
                 onOpenFile={(file, opts) => onOpenFile(file, opts)}
               />
             </div>
-          ) : sidePanel === "history" ? (
-            <div className="side-panel-wrap ws-hub-wrap" style={{ width: explorerWidth }}>
-              {hubRow}
+          ) : sidePanelEff === "history" ? (
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
+              {projectSwitch}
               <HistoryPanel
                 sessions={sessions}
                 activeSessionId={sessionId}
@@ -310,34 +336,36 @@ export function ActivitySidebar({
                 onOpen={(id) => void onOpenSession(id)}
                 onNew={() => void onNewChat()}
                 onDelete={(id) => onDeleteSession(id)}
+                busy={navBusy}
               />
             </div>
-          ) : sidePanel === "browser" ? (
-            <div className="side-panel-wrap ws-hub-wrap" style={{ width: explorerWidth }}>
-              {hubRow}
+          ) : sidePanelEff === "browser" ? (
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
               <BrowserPanel
+                key={`br-${activeWs?.path || ""}-${sessionId || ""}`}
                 onPickElement={onPickDomElement}
                 openRequest={browserOpenRequest}
                 suspended={browserSuspended}
               />
             </div>
-          ) : sidePanel === "git" ? (
-            <div className="side-panel-wrap ws-hub-wrap" style={{ width: explorerWidth }}>
-              {hubRow}
+          ) : sidePanelEff === "git" ? (
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
               <GitPanel
                 refreshKey={fsRefresh}
                 onChanged={onWorkspaceMutated}
                 workspace={activeWs?.path || null}
               />
             </div>
-          ) : sidePanel === "jobs" ? (
-            <div className="side-panel-wrap ws-hub-wrap" style={{ width: explorerWidth }}>
-              {hubRow}
+          ) : sidePanelEff === "jobs" ? (
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
               <ShellJobsPanel refreshKey={jobsRefreshKey} focusJobId={jobsFocusId} />
             </div>
-          ) : sidePanel === "undo" ? (
-            <div className="side-panel-wrap ws-hub-wrap" style={{ width: explorerWidth }}>
-              {hubRow}
+          ) : sidePanelEff === "schedules" ? (
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
+              <SchedulesPanel refreshKey={schedulesRefreshKey} onOpenSession={(id) => void onOpenSession(id)} />
+            </div>
+          ) : sidePanelEff === "undo" ? (
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
               <UndoTimeline
                 refreshKey={fsRefresh}
                 sessionId={sessionId}
@@ -345,13 +373,14 @@ export function ActivitySidebar({
               />
             </div>
           ) : (
-            <div className="side-panel-wrap ws-hub-wrap" style={{ width: explorerWidth }}>
-              {hubRow}
+            <div className="side-panel-wrap ws-hub-wrap" style={{ width: embedded ? "100%" : explorerWidth }}>
+              {projectSwitch}
               <FileExplorer
+              hideChrome={embedded}
                 rootName={activeWs?.name || "workspace"}
                 workspaceAbsPath={activeWs?.path || null}
                 collapsed={false}
-                width={explorerWidth}
+                width={embedded ? 0 : explorerWidth}
                 onToggle={() => setExplorerCollapsed(true)}
                 refreshKey={fsRefresh}
                 onOpenFile={(file) => onOpenFile(file)}
@@ -360,78 +389,75 @@ export function ActivitySidebar({
               />
             </div>
           )}
-          <div
-            className="sidebar-resizer"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onResizeStart();
-            }}
-            title="拖拽调整宽度"
-          />
         </>
+      )}
+      {!embedded && (
+        <div
+          className="sidebar-resizer"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onResizeStart();
+          }}
+          title={explorerCollapsedEff ? t("sidebarExpand") : "拖拽调整宽度，拖到最左只留图标"}
+        />
       )}
     </>
   );
 }
 
-/**
- * Hub strip shown above every side panel (except Memory): every workspace
- * that currently has an open or running chat. Clicking a pill actually
- * switches the active chat — opening its existing tab, or starting a new
- * one — so every panel (search/files/browser/git/jobs/undo/history) follows
- * along automatically.
- */
-function WorkspaceHubRow({
+function folderKey(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+/** Project picker used only in the files and history panels. */
+function ProjectSwitch({
   workspaces,
   activePath,
   onPick,
-  onRemove,
+  onBrowse,
 }: {
-  workspaces: { path: string; name: string; running: number }[];
+  workspaces: { path: string; name: string }[];
   activePath: string;
-  onPick: (path: string, name: string) => void;
-  onRemove?: (path: string) => void;
+  onPick: (path: string) => void;
+  onBrowse?: () => void;
 }) {
+  const byPath = new Map<string, { path: string; name: string }>();
+  const bump = (path: string, name: string) => {
+    const key = folderKey(path);
+    if (!key || byPath.has(key)) return;
+    byPath.set(key, { path, name: name || path.split(/[/\\]/).pop() || path });
+  };
+  if (activePath) bump(activePath, activePath.split(/[/\\]/).pop() || activePath);
+  for (const w of workspaces) bump(w.path, w.name);
+  const options = [...byPath.values()];
+  const selected =
+    options.find((w) => folderKey(w.path) === folderKey(activePath))?.path || activePath;
+  if (!selected && options.length === 0) return null;
   return (
-    <div className="ws-hub-row" role="tablist" aria-label="工作区">
-      {workspaces.map((w) => {
-        const active = w.path === activePath;
-        return (
-          <button
-            key={w.path}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            className={`ws-hub-pill${active ? " active" : ""}`}
-            title={w.path}
-            onClick={() => onPick(w.path, w.name)}
-          >
-            {w.running > 0 && <span className="ws-hub-dot" />}
-            <span className="ws-hub-pill-name">{w.name}</span>
-            {onRemove && !active && (
-              <span
-                className="ws-hub-pill-remove"
-                role="button"
-                tabIndex={0}
-                title="移除工作区"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove(w.path);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onRemove(w.path);
-                  }
-                }}
-              >
-                <IconX size={10} />
-              </span>
-            )}
-          </button>
-        );
-      })}
+    <div className="project-switch">
+      <label>
+        <span>项目</span>
+        <select
+          value={selected}
+          title={selected}
+          onChange={(e) => {
+            const path = e.target.value;
+            if (path && folderKey(path) !== folderKey(activePath)) onPick(path);
+          }}
+        >
+          {options.map((w) => (
+            <option key={w.path} value={w.path}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {onBrowse ? (
+        <button type="button" onClick={onBrowse}>
+          文件夹
+        </button>
+      ) : null}
     </div>
   );
 }
+

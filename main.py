@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sidekick entry — run from repo root: python main.py"""
+"""EdgeSidekick entry — run from repo root: python main.py"""
 from __future__ import annotations
 
 import sys

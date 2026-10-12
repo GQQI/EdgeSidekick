@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..core.config import REPO_ROOT, get_settings
@@ -15,10 +16,30 @@ from ..services.local_auth import TOKEN_HEADER, is_loopback_bind, load_or_create
 from .middleware import LocalAuthMiddleware
 from .routes import register_routes
 
-app = FastAPI(title="Sidekick", version="0.3.1")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    from ..services.scheduler import SCHEDULES
+    from ..services.scheduler_loop import SCHEDULER
+
+    SCHEDULES.load_all()
+    SCHEDULER.start()
+    yield
+    SCHEDULER.stop()
+
+
+app = FastAPI(title="EdgeSidekick", version="0.3.1", lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5177",
+        "http://localhost:5177",
+        "http://127.0.0.1:8787",
+        "http://localhost:8787",
+        "http://[::1]:5177",
+        "http://[::1]:8787",
+    ],
     allow_origin_regex=r"https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
@@ -64,8 +85,11 @@ if _WEB_DIST.exists():
             },
         )
 
-    @app.get("/{full_path:path}")
-    def spa(full_path: str) -> FileResponse:
+    @app.get("/{full_path:path}", response_model=None)
+    def spa(full_path: str):
+        # Never serve index.html for unknown /api/* — that masks real 404s as HTML.
+        if full_path == "api" or full_path.startswith("api/"):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
         candidate = _WEB_DIST / full_path
         if candidate.is_file():
             headers = {}
@@ -100,7 +124,7 @@ def main() -> None:
             "Use 127.0.0.1 or set META_ALLOW_REMOTE=1 (unsafe)."
         )
     load_or_create_token()
-    print(f"Sidekick → http://{s.host}:{s.port}  demo={s.demo_mode} model={s.model}")
+    print(f"EdgeSidekick → http://{s.host}:{s.port}  demo={s.demo_mode} model={s.model}")
     print("Local token ready (header X-Sidekick-Token).")
     if not s.allow_shell:
         print("Shell tools disabled (META_ALLOW_SHELL=0). Set META_ALLOW_SHELL=1 to enable.")

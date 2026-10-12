@@ -1,9 +1,10 @@
 {
-  "name": "sidekick-desktop",
+  "name": "edgesidekick-desktop",
   "private": true,
   "version": "0.3.1",
-  "description": "Sidekick desktop shell — live embedded browser (Electron BrowserView)",
-  "author": "Sidekick",
+  "description": "EdgeSidekick desktop — local multi-agent workbench",
+  "author": "EdgeSidekick",
+  "homepage": "https://edgesidekick.local",
   "main": "main.mjs",
   "type": "module",
   "scripts": {

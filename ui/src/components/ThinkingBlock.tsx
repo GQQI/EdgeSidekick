@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { usePrefs } from "../prefs";
 import { MarkdownView } from "./MarkdownView";
 
@@ -7,28 +7,22 @@ type Props = {
   streaming?: boolean;
 };
 
-/** Thinking / reasoning block — stays open after streaming so it does not
- *  "vanish" into a collapsed header the moment the turn finishes. */
-export function ThinkingBlock({ content, streaming }: Props) {
+/** Thinking / reasoning block — collapsed by default; user expands to read. */
+export const ThinkingBlock = memo(function ThinkingBlock({ content, streaming }: Props) {
   const { t } = usePrefs();
-  const [open, setOpen] = useState(true);
-  const [userCollapsed, setUserCollapsed] = useState(false);
+  const [open, setOpen] = useState(Boolean(streaming));
+  // Stay expanded after the answer finishes so the thought the user just
+  // watched does not collapse away the moment streaming ends.
   useEffect(() => {
-    if (streaming && !userCollapsed) setOpen(true);
-  }, [streaming, userCollapsed]);
+    if (streaming) setOpen(true);
+  }, [streaming]);
   if (!content && !streaming) return null;
   return (
     <div className={`thinking-block${streaming ? " streaming" : ""}${open ? " open" : ""}`}>
       <button
         type="button"
         className="thinking-toggle"
-        onClick={() => {
-          setOpen((v) => {
-            const next = !v;
-            setUserCollapsed(!next);
-            return next;
-          });
-        }}
+        onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
         <span className="thinking-mark">{streaming ? "…" : "◇"}</span>
@@ -44,4 +38,4 @@ export function ThinkingBlock({ content, streaming }: Props) {
       )}
     </div>
   );
-}
+});

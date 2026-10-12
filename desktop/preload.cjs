@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("sidekickDesktop", {
     hide: () => ipcRenderer.invoke("browser:hide"),
     setBounds: (bounds) => ipcRenderer.invoke("browser:setBounds", bounds),
     navigate: (url) => ipcRenderer.invoke("browser:navigate", url),
+    scrollPage: (kind) => ipcRenderer.invoke("browser:scrollPage", kind || "bottom"),
     getUrl: () => ipcRenderer.invoke("browser:getUrl"),
     reload: () => ipcRenderer.invoke("browser:reload"),
     goBack: () => ipcRenderer.invoke("browser:goBack"),

@@ -7,7 +7,7 @@ import queue
 import threading
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from ...core.events import Event
@@ -31,12 +31,28 @@ _log = get_logger("metateam.api.chat")
 async def chat_sse(req: ChatRequest) -> EventSourceResponse:
     sess = STORE.get(req.session_id) if req.session_id else None
     if sess is None:
-        sess = STORE.create(workspace=req.workspace or None)
+        sess = STORE.create(workspace=req.workspace or None, social=bool(req.hidden))
+        # Social one-shot calls (会话版 group/DM member streams) arrive with a
+        # synthetic session id that cannot resolve; the fresh session they
+        # force must never surface in the workbench history list.
+        if req.hidden:
+            sess.hidden = True
+    elif req.workspace:
+        if sess.busy:
+            raise HTTPException(409, "会话正在执行，不能切换工作区")
+        try:
+            STORE.bind_workspace(sess, req.workspace)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     display = (req.display or "").strip()
     title_src = display or req.message
     title_candidate = _summarize_title(title_src)
-    needs_llm_title = is_untitled_session(sess.title) or len(sess.title) < 4
+    # Hidden (social one-shot) sessions are never listed — don't spend an LLM
+    # call titling them.
+    needs_llm_title = not sess.hidden and (
+        is_untitled_session(sess.title) or len(sess.title) < 4
+    )
     if title_candidate and needs_llm_title:
         sess.title = title_candidate
 
@@ -44,6 +60,20 @@ async def chat_sse(req: ChatRequest) -> EventSourceResponse:
     unsub = subscribe_bus(sess, q)
 
     def worker() -> None:
+        # 会话版 turns (hidden) browse headless with turn-end auto close;
+        # set inside the worker thread because tools execute here.
+        social_token = None
+        if req.hidden:
+            try:
+                sess.agent.approval.set_allow_all(True)
+            except Exception:
+                pass
+            try:
+                from ...services.browser_sandbox import SOCIAL_BROWSING
+
+                social_token = SOCIAL_BROWSING.set(True)
+            except Exception:
+                social_token = None
         try:
             q.put(
                 event_payload(
@@ -73,10 +103,19 @@ async def chat_sse(req: ChatRequest) -> EventSourceResponse:
                     sess.agent.rebuild_llms()
             except Exception as exc:
                 log_exception(_log, f"auto model selection failed for {sess.id}", exc)
+            # The UI explicitly disables tools only for the group decision
+            # pass. Execution calls use the same short-lived social session
+            # naming convention, so session ids must never decide capability.
+            classify = bool(getattr(req, "classify", False))
+            disable_tools = bool(getattr(req, "disable_tools", False)) or classify
             result = sess.agent.run(
                 req.message,
                 mode=req.mode or "agent",
                 display=display,
+                disable_tools=disable_tools,
+                skip_plan=bool(req.hidden),
+                block_delegate=bool(getattr(req, "block_delegate", False)),
+                classify=classify,
             )
             sess.updated_at = time.time()
             try:
@@ -90,8 +129,14 @@ async def chat_sse(req: ChatRequest) -> EventSourceResponse:
                 context_tokens = context_budget_tokens(sess.agent.messages, _schemas)
             except Exception:
                 context_tokens = messages_tokens(result.messages)
+            last_reasoning = ""
+            for m in reversed(result.messages or []):
+                if m.get("role") == "assistant" and m.get("reasoning"):
+                    last_reasoning = str(m.get("reasoning") or "")
+                    break
             final_data = {
                 "text": result.text,
+                "reasoning": last_reasoning,
                 "iterations": result.iterations,
                 "tokens": messages_tokens(result.messages),
                 "context_tokens": context_tokens,
@@ -116,6 +161,19 @@ async def chat_sse(req: ChatRequest) -> EventSourceResponse:
             q.put(event_payload("error", {"message": str(exc)}))
         finally:
             sess.busy = False
+            if social_token is not None:
+                try:
+                    from ...services.browser_sandbox import SANDBOX
+
+                    SANDBOX.close_agent_owned(lane="social")
+                except Exception:
+                    pass
+                try:
+                    from ...services.browser_sandbox import SOCIAL_BROWSING
+
+                    SOCIAL_BROWSING.reset(social_token)
+                except Exception:
+                    pass
             try:
                 from ...services.shell_job_notify import flush_pending_job_notices
 

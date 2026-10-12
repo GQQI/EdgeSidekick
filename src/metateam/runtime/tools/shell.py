@@ -7,6 +7,7 @@ import subprocess
 
 from ..shell_policy import (
     has_noninteractive_flags as _has_noninteractive_flags,
+    is_daemon_command,
     is_long_running_command as _is_long_running_command,
     looks_interactive_scaffold as _looks_interactive_scaffold,
     strip_output_tail_filter as _strip_output_tail_filter,
@@ -85,7 +86,7 @@ def register_shell_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
             return (
                 "ERROR: this command looks like an interactive scaffold CLI "
                 "(create-vue / create-react-app / angular / etc.). "
-                "Sidekick has no TTY for arrow-key menus.\n"
+                "EdgeSidekick has no TTY for arrow-key menus.\n"
                 "Use non-interactive flags instead, for example:\n"
                 "  npm create vue@latest my-app -- --default\n"
                 "  npm create vue@latest my-app -- --typescript --router --pinia --eslint-with-prettier\n"
@@ -100,22 +101,27 @@ def register_shell_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
         if cwd_err:
             return cwd_err
         env = _sandboxed_env(settings)
-        long_running = bool(background) or _is_long_running_command(low)
+        daemon = is_daemon_command(low)
+        long_running = bool(background) or daemon
         try:
             want = int(timeout_sec or 0)
         except (TypeError, ValueError):
             want = 0
-        timeout = max(15, min(want, 600)) if want > 0 else int(settings.shell_timeout)
+        # Foreground default 20s (Cursor-like): still running → background, not kill.
+        timeout = max(15, min(want, 600)) if want > 0 else int(settings.shell_timeout or 20)
 
         job = JOBS.start(command, cwd=cwd, env=env, stdin_text=stdin_text or "")
         if long_running:
-            JOBS.wait(job.id, 8.0)
+            # Servers/watchers never finish; collect a short burst of startup logs.
+            # Explicit background=true gets a slightly longer window for first lines.
+            JOBS.wait(job.id, 8.0 if background else 3.0)
             if job.alive():
                 JOBS.mark_released(job)
+                kind = "server/watch" if daemon and not background else "background"
                 return format_job_result(
                     job,
                     background=True,
-                    note="Started in background (server/watch/script). Poll with shell_job_log.",
+                    note=f"Started in background ({kind}). Poll with shell_job_log.",
                 )
             return format_job_result(job, background=False, note="Finished during startup window.")
 
@@ -163,8 +169,11 @@ def register_shell_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
             "paths in the command (e.g. `Get-ChildItem .\\src`), not another machine's "
             "absolute path. Prefer read_file for reading files. "
             f"Host shell: {_shell_host_label()}. "
-            "IMPORTANT: long scripts, training jobs, and servers should use background=true "
-            "(or they are auto-moved to background if they exceed timeout). "
+            "IMPORTANT: one-shot commands (ls, tests, short scripts) run in the "
+            "foreground. If they are still running after ~20s they are moved to "
+            "the background instead of being killed (training jobs, long scripts). "
+            "Dev servers and watchers (npm run dev, --watch) go to background "
+            "immediately — or pass background=true. "
             "The tool returns job_id + early logs; the process keeps running. "
             "Then use shell_job_log / shell_job_wait / shell_job_stop. "
             "Do NOT call run_shell again with the same command while that job is running. "
@@ -199,7 +208,11 @@ def register_shell_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
                         "command": {"type": "string"},
                         "background": {
                             "type": "boolean",
-                            "description": "If true, start and return without waiting for exit.",
+                            "description": (
+                                "If true, start as a background job immediately "
+                                "(servers, watchers). Training/long scripts can omit this: "
+                                "they auto-background after ~20s if still running."
+                            ),
                         },
                         "stdin_text": {
                             "type": "string",
@@ -212,7 +225,8 @@ def register_shell_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
                             "type": "integer",
                             "description": (
                                 "Optional timeout in seconds for foreground commands "
-                                f"(default {settings.shell_timeout}, max 600). Ignored when background=true."
+                                f"(default {settings.shell_timeout}s, then auto-background; max 600). "
+                                "Ignored when background=true or the command is a dev server/watcher."
                             ),
                         },
                     },

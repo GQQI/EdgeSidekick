@@ -647,10 +647,17 @@ def apply_to_settings(settings: Any, cfg: ModelSetup | None = None) -> Any:
     settings.subagent_base_url = (sub_url or main_url or "").rstrip("/")
     settings.compress_api_key = compress_key or sub_key or main_key
     settings.compress_base_url = (compress_url or sub_url or main_url or "").rstrip("/")
-    if not os.getenv("META_CONTEXT_LIMIT", "").strip():
-        from ..core.config import infer_context_limit
+    # Working set is a fraction of the provider window (about 45%, capped at
+    # 96k). The full window stays available via infer_context_limit for display.
+    # Compression still keys off this working set, not the raw window.
+    from ..core.config import infer_context_limit as _infer_window
+    from ..core.config import working_context_budget
 
-        settings.context_limit = infer_context_limit(settings.model)
+    window = int(_infer_window(getattr(settings, "model", "") or "") or 0)
+    explicit = int(os.getenv("META_CONTEXT_LIMIT", "0") or "0")
+    settings.context_limit = working_context_budget(window, explicit)
+    if os.getenv("META_KEEP_RECENT") is None:
+        settings.keep_recent_tokens = max(16_000, min(int(settings.context_limit) // 3, 32_000))
     return settings
 
 

@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { clearWorkbenchSocialLink } from "../social/workbenchSocialLink";
 import {
   browseWorkspace,
   createSession,
@@ -10,6 +12,7 @@ import {
   fetchSkills,
   fetchWorkspaces,
   forgetWorkspace,
+  rememberWorkspace,
   HISTORY_PAGE_SIZE,
   readFileContent,
   saveSession,
@@ -117,7 +120,10 @@ export type MessageActionsDeps = {
   openMemory: () => void;
   openChat: () => void;
   openHistoryPanel: () => void;
-  refreshSessions: (page?: number) => Promise<void>;
+  refreshSessions: (
+    page?: number,
+    scope?: { workspaceId?: string | null; workspace?: string | null },
+  ) => Promise<void>;
   applySessionDetail: (detail: import("../api").SessionDetail) => void;
   resetContextUsage: () => void;
   commit: (next: ChatMsg[]) => void;
@@ -164,7 +170,17 @@ export function useMessageActions(deps: MessageActionsDeps) {
     queuedCount = 0, sendChat, stopChat, detachListener, setBusy,
   } = deps;
 
-  /** Switching chats drops any drafts still queued for the one we're leaving. */
+  // Every chat/workspace switch bumps this. A response that returns after a
+  // newer switch must not paint the previous project back on screen.
+  const navEpochRef = useRef(0);
+  const adoptPathRef = useRef("");
+  const viewWsRef = useRef(activeWs);
+  viewWsRef.current = activeWs;
+  const bumpNav = () => {
+    navEpochRef.current += 1;
+    return navEpochRef.current;
+  };
+
   function warnAndClearQueued() {
     if (queuedCount > 0) {
       setToast(`已离开该对话：${queuedCount} 条排队消息未发送`);
@@ -500,6 +516,8 @@ function applySlashItem(item: SlashMenuItem) {
 }
 
 async function newChat() {
+  bumpNav();
+    clearWorkbenchSocialLink();
   sessionIdRef.current = null;
   detachListener();
   warnAndClearQueued();
@@ -529,6 +547,8 @@ async function newChat() {
  * whatever folder they were already bound to.
  */
 async function newChatInWorkspace(path: string) {
+  const nav = bumpNav();
+    clearWorkbenchSocialLink();
   if (!path) return;
   // Detach from whatever chat is currently displayed FIRST — a slow
   // createSession round-trip must never leave the old session's busy/stream
@@ -553,15 +573,26 @@ async function newChatInWorkspace(path: string) {
   resetContextUsage();
   setBusy(false);
   setSessionId(null);
+  setSessions([]);
+  setActiveWs({
+    path,
+    name: path.split(/[/\\]/).pop() || path,
+  });
 
   const res = await createSession(path);
+  if (navEpochRef.current !== nav) return;
   sessionIdRef.current = res.id;
   setSessionId(res.id);
   if (res.workspace?.path) {
     setActiveWs(res.workspace);
   }
   setToast(res.workspace ? `新对话 · 工作区：${res.workspace.path}` : t("chatDraftStarted"));
-  void refreshSessions(1);
+  const opened = res.workspace;
+  if (opened?.path) viewWsRef.current = opened;
+  void refreshSessions(1, {
+    workspace: opened?.path || path,
+    workspaceId: opened?.id || "",
+  });
   // The backend pins this folder into the recent-workspaces list — refresh
   // so it actually shows up (e.g. in Settings) instead of only the one
   // workspace that was active when the page loaded.
@@ -573,15 +604,64 @@ async function newChatInWorkspace(path: string) {
   }
 }
 
-async function openSession(id: string) {
-  if (id === sessionIdRef.current) {
-    return;
+
+async function reloadSession(id?: string) {
+  if (id) sessionIdRef.current = id;
+  const idNow = sessionIdRef.current;
+  const nav = navEpochRef.current;
+  if (!idNow) return;
+  try {
+    const detailSession = await fetchSession(idNow);
+    if (navEpochRef.current !== nav || sessionIdRef.current !== idNow) return;
+    applySessionDetail(detailSession);
+  } catch (e) {
+    setToast(e instanceof Error ? e.message : String(e));
   }
+}
+
+function sameFolder(a?: string | null, b?: string | null) {
+  const na = String(a || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const nb = String(b || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  return Boolean(na) && na === nb;
+}
+
+async function openSession(id: string, opts?: { workspacePath?: string }) {
+  // A rejected open used to leave sessionIdRef on this id while the thread
+  // stayed empty, so every later click on the same tab returned immediately.
+  if (id === sessionIdRef.current && id === sessionId) return;
+  const nav = bumpNav();
+  const clickedPath = opts?.workspacePath || "";
+  const pinned = clickedPath || viewWsRef.current?.path || "";
+  if (clickedPath) {
+    viewWsRef.current = {
+      path: clickedPath,
+      name: viewWsRef.current && sameFolder(viewWsRef.current.path, clickedPath) ? viewWsRef.current.name : clickedPath.split(/[/\\]/).pop() || clickedPath,
+      id: viewWsRef.current && sameFolder(viewWsRef.current.path, clickedPath) ? viewWsRef.current.id : undefined,
+    };
+  }
+  const prevId = sessionIdRef.current;
   sessionIdRef.current = id;
   detachListener();
   warnAndClearQueued();
   setBusy(false);
+  setWsBusy(true);
+  try {
   const detailSession = await fetchSession(id);
+  if (navEpochRef.current !== nav || sessionIdRef.current !== id) return;
+  const sameId =
+    Boolean(viewWsRef.current?.id) &&
+    Boolean(detailSession.workspace?.id) &&
+    viewWsRef.current?.id === detailSession.workspace?.id;
+  if (
+    pinned &&
+    detailSession.workspace?.path &&
+    !sameFolder(detailSession.workspace.path, pinned) &&
+    !sameId
+  ) {
+    if (sessionIdRef.current === id) sessionIdRef.current = prevId;
+    return;
+  }
+  if (detailSession.workspace?.path) viewWsRef.current = detailSession.workspace;
   applySessionDetail(detailSession);
   {
     const rawTitle = (detailSession.title || "").trim();
@@ -591,25 +671,53 @@ async function openSession(id: string) {
         : rawTitle;
     setToast(t("historyOpened", titleLabel));
   }
+  } finally {
+    if (navEpochRef.current === nav) setWsBusy(false);
+  }
 }
 
 async function switchWorkspace(path: string, create = false) {
-  const res = await setWorkspace(path, create);
-  setActiveWs(res.active?.path ? res.active : null);
-  setWorkspaces(res.items);
-  setHealth(await fetchHealth());
-  try {
-    setModel(await fetchModel());
-  } catch {
-    /* keep previous model if reload fails */
-  }
-  setFsRefresh((n) => n + 1);
+  const nav = bumpNav();
+  const optimistic = { path, name: path.split(/[/\\]/).pop() || path, id: viewWsRef.current && sameFolder(viewWsRef.current.path, path) ? viewWsRef.current.id : undefined };
+  viewWsRef.current = optimistic;
+  setActiveWs(optimistic);
   setSessions([]);
   setSessionsPage(1);
   setSessionsTotal(0);
   setSessionsTotalPages(1);
-  await newChat();
-  setToast(`工作区：${res.active.path}`);
+  setWsBusy(true);
+  setSessionId(null);
+  sessionIdRef.current = null;
+  commit([]);
+  try {
+    const res = create ? await setWorkspace(path, true) : await rememberWorkspace(path);
+    if (navEpochRef.current !== nav) return;
+    const hit = (res.items || []).find((w) => sameFolder(w.path, path));
+    const active = hit?.path ? hit : res.active?.path ? res.active : optimistic;
+    viewWsRef.current = active;
+    setActiveWs(active);
+    setWorkspaces(res.items);
+    await refreshSessions(1, { workspace: active.path, workspaceId: active.id || "" });
+    if (navEpochRef.current !== nav) return;
+    setFsRefresh((n) => n + 1);
+    setToast(`工作区：${active.path}`);
+    void fetchHealth().then(setHealth).catch(() => undefined);
+    void fetchModel().then(setModel).catch(() => undefined);
+  } finally {
+    if (navEpochRef.current === nav) setWsBusy(false);
+  }
+}
+
+/** Soft-bind the UI explorer to `path` without wiping the current chat (social per-chat workspace). */
+async function adoptWorkspace(path: string) {
+  if (!path) return;
+  adoptPathRef.current = path;
+  const res = await rememberWorkspace(path);
+  if (adoptPathRef.current !== path) return;
+  const hit = (res.items || []).find((w) => w.path === path);
+  setActiveWs(hit || { path, name: path.split(/[/\\]/).pop() || path });
+  setWorkspaces(res.items);
+  setFsRefresh((n) => n + 1);
 }
 
 async function browseAndSetWorkspace() {
@@ -956,7 +1064,9 @@ async function send(text?: string) {
     newChat,
     newChatInWorkspace,
     openSession,
+    reloadSession,
     switchWorkspace,
+    adoptWorkspace,
     browseAndSetWorkspace,
     browseForNewChat,
     removeWorkspaceEntry,

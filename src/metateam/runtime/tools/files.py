@@ -190,11 +190,7 @@ def register_file_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
         offset = max(1, _as_int(offset, 1))
         total = len(lines)
         if offset > total:
-            return (
-                f"EOF: {fp.name} has only {total} lines — there is nothing at "
-                f"offset {offset}. The file has been fully read; use the content "
-                "already in this conversation and continue the task."
-            )
+            return f"EOF: {fp.name} has {total} lines."
         req_limit = _as_int(limit, 0)
         auto_capped = False
         remaining = max(0, total - (offset - 1))
@@ -229,14 +225,11 @@ def register_file_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
         meta = f"\n… lines {offset}-{actual_end} of {total}"
         if actual_end >= total:
             if offset == 1:
-                meta += " (ENTIRE file — you now have all of it; do not read it again)"
+                meta += " (ENTIRE file)"
             else:
-                meta += " (end of file — nothing after this)"
+                meta += " (end of file)"
         else:
-            meta += (
-                f"; more below — ONE follow-up: read_file(path, offset={actual_end + 1}) "
-                f"then continue the task (do not repeat this plan)"
-            )
+            meta += f"; next offset {actual_end + 1}"
             if char_capped:
                 meta += " (chunk capped by size, not by the file)"
             elif auto_capped:
@@ -305,7 +298,9 @@ def register_file_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
                 + _sync_skill_library(ctx, target)
             )
         except Exception as exc:
-            return f"ERROR: {exc}"
+            from ...services.fs_api import describe_fs_error
+
+            return f"ERROR: {describe_fs_error(exc)}"
 
     def str_replace(
         path: str,
@@ -330,7 +325,9 @@ def register_file_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
                     return f"ERROR: {decoded.error}"
                 text = decoded.text
             except OSError as exc:
-                return f"ERROR: {exc}"
+                from ...services.fs_api import describe_fs_error
+
+                return f"ERROR: {describe_fs_error(exc)}"
             try:
                 updated, n = apply_str_replace(
                     text, old_string, new_string, replace_all=bool(replace_all)
@@ -359,28 +356,34 @@ def register_file_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
                 + _sync_skill_library(ctx, target)
             )
         except Exception as exc:
-            return f"ERROR: {exc}"
+            from ...services.fs_api import describe_fs_error
+
+            return f"ERROR: {describe_fs_error(exc)}"
 
     def delete_file(path: str) -> str:
-        from ...core.pathutil import is_relative_to, relative_to_posix, resolve_existing_tool_path
+        from ...core.pathutil import nearby_file_names, resolve_existing_tool_path
         from ...services import codebase_memory as cbm
         from ...services import fs_api
 
         try:
             target = resolve_existing_tool_path(path, live_ws())
-            try:
-                rel = (
-                    relative_to_posix(target, live_ws())
-                    if is_relative_to(target, live_ws())
-                    else str(target)
+            if not target.exists():
+                hint = nearby_file_names(target)
+                extra = f" Nearby files: {', '.join(hint)}" if hint else ""
+                return (
+                    f"ERROR: not found: {target}.{extra} "
+                    "Copy the exact path from list_dir or search_text."
                 )
-            except Exception:
-                rel = str(target)
-            res = fs_api.delete_entry(rel, recursive=False, allow_outside=True)
+            # Delete the path already resolved. Passing only the relative form
+            # makes delete_entry look it up again and report a bare filename
+            # when that second lookup misses.
+            res = fs_api.delete_entry(str(target), recursive=False, allow_outside=True)
             cbm.invalidate_index(live_ws())
             return f"deleted {res['path']}"
         except Exception as exc:
-            return f"ERROR: {exc}"
+            from ...services.fs_api import describe_fs_error
+
+            return f"ERROR: {describe_fs_error(exc)}"
 
     def list_dir(path: str = ".") -> str:
         try:
@@ -428,13 +431,11 @@ def register_file_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
             f"Read a workspace file as numbered text. Handles plain text/code AND documents: "
             f".docx/.pptx/.xlsx/.odt/.epub/.rtf are converted to text automatically "
             f"(.pdf when pypdf is installed) — ALWAYS use read_file for local documents; "
-            f"never browser_navigate. Prefer PRECISE reads: pass offset/limit "
-            f"for the exact range you need (e.g. from search_text/codebase_* hit lines). "
-            f"limit=0/omit reads through EOF when at most {_FINISH_IF_REMAINING} lines remain; "
+            f"never browser_navigate. "
+            f"offset and limit select a line range. "
+            f"limit=0 reads through EOF when at most {_FINISH_IF_REMAINING} lines remain; "
             f"larger files come in {_DEFAULT_READ_CAP}-line chunks (hard max {_MAX_LIMIT} "
-            f"lines per call); the trailer tells you the single next offset. Never read the "
-            f"same lines twice: a repeat returns '[already in context]' and then errors. To "
-            f"FIND text in a file you already read, use search_text — not another read_file. "
+            f"lines per call). "
             "Use the exact filename (spaces and punctuation included). "
             "Default encoding is UTF-8 (or a BOM if the file has one). "
             "If decode fails, retry with encoding= set to another codec; "
@@ -449,9 +450,8 @@ def register_file_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
                         "type": "integer",
                         "default": 0,
                         "description": (
-                            f"Lines to read (max {_MAX_LIMIT}); 0/omit auto-caps at "
-                            f"{_DEFAULT_READ_CAP} from offset. Pass the smallest range "
-                            "that answers your question."
+                            f"Lines to read (max {_MAX_LIMIT}). 0 reads onward, "
+                            f"capped at {_DEFAULT_READ_CAP} for a large file."
                         ),
                         "maximum": _MAX_LIMIT,
                     },

@@ -1,10 +1,10 @@
-# Sidekick Desktop
+# EdgeSidekick Desktop
 
 Electron 桌面端：侧栏可预览本地页面，支持交互与点选。
 
 ## 离线安装包（Windows）
 
-在能联网的电脑上构建一次，把 `desktop/dist/Sidekick-Setup-*-win-x64.exe` 拷到离线机器双击安装即可，目标机不需要 Python / Node。
+在能联网的电脑上构建一次，把 `desktop/dist/EdgeSidekick-Setup-*-win-x64.exe` 拷到离线机器双击安装即可，目标机不需要 Python / Node。
 
 ```powershell
 .\scripts\build-windows.bat
@@ -19,7 +19,7 @@ bash scripts/build-kylin.sh          # 在麒麟、Ubuntu 或 WSL 上
 .\scripts\build-kylin.bat            # Windows：自动调用 WSL 或 Docker
 ```
 
-产物：`desktop/dist/Sidekick-*-kylin-*.deb`（另有 AppImage、tar.gz）。详见 [packaging/kylin/README.md](../packaging/kylin/README.md)。
+产物：`desktop/dist/EdgeSidekick-*-kylin-*.deb`（另有 AppImage、tar.gz）。详见 [packaging/kylin/README.md](../packaging/kylin/README.md)。
 
 ## 启动
 

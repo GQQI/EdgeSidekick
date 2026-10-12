@@ -1,5 +1,5 @@
 /**
- * Sidekick desktop — live embedded browser.
+ * EdgeSidekick desktop — live embedded browser.
  *
  * Architecture:
  * - Main window hosts the React workbench
@@ -23,6 +23,18 @@ import http from "node:http";
 
 const require = createRequire(import.meta.url);
 const buildSelectBootstrap = require("./select-bootstrap.cjs");
+
+import {
+  normalizeNavUrl,
+  loopbackUrlCandidates,
+  isConnectionRefused,
+  isAbortedNav,
+  canonicalizeUrl,
+  urlsMatch,
+  isShallowSiteRewind,
+  waitForGuestUrl,
+  friendlyNavError,
+} from "./navUrl.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -448,13 +460,13 @@ async function replaceStaleBackend() {
   }
 }
 
-function waitForHealth(url, timeoutMs = 90000) {
+function waitForHealth(url, timeoutMs = 120000) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     const tick = async () => {
       const h = await fetchHealth(url);
       if (h.up && healthIsCurrent(h.json)) {
-        resolve();
+        resolve(h);
         return;
       }
       if (Date.now() - start > timeoutMs) {
@@ -465,6 +477,44 @@ function waitForHealth(url, timeoutMs = 90000) {
     };
     void tick();
   });
+}
+
+function isRetryableLoadError(err) {
+  const msg = String(err?.message || err?.code || err || "");
+  return /ERR_CONNECTION|ECONNREFUSED|ERR_FAILED|ERR_ABORTED|ERR_EMPTY_RESPONSE|ERR_CONNECTION_RESET|ERR_CONNECTION_TIMED_OUT/i.test(
+    msg,
+  );
+}
+
+async function loadUiWithRetry(win, uiUrl, attempts = 10) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      await win.loadURL(uiUrl);
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryableLoadError(e) && i > 0) break;
+      await sleep(400 * Math.min(i + 1, 5));
+    }
+  }
+  throw lastErr || new Error(`Failed to load UI: ${uiUrl}`);
+}
+
+function backendNotReadyHtml(detail) {
+  const escaped = String(detail || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return (
+    "<!doctype html><meta charset=utf-8><title>EdgeSidekick</title>" +
+    "<body style=\"font-family:sans-serif;padding:48px;max-width:640px\">" +
+    "<h1>无法连接本地后端</h1>" +
+    "<p>桌面端已启动，但 <code>http://127.0.0.1:8787</code> 尚未就绪。这不是业务接口报错。</p>" +
+    "<pre style=\"white-space:pre-wrap;background:#f4f4f4;padding:12px\">" +
+    escaped +
+    "</pre><p>请查看用户数据目录下 logs/backend.log 后重开应用。</p></body>"
+  );
 }
 
 function startBackend() {
@@ -491,7 +541,7 @@ function startBackend() {
     console.error(`[backend] fatal: ${detail}`);
     backendStartupFatal = true;
     try {
-      dialog.showErrorBox("Sidekick — 后端运行环境损坏 / Backend runtime broken", detail);
+      dialog.showErrorBox("EdgeSidekick — 后端运行环境损坏 / Backend runtime broken", detail);
     } catch {
       /* headless / no display */
     }
@@ -587,6 +637,27 @@ function ensureBrowserView() {
     void shell.openExternal(url);
     return { action: "deny" };
   });
+  try {
+    browserView.webContents.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    );
+  } catch {
+    /* older electron */
+  }
+  const STEALTH_JS = `(() => {
+    try {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      if (!window.chrome) window.chrome = { runtime: {} };
+    } catch (_) {}
+  })();`;
+  browserView.webContents.on("dom-ready", () => {
+    void browserView.webContents.executeJavaScript(STEALTH_JS, true).catch(() => undefined);
+  });
+  try {
+    browserView.webContents.setMaxListeners(32);
+  } catch {
+    /* ignore */
+  }
   browserView.webContents.on("did-navigate", (_e, url) => emitNav(url));
   browserView.webContents.on("did-navigate-in-page", (_e, url) => emitNav(url));
   browserView.webContents.on("did-redirect-navigation", (_e, url) => emitNav(url));
@@ -645,28 +716,42 @@ function attachBrowserView() {
   }
 }
 
+function boundsUsable(b) {
+  return Boolean(
+    b &&
+      Number(b.width) >= 80 &&
+      Number(b.height) >= 80,
+  );
+}
+
 function showBrowser(bounds) {
   ensureBrowserView();
   if (!mainWindow) return;
   attachBrowserView();
   browserVisible = true;
-  if (bounds) setBrowserBounds(bounds);
-  else if (lastBounds) setBrowserBounds(lastBounds);
-  else mainWindow.webContents.send("browser:requestBounds");
+  // Never paint the live guest at the startup 1x1 placeholder — ask the
+  // renderer for real host bounds instead (social modal / sidebar mount).
+  if (boundsUsable(bounds)) setBrowserBounds(bounds);
+  else if (boundsUsable(lastBounds)) setBrowserBounds(lastBounds);
+  else {
+    mainWindow.webContents.send("browser:requestBounds");
+  }
 }
 
 function hideBrowser() {
   if (!mainWindow || !browserView) return;
-  if (typeof mainWindow.removeBrowserView === "function") {
-    try {
-      mainWindow.removeBrowserView(browserView);
-    } catch {
-      mainWindow.setBrowserView(null);
-    }
-  } else {
-    mainWindow.setBrowserView(null);
-  }
+  // Keep the guest attached. Removing it drops the page from CDP, and the
+  // session browser then fails with "in-app browser panel not ready" because
+  // that mode never opens the workbench sidebar first.
+  // Park it off-screen instead. Do not write lastBounds — the next show()
+  // must restore the real frame, not this parking spot.
+  attachBrowserView();
   browserVisible = false;
+  try {
+    browserView.setBounds({ x: -20000, y: 0, width: 800, height: 600 });
+  } catch {
+    /* ignore */
+  }
 }
 
 function requestBoundsSoon() {
@@ -680,7 +765,7 @@ async function createWindow() {
     height: 960,
     minWidth: 1024,
     minHeight: 680,
-    title: "Sidekick",
+    title: "EdgeSidekick",
     backgroundColor: "#ffffff",
     show: false,
     icon: path.join(__dirname, "build", "icon.png"),
@@ -726,7 +811,20 @@ async function createWindow() {
   } catch {
     /* ignore */
   }
-  await mainWindow.loadURL(uiUrl);
+  try {
+    await loadUiWithRetry(mainWindow, uiUrl);
+  } catch (e) {
+    const detail =
+      `${e?.message || e}\n\nUI: ${uiUrl}\n日志: ${path.join(logDir(), "backend.log")}`;
+    console.error("[ui] load failed", e);
+    try {
+      await mainWindow.loadURL(
+        "data:text/html;charset=utf-8," + encodeURIComponent(backendNotReadyHtml(detail)),
+      );
+    } catch {
+      dialog.showErrorBox("EdgeSidekick", detail);
+    }
+  }
   // Create the guest BrowserView up front so Playwright can attach over CDP
   // without launching a second Chromium window. Attach once so the renderer
   // process actually starts, then hide until the Browser sidebar is shown.
@@ -740,191 +838,6 @@ async function createWindow() {
   hideBrowser();
 }
 
-function normalizeNavUrl(raw) {
-  let target = String(raw || "").trim();
-  if (!target) return "";
-  if (target === "about:blank") return target;
-
-  // Local HTML: keep CJK in the path (do not strip non-ASCII like http chat junk).
-  if (/^file:/i.test(target)) {
-    try {
-      return new URL(target).href;
-    } catch {
-      return target;
-    }
-  }
-  if (/^[a-zA-Z]:[\\/]/.test(target) && /\.html?([?#]|$)/i.test(target)) {
-    try {
-      return pathToFileURL(target.split(/[?#]/)[0]).href;
-    } catch {
-      return "";
-    }
-  }
-
-  // Strip chat/markdown junk: http://localhost:5173**，已在/ → http://localhost:5173
-  const m = target.match(
-    /https?:\/\/[A-Za-z0-9][-A-Za-z0-9._~:/?#\[\]@!$&'()+,;=%]*/i,
-  );
-  if (m) target = m[0];
-  const star = target.search(/\*/);
-  if (star >= 0) target = target.slice(0, star);
-  const nonAscii = target.search(/[^\x00-\x7F]/);
-  if (nonAscii >= 0) target = target.slice(0, nonAscii);
-  target = target.replace(/[*),.;:!?，。；！？*_~`]+$/g, "").trim();
-  if (!target) return "";
-
-  try {
-    const u = new URL(target);
-    if (u.protocol !== "http:" && u.protocol !== "https:") {
-      return target;
-    }
-    return u.toString();
-  } catch {
-    return "";
-  }
-}
-
-/** Vite/Node on Windows may listen on ::1 XOR 127.0.0.1 — try both families. */
-function loopbackUrlCandidates(url) {
-  const first = normalizeNavUrl(url);
-  if (!first || first === "about:blank") return first ? [first] : [];
-  let parsed;
-  try {
-    parsed = new URL(first);
-  } catch {
-    return [first];
-  }
-  if (parsed.protocol === "file:") return [first];
-  const host = parsed.hostname;
-  const loopback =
-    host === "127.0.0.1" ||
-    host === "0.0.0.0" ||
-    host === "localhost" ||
-    host === "::1";
-  if (!loopback) return [first];
-  const out = [];
-  const seen = new Set();
-  const pushHost = (hostname) => {
-    const u = new URL(parsed);
-    u.hostname = hostname;
-    const s = u.toString();
-    if (!seen.has(s)) {
-      seen.add(s);
-      out.push(s);
-    }
-  };
-  pushHost(host === "0.0.0.0" ? "127.0.0.1" : host);
-  pushHost("127.0.0.1");
-  pushHost("localhost");
-  pushHost("::1");
-  return out;
-}
-
-function isConnectionRefused(err) {
-  const code = String(err?.code || err?.errno || "");
-  const msg = String(err?.message || err || "");
-  return (
-    code === "ERR_CONNECTION_REFUSED" ||
-    msg.includes("ERR_CONNECTION_REFUSED") ||
-    /econnrefused|connection refused/i.test(msg)
-  );
-}
-
-function isAbortedNav(err) {
-  const code = String(err?.code || err?.errno || err?.errorCode || "");
-  const msg = String(err?.message || err || "");
-  return (
-    code === "ERR_ABORTED" ||
-    code === "-3" ||
-    msg.includes("ERR_ABORTED") ||
-    /\(\s*-3\s*\)/.test(msg)
-  );
-}
-
-function canonicalizeUrl(raw) {
-  const text = String(raw || "").trim();
-  if (!text || text === "about:blank") return text;
-  try {
-    const u = new URL(text);
-    let host = (u.hostname || "").toLowerCase();
-    if (host.startsWith("www.")) host = host.slice(4);
-    let path = u.pathname || "/";
-    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-    return `${u.protocol}//${host}${path}${u.search}`;
-  } catch {
-    return text.replace(/\/+$/, "");
-  }
-}
-
-function urlsMatch(a, b) {
-  const na = canonicalizeUrl(a);
-  const nb = canonicalizeUrl(b);
-  return Boolean(na && nb && na === nb);
-}
-
-function waitForGuestUrl(view, wants, timeoutMs) {
-  const want = (wants || []).map(canonicalizeUrl).filter(Boolean);
-  return new Promise((resolve) => {
-    const started = Date.now();
-    const tick = () => {
-      let now = "";
-      try {
-        now = view.webContents.getURL();
-      } catch {
-        now = "";
-      }
-      if (want.some((w) => urlsMatch(now, w))) {
-        cleanup();
-        resolve(now);
-        return;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        cleanup();
-        resolve(now);
-      }
-    };
-    const onNav = () => tick();
-    const iv = setInterval(tick, 120);
-    const to = setTimeout(tick, timeoutMs + 20);
-    function cleanup() {
-      clearInterval(iv);
-      clearTimeout(to);
-      try {
-        view.webContents.removeListener("did-navigate", onNav);
-        view.webContents.removeListener("did-finish-load", onNav);
-        view.webContents.removeListener("did-stop-loading", onNav);
-      } catch {
-        /* ignore */
-      }
-    }
-    try {
-      view.webContents.on("did-navigate", onNav);
-      view.webContents.on("did-finish-load", onNav);
-      view.webContents.on("did-stop-loading", onNav);
-    } catch {
-      /* ignore */
-    }
-    tick();
-  });
-}
-
-let navChain = Promise.resolve();
-
-function friendlyNavError(err, url) {
-  const msg = String(err?.message || err || "");
-  if (isAbortedNav(err)) {
-    return "";
-  }
-  if (isConnectionRefused(err)) {
-    return (
-      `无法连接 ${url}（连接被拒绝）。请先在对应项目里启动开发服务` +
-      `（如 npm run dev）。本地预览请用终端里的地址；` +
-      `开发服务器应绑定 127.0.0.1（Vite: server.host = "127.0.0.1"）。`
-    );
-  }
-  return msg || "navigation failed";
-}
-
 function registerIpc() {
   ipcMain.handle("browser:show", (_e, bounds) => {
     showBrowser(bounds);
@@ -934,9 +847,30 @@ function registerIpc() {
     hideBrowser();
     return { ok: true };
   });
+  ipcMain.handle("browser:scrollPage", async (_e, kind = "bottom") => {
+    if (!browserView) return { ok: false };
+    const js =
+      kind === "top"
+        ? "window.scrollTo({ top: 0, behavior: 'smooth' })"
+        : kind === "up"
+          ? "window.scrollBy({ top: -Math.max(240, window.innerHeight * 0.85), behavior: 'smooth' })"
+          : kind === "down"
+            ? "window.scrollBy({ top: Math.max(240, window.innerHeight * 0.85), behavior: 'smooth' })"
+            : "window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' })";
+    try {
+      await browserView.webContents.executeJavaScript(js, true);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
   ipcMain.handle("browser:setBounds", (_e, bounds) => {
-    if (browserVisible) setBrowserBounds(bounds);
-    else lastBounds = bounds;
+    if (browserVisible) {
+      if (boundsUsable(bounds)) setBrowserBounds(bounds);
+      else if (bounds) lastBounds = bounds;
+    } else if (bounds) {
+      lastBounds = bounds;
+    }
     return { ok: true };
   });
   ipcMain.handle("browser:navigate", async (_e, url) => {
@@ -944,7 +878,9 @@ function registerIpc() {
     if (!candidates.length) throw new Error("empty url");
     const run = async () => {
       const view = ensureBrowserView();
-      showBrowser(lastBounds);
+      // Prefer last known panel bounds; otherwise attach + requestBounds
+      // (do not flash the 1x1 CDP placeholder over the social UI).
+      showBrowser(boundsUsable(lastBounds) ? lastBounds : null);
       let current = "";
       try {
         current = view.webContents.getURL();
@@ -955,6 +891,19 @@ function registerIpc() {
         emitNav(current);
         requestBoundsSoon();
         return { url: current, live: true };
+      }
+      // Queued/stale navigations (App + BrowserPanel both drive loadURL on
+      // browser_open) must not rewind a search-results / article page back to
+      // the site homepage after the agent has already moved on.
+      if (candidates.some((c) => isShallowSiteRewind(current, c))) {
+        emitNav(current);
+        requestBoundsSoon();
+        return {
+          url: current,
+          live: true,
+          blocked_rewind: true,
+          note: "refused navigate to site home — guest is already on a deeper page",
+        };
       }
       let lastErr = null;
       for (const target of candidates) {
@@ -1040,7 +989,7 @@ function registerIpc() {
   });
   ipcMain.handle("browser:selectArm", async (_e, timeoutMs) => {
     if (!browserView) throw new Error("live browser not ready — open a URL first");
-    showBrowser(lastBounds);
+    showBrowser(boundsUsable(lastBounds) ? lastBounds : null);
     const boot = buildSelectBootstrap(STYLE_KEYS, 1);
     await browserView.webContents.executeJavaScript(boot, true);
     const ms = Math.max(1000, Number(timeoutMs) || 60000);
@@ -1071,16 +1020,16 @@ function registerIpc() {
   });
 }
 
-app.setAppUserModelId("com.sidekick.desktop");
+app.setAppUserModelId("com.edgesidekick.desktop");
 
 // Windows Chromium often fails GPUCache move with Access Denied (0x5),
-// especially when productName/userData is non-ASCII (Sidekick) or another
+// especially when productName/userData is non-ASCII or another
 // Electron still holds the folder. Must run before app.ready.
 if (process.platform === "win32") {
   app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
   if (app.isPackaged) {
     try {
-      app.setPath("userData", path.join(app.getPath("appData"), "Sidekick"));
+      app.setPath("userData", path.join(app.getPath("appData"), "EdgeSidekick"));
     } catch {
       /* keep default */
     }
@@ -1091,6 +1040,10 @@ if (process.platform === "win32") {
 // BrowserView instead of spawning a popup Chromium.
 app.commandLine.appendSwitch("remote-debugging-port", CDP_PORT);
 app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
+// Pages open RTCPeerConnection and Chromium then logs a failed STUN lookup
+// (stun.services.mozilla1.com, error -105). This app does not use WebRTC.
+app.commandLine.appendSwitch("disable-features", "WebRTC,WebRtcHideLocalIpsWithMdns");
+app.commandLine.appendSwitch("webrtc-ip-handling-policy", "disable_non_proxied_udp");
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -1110,7 +1063,8 @@ if (gotTheLock) app.whenReady().then(async () => {
 
   const healthUrl = `${BACKEND_URL}/api/health`;
   const existing = await fetchHealth(healthUrl);
-  if (existing.up && healthIsCurrent(existing.json)) {
+  let backendReady = existing.up && healthIsCurrent(existing.json);
+  if (backendReady) {
     console.log(`[backend] reusing existing server at ${BACKEND_URL}`);
   } else {
     if (existing.up) {
@@ -1122,17 +1076,22 @@ if (gotTheLock) app.whenReady().then(async () => {
       return;
     }
     try {
-      await waitForHealth(healthUrl);
+      await waitForHealth(healthUrl, app.isPackaged ? 180000 : 120000);
+      backendReady = true;
     } catch (e) {
       const late = await fetchHealth(healthUrl);
-      if (late.up) {
-        console.warn(`[backend] health wait timed out but server is up; opening anyway`);
+      if (late.up && healthIsCurrent(late.json)) {
+        console.warn(`[backend] health wait timed out but current health passed; opening`);
+        backendReady = true;
       } else {
         console.error(e);
         const logPath = path.join(logDir(), "backend.log");
+        const why = late.up
+          ? "8787 端口有响应，但不是本应用健康检查（可能被其它程序占用）。"
+          : "本机后端没有在时限内就绪。";
         dialog.showErrorBox(
-          "Sidekick",
-          `后端未能启动。\n\n${e?.message || e}\n\n日志：${logPath}\n\n` +
+          "EdgeSidekick",
+          `${why}\n\n${e?.message || e}\n\n日志：${logPath}\n\n` +
             (app.isPackaged
               ? "请重新安装，或检查 8787 端口是否被占用。"
               : "请先运行 start-desktop.bat 安装 Python 依赖。"),
@@ -1141,6 +1100,10 @@ if (gotTheLock) app.whenReady().then(async () => {
     }
   }
 
+  if (backendReady) {
+    // Health can pass a beat before the static UI mount is fully in service.
+    await sleep(200);
+  }
   await createWindow();
 
   app.on("activate", () => {

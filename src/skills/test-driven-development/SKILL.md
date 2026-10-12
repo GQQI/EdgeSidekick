@@ -16,7 +16,7 @@ Write the test first. Watch it fail. Write minimal code to pass.
 
 **Core principle:** If you didn't watch the test fail, you don't know if it tests the right thing.
 
-## Sidekick / 离线适配
+## EdgeSidekick / 离线适配
 
 - 用项目里已有的测试命令（pytest / npm test 等），不要为此安装新框架。
 - 参考 `writing-good-tests.md`（本目录）。

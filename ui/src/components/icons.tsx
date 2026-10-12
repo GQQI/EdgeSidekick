@@ -276,11 +276,31 @@ export function IconTerminal(p: IconProps) {
   );
 }
 
+export function IconCalendar(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="3" y="5" width="18" height="16" rx="2" {...stroke} />
+      <path d="M8 3v4M16 3v4M3 10h18" {...stroke} />
+      <path d="M8 15h.01M12 15h.01M16 15h.01M8 18h.01M12 18h.01" {...stroke} />
+    </svg>
+  );
+}
+
 export function IconCube(p: IconProps) {
   return (
     <svg {...base(p)}>
       <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" {...stroke} />
       <path d="M12 12 20 7.5M12 12v9M12 12 4 7.5" {...stroke} />
+    </svg>
+  );
+}
+
+export function IconPin(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M9 10.5 8 17l4-2 4 2-1-6.5" {...stroke} />
+      <path d="M9 10.5V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5v5" {...stroke} />
+      <path d="M12 15v5" {...stroke} />
     </svg>
   );
 }

@@ -186,17 +186,6 @@ _NO_ARG_SAFE_NAMES = {
 }
 
 
-def _xml_call_ok_without_args(name: str) -> bool:
-    """Used for the *live preview* stream only (XmlToolStream/snapshot).
-
-    Lenient: showing a tool card the moment "<function=name>" opens, before
-    its params have streamed in, is harmless UI — the card just fills in as
-    more markup arrives. Never used to decide whether to actually execute.
-    """
-    n = (name or "").strip().lower()
-    return not n.startswith("delegate")
-
-
 def _xml_call_executable_without_args(name: str) -> bool:
     """Used when deciding whether to *execute* a bare/param-less call.
 
@@ -232,6 +221,8 @@ def extract_text_tool_calls(
     def add(name: str, args: dict[str, Any], start: int, end: int) -> None:
         cleaned = _strip_quotes(name)
         if not cleaned:
+            return
+        if not args and not _xml_call_executable_without_args(cleaned):
             return
         calls.append(_call(cleaned, args, len(calls), id_prefix))
         spans.append((start, end))
@@ -434,17 +425,26 @@ def _partial_json_tool(blob: str) -> tuple[str, str] | None:
     return name, raw or "{}"
 
 
-def _parse_open_call(rest: str) -> tuple[str, dict[str, Any] | str] | None:
+def _parse_open_call(
+    rest: str, *, allow_bare: bool = False
+) -> tuple[str, dict[str, Any] | str] | None:
+    """Parse an in-progress (unclosed) tool call.
+
+    When allow_bare is True (streaming snapshots), emit the tool name even
+    before any parameters arrive so the UI can show the call starting.
+    Execution paths keep allow_bare=False so tools that need args never run
+    with {}.
+    """
     sloppy = _SLOPPY_FUNC.search(rest)
     if sloppy:
         name = _strip_quotes(sloppy.group(1))
-        if _xml_call_ok_without_args(name):
+        if allow_bare or _xml_call_executable_without_args(name):
             return name, {}
     fn = _FUNC_OPEN.search(rest)
     if fn:
         name = _strip_quotes(fn.group(1))
         args = _params_from_eq(rest[fn.end() :], tail=True)
-        if args or _xml_call_ok_without_args(name):
+        if args or allow_bare or _xml_call_executable_without_args(name):
             return name, args
     inv = _INVOKE_OPEN.search(rest)
     if inv:
@@ -457,8 +457,13 @@ def _parse_open_call(rest: str) -> tuple[str, dict[str, Any] | str] | None:
     fn_tail = re.search(r"<function\s*=\s*([^\s<>]+)\s*$", rest, re.IGNORECASE)
     if fn_tail:
         name = _strip_quotes(fn_tail.group(1))
-        if _xml_call_ok_without_args(name):
+        if allow_bare or _xml_call_executable_without_args(name):
             return name, {}
+    # Only fall back to loose param inference when there is no explicit
+    # <function=...> / <invoke> open tag — otherwise query->search_text would
+    # steal the real tool name during streaming.
+    if _FUNC_OPEN.search(rest) or _INVOKE_OPEN.search(rest) or _SLOPPY_FUNC.search(rest):
+        return None
     loose = _loose_xml_params(rest)
     name = _infer_tool_name(loose)
     if name and loose:
@@ -482,7 +487,7 @@ def snapshot_xml_tool_calls(text: str) -> list[tuple[str, str]]:
         )
     for match in _SLOPPY_FUNC.finditer(text):
         name = _strip_quotes(match.group(1))
-        if _xml_call_ok_without_args(name):
+        if _xml_call_executable_without_args(name):
             spans.append((match.start(), match.end(), name, {}))
     for match in _INVOKE_BLOCK.finditer(text):
         spans.append(
@@ -497,15 +502,23 @@ def snapshot_xml_tool_calls(text: str) -> list[tuple[str, str]]:
         parsed = _partial_json_tool(match.group(1))
         if parsed:
             spans.append((match.start(), match.end(), parsed[0], parsed[1]))
+    # Prefer an in-progress <function=...> / <invoke> over loose param inference.
+    # Otherwise a partial call with only <parameter=query>... is mis-labeled as
+    # search_text and the open-call path never runs (last_end already at EOF).
     if not spans:
-        loose = _loose_xml_params(text)
-        name = _infer_tool_name(loose)
-        if name and loose:
-            spans.append((0, len(text), name, loose))
-    last_end = max((s[1] for s in spans), default=0)
-    open_call = _parse_open_call(text[last_end:])
-    if open_call and open_call[0]:
-        spans.append((last_end, len(text), open_call[0], open_call[1]))
+        open_call = _parse_open_call(text, allow_bare=True)
+        if open_call and open_call[0]:
+            spans.append((0, len(text), open_call[0], open_call[1]))
+        else:
+            loose = _loose_xml_params(text)
+            name = _infer_tool_name(loose)
+            if name and loose:
+                spans.append((0, len(text), name, loose))
+    else:
+        last_end = max((s[1] for s in spans), default=0)
+        open_call = _parse_open_call(text[last_end:], allow_bare=True)
+        if open_call and open_call[0]:
+            spans.append((last_end, len(text), open_call[0], open_call[1]))
     spans.sort(key=lambda s: s[0])
     out: list[tuple[str, str]] = []
     for _start, _end, name, args in spans:

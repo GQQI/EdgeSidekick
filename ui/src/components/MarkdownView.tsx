@@ -1,10 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import mermaid from "mermaid";
 import "highlight.js/styles/github.css";
-import { isLocalPreviewTarget, localPreviewPath, prepMarkdownForUrls, sandboxUrlGesture, sanitizeBrowserUrl, splitDirtyUrlLabel, splitTextWithUrls } from "../browser/urlDetect";
+import { isLocalPreviewTarget, localPreviewPath, remarkLinkifyLiteral, sandboxUrlGesture, sanitizeBrowserUrl, splitTextWithUrls } from "../browser/urlDetect";
+import { tightenMarkdownFlow } from "../social/turnLogic";
 
 mermaid.initialize({
   startOnLoad: false,
@@ -18,6 +19,8 @@ type Props = {
   streaming?: boolean;
   /** Right-click or Ctrl/Cmd+click an http(s) link → ask to open in browser sandbox. */
   onCtrlClickUrl?: (url: string, clientX: number, clientY: number) => void;
+  /** When true, a normal click also opens the sandbox (social chat). */
+  openSandboxOnClick?: boolean;
 };
 
 const LINK_TITLE = "右键或 Ctrl+单击：在浏览器沙盒打开";
@@ -108,16 +111,16 @@ function CodeBlock({
               ) : (
                 <a
                   key={i}
-                  href={p.value}
+                  href={p.href}
                   className="sandbox-hot-link"
                   title={LINK_TITLE}
                   target="_blank"
                   rel="noreferrer"
                   onClick={(e) => {
-                    sandboxUrlGesture(p.value, e, onCtrlClickUrl, { mode: "click" });
+                    sandboxUrlGesture(p.href, e, onCtrlClickUrl, { mode: "click" });
                   }}
                   onContextMenu={(e) => {
-                    sandboxUrlGesture(p.value, e, onCtrlClickUrl, { mode: "contextmenu" });
+                    sandboxUrlGesture(p.href, e, onCtrlClickUrl, { mode: "contextmenu" });
                   }}
                 >
                   {p.value}
@@ -136,8 +139,13 @@ function CodeBlock({
   );
 }
 
-export function MarkdownView({ content, streaming, onCtrlClickUrl }: Props) {
-  const body = prepMarkdownForUrls(content || (streaming ? "…" : ""));
+const REMARK_PLUGINS = [remarkLinkifyLiteral, remarkGfm];
+const HIGHLIGHT_PLUGINS = [
+  [rehypeHighlight, { ignoreMissing: true, detect: false, plainText: ["mermaid"] }],
+] as const;
+
+export const MarkdownView = memo(function MarkdownView({ content, streaming, onCtrlClickUrl, openSandboxOnClick }: Props) {
+  const body = tightenMarkdownFlow(content || "");
 
   const components = useMemo(
     () => ({
@@ -173,41 +181,26 @@ export function MarkdownView({ content, streaming, onCtrlClickUrl }: Props) {
       },
       a({ href, children }: { href?: string; children?: ReactNode }) {
         const childStr = nodeText(children);
-        const split = splitDirtyUrlLabel(childStr);
         const localRaw = [href || "", childStr].find((x) => isLocalPreviewTarget(x)) || "";
         const local = localRaw ? localPreviewPath(localRaw) : "";
-        const http = sanitizeBrowserUrl(href || "") || split?.href || "";
+        const http = sanitizeBrowserUrl(href || "") || sanitizeBrowserUrl(childStr);
         const target = local || http;
 
         const intercept = (e: { ctrlKey: boolean; metaKey: boolean; clientX: number; clientY: number; preventDefault: () => void; stopPropagation: () => void }, mode: "click" | "contextmenu") => {
+          if (openSandboxOnClick && target && onCtrlClickUrl && mode === "click") {
+            e.preventDefault();
+            e.stopPropagation();
+            onCtrlClickUrl(target, e.clientX, e.clientY);
+            return;
+          }
           if (target && sandboxUrlGesture(target, e, onCtrlClickUrl, { mode })) return;
-          // Relative report.html must never navigate the Sidekick shell (8787 SPA).
+          // Relative report.html must never navigate the host SPA.
           if (local || (href && !/^https?:\/\//i.test(href))) {
             e.preventDefault();
             e.stopPropagation();
             if (local && onCtrlClickUrl) onCtrlClickUrl(local, e.clientX, e.clientY);
           }
         };
-
-        if (http && split && /https?:\/\//i.test(childStr)) {
-          return (
-            <>
-              {split.before}
-              <a
-                href={http}
-                target="_blank"
-                rel="noreferrer"
-                className="sandbox-hot-link"
-                title={LINK_TITLE}
-                onClick={(e) => intercept(e, "click")}
-                onContextMenu={(e) => intercept(e, "contextmenu")}
-              >
-                {split.text}
-              </a>
-              {split.after}
-            </>
-          );
-        }
 
         return (
           <a
@@ -231,18 +224,20 @@ export function MarkdownView({ content, streaming, onCtrlClickUrl }: Props) {
         );
       },
     }),
-    [streaming, onCtrlClickUrl],
+    [streaming, onCtrlClickUrl, openSandboxOnClick],
   );
 
   return (
-    <div className={`markdown ${streaming ? "is-streaming" : ""}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[rehypeHighlight, { plainText: ["mermaid"], detect: true }]]}
-        components={components as never}
-      >
-        {body}
-      </ReactMarkdown>
+    <div className={streaming ? "markdown is-streaming" : "markdown"}>
+      {body ? (
+        <ReactMarkdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={HIGHLIGHT_PLUGINS as never}
+          components={components as never}
+        >
+          {body}
+        </ReactMarkdown>
+      ) : null}
     </div>
   );
-}
+});

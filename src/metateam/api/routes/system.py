@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
+from ...core.hostinfo import network_available
 
 from ...core.config import get_settings
 from ...services.mcp_config import McpServerConfig, load_mcp_config, update_mcp_config
@@ -17,14 +19,54 @@ from ...services.memory import (
     write_memory,
 )
 from ...services.model_config import load_model_config, select_model_role, update_model_config
+from ...services.app_prefs import auto_approve_tools, load_app_prefs, save_app_prefs
 from ...services.local_auth import get_token
 from ...services.store import STORE
 from ...services.user_auth import auth_status, needs_setup
 from ...services.workspace_store import get_active_workspace
 from ..http import require_loopback
-from ..schemas import MemoryLibraryUpdate, McpTestBody, McpUpdateBody, MemoryUpdate, ModelSelect, ModelUpdate
+from ..schemas import (
+    MemoryLibraryUpdate,
+    McpTestBody,
+    McpUpdateBody,
+    MemoryUpdate,
+    ModelSelect,
+    ModelUpdate,
+    PrefsUpdate,
+)
 
 router = APIRouter(tags=["system"])
+
+
+class SpeakJudgeBody(BaseModel):
+    name: str = ""
+    duty: str = ""
+    user_text: str = ""
+    prior: list[dict[str, str]] = Field(default_factory=list)
+    history: list[dict[str, str]] = Field(default_factory=list)
+    addressed: bool = False
+    greeting: bool = False
+    capability: bool = False
+    context: str = ""
+    workspace: str = ""
+
+
+@router.post("/api/social/speak-judge")
+def api_speak_judge(body: SpeakJudgeBody) -> dict[str, Any]:
+    from ...services.systemone import judge_speak
+
+    return judge_speak(
+        name=body.name,
+        duty=body.duty,
+        user_text=body.user_text,
+        prior=body.prior,
+        history=body.history,
+        addressed=body.addressed,
+        greeting=body.greeting,
+        capability=body.capability,
+        context=body.context,
+        workspace=body.workspace,
+    )
 
 
 @router.get("/api/health")
@@ -40,6 +82,7 @@ def health() -> dict[str, Any]:
         pass
     return {
         "ok": True,
+        "online": network_available(),
         "demo": demo,
         "model": s.model,
         "base_url": s.base_url,
@@ -53,8 +96,23 @@ def health() -> dict[str, Any]:
         "allow_shell": bool(getattr(s, "allow_shell", False)),
         "shell_sandbox": bool(getattr(s, "shell_sandbox", True)),
         "mcp_enabled": bool(getattr(s, "mcp_enabled", True)),
+        "auto_approve_tools": auto_approve_tools(),
         "auth_register": bool(needs_setup()),
     }
+
+
+@router.get("/api/prefs")
+def get_prefs() -> dict[str, Any]:
+    return load_app_prefs()
+
+
+@router.put("/api/prefs")
+def put_prefs(body: PrefsUpdate) -> dict[str, Any]:
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    cfg = save_app_prefs(patch)
+    if "auto_approve_tools" in patch:
+        STORE.apply_auto_approve_tools(bool(cfg.get("auto_approve_tools")))
+    return {"status": "ok", **cfg}
 
 
 @router.get("/api/bootstrap")

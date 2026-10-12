@@ -1,10 +1,17 @@
+import { useId } from "react";
+
 type Props = {
   size?: number;
   className?: string;
 };
 
-/** Circular 星徽 — star in a ring, used beside the wordmark. */
+/**
+ * EdgeSidekick mark — single-agent AgentFrame style:
+ * blue gradient rounded square + one robot (antenna, white body, two eyes).
+ * No partner robots (multi-agent).
+ */
 export function BrandMark({ size = 32, className = "" }: Props) {
+  const gid = `esk-${useId().replace(/:/g, "")}`;
   return (
     <svg
       width={size}
@@ -12,23 +19,22 @@ export function BrandMark({ size = 32, className = "" }: Props) {
       viewBox="0 0 64 64"
       fill="none"
       className={`brand-icon ${className}`.trim()}
-      aria-hidden
+      role="img"
+      aria-label="EdgeSidekick"
     >
-      <circle cx="32" cy="32" r="30" className="brand-ring" stroke="currentColor" strokeWidth="2.2" />
-      <circle cx="32" cy="32" r="25.2" className="brand-disc" fill="currentColor" />
-      <circle cx="32" cy="32" r="25.2" className="brand-disc-rim" />
-      <g className="brand-wings">
-        <rect x="11.2" y="29.2" width="7.6" height="1.55" rx="0.7" />
-        <rect x="12.4" y="32.25" width="6.4" height="1.35" rx="0.65" />
-        <rect x="13.6" y="35.05" width="5.2" height="1.2" rx="0.6" />
-        <rect x="45.2" y="29.2" width="7.6" height="1.55" rx="0.7" />
-        <rect x="45.2" y="32.25" width="6.4" height="1.35" rx="0.65" />
-        <rect x="45.2" y="35.05" width="5.2" height="1.2" rx="0.6" />
-      </g>
-      <path
-        className="brand-star"
-        d="M32 14.2 L35.55 26.15 L48.2 26.5 L38.15 34 L41.7 46.2 L32 39.35 L22.3 46.2 L25.85 34 L15.8 26.5 L28.45 26.15 Z"
-      />
+      <defs>
+        <linearGradient id={gid} x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#5b97ff" />
+          <stop offset="0.55" stopColor="#2f6fed" />
+          <stop offset="1" stopColor="#1d4fc4" />
+        </linearGradient>
+      </defs>
+      <rect className="brand-plate" width="64" height="64" rx="15" fill={`url(#${gid})`} />
+      <path className="brand-antenna" d="M32 21V15" stroke="#fff" strokeWidth="4.4" strokeLinecap="round" />
+      <circle className="brand-antenna-tip" cx="32" cy="12" r="4.8" fill="#fff" />
+      <rect className="brand-body" x="18" y="21" width="28" height="31" rx="9.5" fill="#fff" />
+      <circle className="brand-eye" cx="26.5" cy="37" r="4.6" fill="#2f6fed" />
+      <circle className="brand-eye" cx="37.5" cy="37" r="4.6" fill="#2f6fed" />
     </svg>
   );
 }

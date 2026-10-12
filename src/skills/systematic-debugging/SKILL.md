@@ -13,7 +13,7 @@ license: Complete terms in LICENSE.txt
 
 **Core principle:** ALWAYS find root cause before attempting fixes. Symptom fixes are failure.
 
-## Sidekick / 离线适配
+## EdgeSidekick / 离线适配
 
 - 全程离线。用 `read_file`、`run_shell`、测试命令收集证据，不要猜。
 - 参考文件：`root-cause-tracing.md`、`defense-in-depth.md`、`condition-based-waiting.md`（本目录）。

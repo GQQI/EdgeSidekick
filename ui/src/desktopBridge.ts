@@ -19,6 +19,7 @@ export type SidekickDesktopApi = {
     hide: () => Promise<{ ok: boolean }>;
     setBounds: (bounds: DesktopBounds) => Promise<{ ok: boolean }>;
     navigate: (url: string) => Promise<{ url: string; live?: boolean }>;
+    scrollPage: (kind?: "top" | "bottom" | "up" | "down") => Promise<{ ok: boolean }>;
     getUrl: () => Promise<string>;
     reload: () => Promise<{ ok: boolean }>;
     goBack: () => Promise<{ ok: boolean }>;

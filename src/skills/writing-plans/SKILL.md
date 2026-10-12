@@ -16,7 +16,7 @@ Write comprehensive implementation plans assuming the engineer has zero
 context for the codebase. Document everything they need: which files to
 touch, sample code, how to test. Bite-sized tasks. DRY. YAGNI. TDD.
 
-## Sidekick / 离线适配
+## EdgeSidekick / 离线适配
 
 - 计划写到当前 workspace 的 `docs/plans/YYYY-MM-DD-<topic>.md`（用户指定路径则听用户的）。
 - 不要自动 `git commit`。计划里的 commit 步骤改成「请用户确认后再提交」。

@@ -30,7 +30,7 @@ VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
 # ZIP-based office / docs we can extract text from
 DOCX_EXTS = {".docx"}
 PPTX_EXTS = {".pptx"}
-XLSX_EXTS = {".xlsx"}
+XLSX_EXTS = {".xlsx", ".xlsm"}
 ODT_EXTS = {".odt"}
 ODP_EXTS = {".odp"}
 ODS_EXTS = {".ods"}
@@ -145,6 +145,25 @@ def bind_active_workspace(path: Path | str) -> Any:
 
 def reset_active_workspace(token: Any) -> None:
     _ACTIVE_WORKSPACE.reset(token)
+
+
+def describe_fs_error(exc: BaseException) -> str:
+    """Explain a filesystem error.
+
+    ``FileNotFoundError(path)`` and ``FileExistsError(path)`` stringify to only
+    the path, so callers were showing the filename as if it were the reason.
+    """
+    text = str(exc).strip()
+    low = text.lower()
+    if isinstance(exc, FileNotFoundError):
+        if any(mark in low for mark in ("not found", "no such file", "cannot find", "找不到")):
+            return text or "not found"
+        return f"not found: {text}" if text else "not found"
+    if isinstance(exc, FileExistsError):
+        if any(mark in low for mark in ("already exists", "file exists", "已存在")):
+            return text or "already exists"
+        return f"already exists: {text}" if text else "already exists"
+    return text or exc.__class__.__name__
 
 
 def workspace_root() -> Path:
@@ -782,7 +801,7 @@ def create_entry(rel: str, kind: str = "file") -> dict[str, Any]:
 
 
 def delete_entry(
-    rel: str, *, recursive: bool = False, allow_outside: bool = False
+    rel: str, *, recursive: bool = False, allow_outside: bool = False, source: str = "tool"
 ) -> dict[str, Any]:
     from . import fs_undo
 
@@ -801,13 +820,13 @@ def delete_entry(
             nonempty = False
         if nonempty and not recursive:
             raise ValueError(f"directory not empty: {rel}")
-        fs_undo.push_before_delete(out_path, fp)
+        fs_undo.push_before_delete(out_path, fp, source=source)
         if nonempty:
             shutil.rmtree(fp)
         else:
             fp.rmdir()
         return {"path": out_path, "type": "dir", "deleted": True}
-    fs_undo.push_before_delete(out_path, fp)
+    fs_undo.push_before_delete(out_path, fp, source=source)
     fp.unlink()
     return {"path": out_path, "type": "file", "deleted": True}
 

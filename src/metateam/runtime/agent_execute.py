@@ -27,7 +27,16 @@ _FILE_TOOLS = frozenset(
 )
 _BLOCKER_RETRY = (
     "\n\nDo not continue as if this succeeded. Retry the same file tool with "
+    "the exact filename, or stop and report the blocker."
+)
+_PAYLOAD_RETRY = (
+    "\n\nDo not continue as if this succeeded. Retry the same file tool with "
     "the exact filename and a complete payload, or stop and report the blocker."
+)
+_MISSING_PATH_RETRY = (
+    "\n\nDo not continue as if this succeeded. If the path is wrong, look it up "
+    "with list_dir or search_text and retry with that exact path. If it is "
+    "already gone, stop and report that. Do not invent file contents for this call."
 )
 _TOOL_ALIASES = {
     "search": "web_search",
@@ -35,7 +44,6 @@ _TOOL_ALIASES = {
     "google_search": "web_search",
     "bing_search": "web_search",
     "internet_search": "web_search",
-    "browser_snapshot": "browser_screenshot",
     "browser_get_page_content": "browser_get_page_content",
 }
 
@@ -44,8 +52,7 @@ def _tool_arg_error(name: str, tool: Any, args: dict[str, Any]) -> str | None:
     if name in _INCOMPLETE_WRITE_TOOLS and args.get("_incomplete"):
         return (
             f"ERROR: {name} arguments were cut off before the payload was complete. "
-            "Do not keep a partial file and do not skip ahead. "
-            "Call the same tool again with the full path and full content."
+            "Retry the same call with the complete arguments."
         )
     if tool is None:
         return None
@@ -60,6 +67,25 @@ def _tool_arg_error(name: str, tool: Any, args: dict[str, Any]) -> str | None:
         "Call the same tool again with every required field. "
         "Do not continue as if the file was written or read."
     )
+
+
+def drop_unready_tool_calls(
+    registry: Any, tool_calls: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Drop calls that arrived as {} before required fields were generated."""
+    ready: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for tc in tool_calls:
+        fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+        name = str((fn or {}).get("name") or "")
+        args = parse_tool_args((fn or {}).get("arguments") or "{}")
+        tool = registry.get(name) if name else None
+        keys = [k for k in (args or {}) if not str(k).startswith("_")] if isinstance(args, dict) else []
+        if tool is not None and not keys and missing_required_args(tool.handler, args if isinstance(args, dict) else {}):
+            dropped.append(tc)
+            continue
+        ready.append(tc)
+    return ready, dropped
 
 
 def _alias_tool_name(name: str) -> str:
@@ -77,7 +103,20 @@ def _annotate_file_blocker(name: str, content: str) -> str:
         return content
     if "Do not continue as if this succeeded" in content:
         return content
-    return f"{content}{_BLOCKER_RETRY}"
+    low = content.lower()
+    payload_problem = name in _INCOMPLETE_WRITE_TOOLS and any(
+        mark in low for mark in ("cut off", "missing required", "incomplete", "payload")
+    )
+    path_missing = any(
+        mark in low for mark in ("not found", "no such file", "cannot find", "找不到")
+    )
+    if payload_problem:
+        suffix = _PAYLOAD_RETRY
+    elif path_missing or name == "delete_file":
+        suffix = _MISSING_PATH_RETRY
+    else:
+        suffix = _BLOCKER_RETRY
+    return f"{content}{suffix}"
 
 
 def file_tool_results_blocked(results: list[dict[str, Any]]) -> bool:
@@ -95,13 +134,18 @@ class AgentExecuteMixin:
         if not raw.strip():
             return False
         try:
+            from pathlib import Path
+
             from ..services.browser_sandbox import coerce_navigate_target
 
-            preview = coerce_navigate_target(raw)
+            settings = getattr(self, "settings", None)
+            raw_ws = getattr(settings, "workspace", None) if settings is not None else None
+            ws = Path(raw_ws) if raw_ws else None
+            preview = coerce_navigate_target(raw, workspace=ws)
         except Exception:
             preview = ""
         if preview:
-            self._emit("browser_open", {"url": preview, "tool": "browser_navigate"})
+            self._emit("browser_open", {"url": preview, "tool": "browser_navigate", "session_id": getattr(self, "session_id", None) or ""})
             return True
         return False
 
@@ -109,6 +153,41 @@ class AgentExecuteMixin:
         fn = tc.get("function") or {}
         raw_name = fn.get("name") or ""
         name = _alias_tool_name(raw_name)
+        if getattr(self, "_block_delegate", False) and name in {"delegate_task", "delegate_dialogue", "ask_agent"}:
+            call_id = str(tc.get("id") or new_id("call"))
+            content = (
+                "ERROR: this turn is inside a group collaboration harness. "
+                "Finish the assigned part yourself. Do not spawn or ask another agent."
+            )
+            self._emit(
+                "tool_start",
+                {
+                    "name": name,
+                    "args": {},
+                    "call_id": call_id,
+                    "needs_approval": False,
+                    "summary": content,
+                    "message": f"→ {name}",
+                },
+            )
+            self._emit(
+                "tool_end",
+                {
+                    "name": name,
+                    "call_id": call_id,
+                    "ok": False,
+                    "preview": content[:400],
+                    "result": content,
+                    "message": f"← {name} blocked (group harness)",
+                },
+            )
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": content,
+                "ts": time.time(),
+            }
         args = parse_tool_args(fn.get("arguments") or "{}")
         tool = self.registry.get(name)
         call_id = str(tc.get("id") or new_id("call"))
@@ -365,15 +444,36 @@ class AgentExecuteMixin:
             and not str(content).lstrip().startswith("ERROR")
             and not (name == "browser_navigate" and previewed)
         ):
-            nav_url = str(args.get("url") or "")
-            if name == "browser_navigate" or not nav_url:
-                try:
-                    payload = json.loads(content) if str(content).lstrip().startswith("{") else {}
-                    if isinstance(payload, dict) and payload.get("url"):
-                        nav_url = str(payload.get("url") or nav_url)
-                except Exception:
-                    pass
-            self._emit("browser_open", {"url": nav_url, "tool": name})
+            # Only browser_navigate should drive loadURL. Other browser_* tools
+            # used to re-emit the page URL here, which made the UI/Electron
+            # navigate again — often rewinding a search-results / article page
+            # back to the site homepage mid-task. Reveal the panel only.
+            nav_url = ""
+            if name == "browser_navigate":
+                nav_url = str(args.get("url") or "")
+                if not nav_url:
+                    try:
+                        payload = (
+                            json.loads(content)
+                            if str(content).lstrip().startswith("{")
+                            else {}
+                        )
+                        if isinstance(payload, dict) and payload.get("url"):
+                            nav_url = str(payload.get("url") or "")
+                    except Exception:
+                        pass
+            self._emit(
+                "browser_open",
+                {
+                    "url": nav_url,
+                    "tool": name,
+                    "session_id": getattr(self, "session_id", None) or "",
+                    # Non-navigate browser_* must only reveal the panel. Emitting
+                    # an empty/stale url made the UI loadURL the first homepage
+                    # again after search/results had already loaded.
+                    "reveal_only": not bool(nav_url),
+                },
+            )
 
         if name in {
             "run_shell",

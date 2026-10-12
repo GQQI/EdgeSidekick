@@ -1,4 +1,4 @@
-# Secrets & local env
+﻿# Secrets & local env
 .env
 src/data/model.json
 src/data/workspace.json
@@ -19,6 +19,14 @@ src/workspace/**
 
 # Legacy / accidental runtime root (never commit)
 backend/
+
+# Agent scratch, one-off patches, and local backups (never commit)
+_backup_*/
+_patch_*.py
+_scan_*.py
+_chk*.py
+_fix_*.py
+_s_*.txt
 
 # Per-user installed skills live under src/data/tenants/ (ignored above).
 # Bundled seed skills in src/skills are committed.
@@ -63,3 +71,41 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Agent one-off scratch at repo root (never commit)
+/_*.py
+/_*.txt
+/_*.b64
+/_diag*.txt
+/_server_*.txt
+/_capture*.log
+
+# Local gallery capture runtime logs
+/docs/screenshots/_capture*.json
+/docs/screenshots/_capture*.log
+/docs/screenshots/_capture-error.png
+
+# Accidental root node_modules
+/node_modules/
+
+# Runtime data / large media (never commit)
+/data/
+/ui/data/
+*.mp4
+scripts/_*.py
+.venv/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+packaging/**/payload/
+packaging/windows/cache/
+*.log
+.env*
+!.env.example
+src/data/**/auth_tokens*
+src/data/**/users*
+src/data/**/sessions*
+src/data/**/fs_undo*
+src/data/**/memory*
+scripts/capture-*.mjs

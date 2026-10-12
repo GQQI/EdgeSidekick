@@ -1,0 +1,941 @@
+/* === social layout polish: full-height share + browser modal (2026-09-19) === */
+
+/* Share pane fills the chat column height (overrides leftover max-height: ~3xvh rules). */
+.social-shell,
+.social-shell .social-body {
+  min-height: 0 !important;
+  height: 100% !important;
+}
+
+.social-shell .social-body.has-share {
+  display: grid !important;
+  grid-template-columns: auto 1fr !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  flex: 1 1 auto !important;
+  gap: 0 !important;
+}
+
+.social-shell .social-share-pane {
+  display: flex !important;
+  flex-direction: column !important;
+  align-self: stretch !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.social-shell .social-share-pane:not(.collapsed) {
+  width: min(320px, 36vw) !important;
+  min-width: 280px !important;
+  max-width: 360px !important;
+}
+
+.social-shell .social-share-tabs {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 10px !important;
+  border-bottom: 1px solid var(--line, rgba(15, 23, 42, 0.12));
+}
+
+.social-shell .social-share-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px;
+  padding: 12px !important;
+}
+
+.social-shell .social-share-memory,
+.social-shell .social-member-list,
+.social-shell .social-share-tool {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: auto !important;
+}
+
+.social-shell .social-member-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px;
+}
+
+.social-shell .social-share-tool {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+}
+
+.social-shell .social-chat-pane {
+  min-height: 0 !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+@media (max-width: 900px) {
+  .social-shell .social-body.has-share {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: minmax(42vh, 48vh) minmax(0, 1fr) !important;
+  }
+  .social-shell .social-share-pane:not(.collapsed) {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: 100% !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line, rgba(15, 23, 42, 0.12)) !important;
+  }
+  .social-shell .social-share-pane.collapsed {
+    max-height: 44px !important;
+    height: 44px !important;
+  }
+}
+
+/* Browser modal: clean centered dialog */
+.social-sheet-mask.social-sheet-mask-center {
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.52) !important;
+  backdrop-filter: blur(4px);
+}
+
+.social-sheet.social-browser-modal {
+  width: min(1100px, calc(100vw - 48px));
+  height: min(86vh, 860px);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border-radius: 16px !important;
+  padding: 0 !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28) !important;
+  background: var(--surface-strong, #fff) !important;
+  border: 1px solid var(--line, rgba(15, 23, 42, 0.12));
+}
+
+.social-browser-modal .social-sheet-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--line, rgba(15, 23, 42, 0.12));
+  background: color-mix(in srgb, var(--surface-strong, #fff) 92%, var(--surface-2, #f8fafc));
+}
+
+.social-browser-modal .social-sheet-head strong {
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.social-browser-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.social-browser-body > * {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.social-browser-body .browser-panel,
+.social-browser-body .side-panel.browser-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.social-browser-body .side-panel-head {
+  flex: 0 0 auto;
+  padding: 8px 12px !important;
+  border-bottom: 1px solid var(--line, rgba(15, 23, 42, 0.1));
+  gap: 8px;
+}
+
+.social-browser-body .browser-url-row,
+.social-browser-body .browser-actions {
+  margin: 8px 12px !important;
+}
+
+.social-browser-body .browser-url-row {
+  margin-bottom: 4px !important;
+}
+
+.social-browser-body .browser-actions {
+  margin-top: 0 !important;
+  margin-bottom: 8px !important;
+  flex-wrap: wrap;
+}
+
+.social-browser-body .browser-host-hint,
+.social-browser-body .browser-session-url,
+.social-browser-body .browser-msg,
+.social-browser-body .browser-warn {
+  margin-left: 12px !important;
+  margin-right: 12px !important;
+}
+
+.social-browser-body .browser-preview,
+.social-browser-body .browser-preview-live {
+  flex: 1 1 auto !important;
+  min-height: 280px !important;
+  margin: 0 12px 12px !important;
+  border-radius: 12px !important;
+}
+
+html[data-theme="dark"] .social-sheet.social-browser-modal {
+  background: var(--surface-strong, #161b22) !important;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .social-browser-modal .social-sheet-head {
+  background: color-mix(in srgb, var(--surface-strong, #161b22) 90%, #0d1117);
+}
+
+/* Mini "computer screen" card: mirrors the agent's headless browser in-thread.
+   Rendered as an in-flow message bubble (agent side), not pinned to the
+   composer. */
+.social-browser-msg {
+  max-width: 92%;
+  margin-bottom: 4px;
+}
+
+.social-browser-in-bubble {
+  margin-top: 10px;
+  width: 100%;
+}
+.social-browser-in-bubble .social-browser-card {
+  width: min(460px, 100%);
+}
+
+
+.social-browser-card {
+  border: 1px solid var(--line, rgba(15, 23, 42, 0.14));
+  border-radius: 12px;
+  background: var(--surface-strong, #fff);
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 100%);
+  max-width: 100%;
+}
+
+.social-browser-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line, rgba(15, 23, 42, 0.1));
+  background: color-mix(in srgb, var(--surface-strong, #fff) 90%, var(--surface-2, #f1f5f9));
+}
+
+.social-browser-card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #94a3b8;
+}
+
+.social-browser-card-dot.live {
+  background: #22c55e;
+  animation: socialBrowserCardPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes socialBrowserCardPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.social-browser-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--text-2, #475569);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.social-browser-card-btn {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-2, #475569);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.social-browser-card-btn:hover {
+  background: color-mix(in srgb, var(--text-2, #475569) 12%, transparent);
+}
+
+.social-browser-card-body {
+  position: relative;
+  height: 210px;
+  min-height: 0;
+  background: #0f172a;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.social-browser-card.ended .social-browser-card-body {
+  cursor: default;
+  background: color-mix(in srgb, var(--surface-2, #f1f5f9) 70%, var(--surface-strong, #fff));
+}
+
+.social-browser-card-shot {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+  user-select: none;
+}
+.social-browser-card.fill {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.social-browser-card.fill .social-browser-card-body {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+  background: #0a0f16;
+}
+.social-browser-card.fill .social-browser-card-shot {
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center top;
+  background: #0a0f16;
+}
+.social-sheet.social-browser-modal {
+  resize: both;
+  overflow: hidden;
+  min-width: 420px;
+  min-height: 320px;
+}
+.social-browser-float.full {
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+}
+.social-browser-float {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  min-height: 240px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface-strong, #fff);
+  border: 1px solid var(--line, rgba(15, 23, 42, 0.16));
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+}
+.social-browser-float-head {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 8px 0 12px;
+  cursor: grab;
+  user-select: none;
+  border-bottom: 1px solid var(--line, rgba(15, 23, 42, 0.12));
+}
+.social-browser-float-head strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.social-browser-float-tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.social-browser-float-tools .social-icon-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  flex: 0 0 28px;
+  line-height: 0;
+}
+.social-browser-float-tools .social-icon-btn.on {
+  background: var(--accent-soft, hsl(220 80% 56% / 0.16));
+  color: var(--social-accent, #2563eb);
+}
+.social-browser-card-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.social-browser-float-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.social-browser-float-body > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+}
+.social-browser-float-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+.social-browser-dock {
+  position: static;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--social-accent, #2563eb);
+}
+
+.social-browser-card-empty {
+  margin: 0;
+  padding: 12px;
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.social-browser-card.ended .social-browser-card-empty {
+  color: var(--text-2, #475569);
+}
+
+.social-browser-card-flag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.72);
+  pointer-events: none;
+}
+
+html[data-theme="dark"] .social-browser-card {
+  background: var(--surface-strong, #161b22);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .social-browser-card-head {
+  background: color-mix(in srgb, var(--surface-strong, #161b22) 90%, #0d1117);
+}
+
+
+.social-ctx-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  max-width: min(100%, 720px);
+}
+.social-ctx-chip.muted {
+  opacity: 0.55;
+}
+.social-ctx-chip {
+  white-space: nowrap;
+}
+
+
+.social-wb-sync {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--social-accent, #2563eb) 16%, transparent);
+  color: var(--social-accent, #2563eb);
+  white-space: nowrap;
+}
+.social-dm-banner.synced {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+
+.social-wb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 12px;
+  min-height: 0;
+  flex: 1;
+}
+.social-wb-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.social-wb-panel-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted, #94a3b8);
+  line-height: 1.4;
+}
+.social-wb-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.social-wb-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  min-height: 120px;
+  max-height: min(52vh, 480px);
+  padding-right: 2px;
+}
+.social-wb-preview-row {
+  border: 1px solid var(--line, rgba(15, 23, 42, 0.12));
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface, #fff);
+}
+.social-wb-preview-row.user {
+  border-color: color-mix(in srgb, var(--social-accent, #2563eb) 28%, transparent);
+}
+.social-wb-preview-row.agent {
+  background: color-mix(in srgb, var(--surface, #fff) 88%, #64748b);
+}
+.social-wb-preview-who {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted, #64748b);
+  margin-bottom: 4px;
+}
+.social-wb-preview-text {
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.45;
+}
+.social-wb-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 12px 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line, rgba(15, 23, 42, 0.14));
+  background: color-mix(in srgb, var(--social-accent, #2563eb) 10%, transparent);
+  color: var(--ink, #0f172a);
+  font-size: 0.78rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.social-wb-strip:hover {
+  background: color-mix(in srgb, var(--social-accent, #2563eb) 18%, transparent);
+}
+
+
+.speaker-roster {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px clamp(14px, 1.8vw, 24px);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--bg, #f8fafc) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border: none;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  z-index: 5;
+}
+.speaker-roster-title {
+  font-size: 12px;
+  opacity: 0.7;
+  font-weight: 600;
+  margin-right: 2px;
+}
+.speaker-roster-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+.speaker-roster-chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: inherit;
+}
+
+
+/* Social chat continued inside the workbench pane */
+.social-shell.embedded {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+
+/* social share collapse docked to sidebar bottom */
+.social-shell .social-share-pane {
+  display: flex;
+  flex-direction: column;
+}
+.social-shell .social-share-pane > .social-share-tabs,
+.social-shell .social-share-pane > .social-share-body,
+.social-shell .social-share-pane > .social-share-rail {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.social-shell .social-share-pane .social-share-collapse {
+  order: 999;
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  top: auto;
+  width: 100%;
+  height: 36px;
+  border-radius: 0;
+  z-index: 5;
+  flex: 0 0 auto;
+}
+.social-shell .social-share-pane.collapsed .social-share-collapse {
+  width: 100%;
+}
+
+
+/* Collapsed share rail: icons only — never show truncated tab names. */
+.social-share-pane.collapsed .social-share-rail button {
+  font-size: 0;
+  color: inherit;
+  overflow: hidden;
+}
+.social-share-pane.collapsed .social-share-rail button svg {
+  display: block;
+}
+.social-share-tabs.icon-rail .social-tab-label,
+.social-share-pane.collapsed .social-share-tabs .social-tab-label {
+  display: none !important;
+}
+
+
+/* Social composer stop control — matches send fab footprint, danger fill. */
+.social-stop-fab {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 0;
+  background: #dc2626;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  box-shadow: 0 4px 12px color-mix(in srgb, #dc2626 40%, transparent);
+  transition: transform 0.12s ease, filter 0.15s ease, opacity 0.15s ease;
+}
+.social-stop-fab:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+.social-stop-fab:active {
+  transform: scale(0.96);
+}
+.social-stop-fab-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #fff;
+  display: block;
+}
+html[data-theme="dark"] .social-stop-fab {
+  background: #ef4444;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+}
+
+
+/* Persona polish control on create/edit agent forms */
+.social-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.social-persona-polish {
+  border: none;
+  background: transparent;
+  color: var(--accent, #6366f1);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.85;
+}
+.social-persona-polish:hover:not(:disabled) {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent, #6366f1) 12%, transparent);
+}
+.social-persona-polish:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+
+.social-member-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.social-member-row-wrap .social-member-row {
+  flex: 1;
+  min-width: 0;
+}
+.social-agent-action.danger {
+  color: var(--danger, #dc2626);
+}
+
+
+/* Persona polish controls inside the textarea */
+.social-persona-box {
+  position: relative;
+  width: 100%;
+}
+.social-persona-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding-bottom: 40px !important;
+  resize: vertical;
+}
+.social-persona-box.polishing textarea {
+  opacity: 0.92;
+}
+.social-persona-box-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+}
+.social-persona-box-actions > * {
+  pointer-events: auto;
+}
+.social-persona-polish {
+  border: 1px solid var(--border, rgba(148,163,184,0.45));
+  background: var(--surface, #fff);
+  color: var(--ink, #334155);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.social-persona-polish:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.social-persona-polish.undo {
+  opacity: 0.85;
+}
+html[data-theme="dark"] .social-persona-polish {
+  background: rgba(30, 36, 46, 0.95);
+  color: var(--ink, #e5e7eb);
+}
+
+/* Bubble hover meta: time + copy */
+.social-bubble-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.social-bubble-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+  padding: 0 2px;
+  user-select: none;
+}
+.social-msg:hover .social-bubble-meta,
+.social-bubble-wrap:hover .social-bubble-meta,
+.social-bubble-meta:focus-within {
+  opacity: 1;
+}
+.social-msg.user .social-bubble-meta {
+  justify-content: flex-end;
+}
+.social-bubble-copy {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.social-bubble-copy:hover {
+  color: var(--ink, #334155);
+}
+
+
+/* Social list folders + pager */
+.social-folder-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 0 2px 8px;
+  overflow-x: auto;
+}
+.social-folder-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--border, #d0d7de);
+  background: var(--panel, #fff);
+  color: inherit;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.social-folder-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.social-folder-chip.on {
+  background: var(--accent, #3b82f6);
+  border-color: transparent;
+  color: #fff;
+}
+.social-folder-chip-delete {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--danger, #dc2626) 45%, transparent);
+  background: transparent;
+  color: var(--danger, #dc2626);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.social-folder-chip-add {
+  opacity: 0.85;
+}
+.social-folder-create {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 2px 10px;
+}
+.social-folder-create input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--input-bg, #fff);
+  color: inherit;
+}
+.social-list-meta {
+  padding: 0 4px 6px;
+  font-size: 12px;
+}
+.social-folder-badge {
+  flex: 0 0 auto;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 16%, transparent);
+  color: var(--accent, #3b82f6);
+}
+html[data-theme="dark"] .social-folder-chip {
+  border-color: #3a3f46;
+  background: #1c1f24;
+}
+html[data-theme="dark"] .social-folder-chip.on {
+  background: #3b82f6;
+  color: #fff;
+}
+

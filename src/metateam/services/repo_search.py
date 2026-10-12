@@ -87,7 +87,9 @@ def search_text(
     hits = None
     if engine != "walk":
         hits = _try_external(ws, root, q, glob_n, regex=regex, cap=cap)
-    if hits is None:
+    # An external miss (ripgrep exit 1, or a Windows path the line parser
+    # dropped) must not hide a file the walk would find.
+    if not hits:
         hits = list(
             _walk_hits(ws, root, q, glob_n, pattern=pattern, regex=regex, cap=cap)
         )

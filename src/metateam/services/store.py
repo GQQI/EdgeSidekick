@@ -29,6 +29,8 @@ class ChatSession:
     stop_requested: bool = False
     agent_tree: list[Any] = field(default_factory=list)
     pending_job_notices: list[dict[str, Any]] = field(default_factory=list)
+    # Social (会话版) one-shot session: excluded from the workbench history list.
+    hidden: bool = False
 
 
 _UNTITLED_TITLES = frozenset({"新会话", "New chat", "Untitled", ""})
@@ -69,6 +71,28 @@ def _user_turn_count(messages: list[dict[str, Any]]) -> int:
         for m in messages
         if m.get("role") == "user" and not _is_internal_message(m)
     )
+
+
+# Prompts the social shell (会话版) sends for its one-shot member/DM calls.
+_SOCIAL_TURN_PREFIXES = (
+    "[社交私聊模式]",
+    "[社交群聊模式",
+    "你是人设文案助手。根据用户提供的智能体信息",
+)
+
+
+def _single_social_turn(messages: list[dict[str, Any]]) -> bool:
+    """Legacy social one-shot junk: a session whose only real user turn is a
+    synthetic social prompt. Older builds persisted every social member/wave
+    call as its own session, which then polluted the workbench history — hide
+    those retroactively. Real workbench turns never use these markers, and a
+    lead-DM session bridged to the workbench accumulates many turns."""
+    turns = [
+        m for m in messages if m.get("role") == "user" and not _is_internal_message(m)
+    ]
+    if len(turns) != 1:
+        return False
+    return str(turns[0].get("content") or "").lstrip().startswith(_SOCIAL_TURN_PREFIXES)
 
 
 def _message_display_text(m: dict[str, Any]) -> str:
@@ -208,6 +232,34 @@ class SessionStore:
         self._lock = threading.Lock()
         self._sessions: dict[str, ChatSession] = {}
 
+    def _approval_gate(self) -> Any:
+        from ..runtime.approval import ApprovalGate
+        from .app_prefs import auto_approve_tools
+
+        gate = ApprovalGate()
+        if auto_approve_tools():
+            gate.set_allow_all(True)
+        return gate
+
+    def apply_auto_approve_tools(self, enabled: bool, user_id: str | None = None) -> None:
+        from .tenant_context import get_user_id
+
+        uid = user_id if user_id is not None else get_user_id()
+        with self._lock:
+            sessions = [
+                s
+                for s in self._sessions.values()
+                if not uid or s.user_id == uid or not s.user_id
+            ]
+        for sess in sessions:
+            try:
+                # 会话版 has no approval UI. Keep its gate open even when the
+                # workbench safety switch is turned off.
+                social = bool(getattr(sess.agent, "social", False) or sess.hidden)
+                sess.agent.approval.set_allow_all(True if social else bool(enabled))
+            except Exception as exc:
+                log_exception(_log, f"apply auto-approve failed for {sess.id}", exc)
+
     def refresh_settings(
         self,
         *,
@@ -264,7 +316,7 @@ class SessionStore:
                 log_exception(_log, f"refresh_settings failed for session {sess.id}", exc)
         return self.settings
 
-    def create(self, workspace: Optional[str] = None) -> ChatSession:
+    def create(self, workspace: Optional[str] = None, *, social: bool = False) -> ChatSession:
         # Always use latest settings for new chats (model switch)
         from .tenant_context import get_user_id
         from .model_config import apply_to_settings, load_model_config
@@ -284,14 +336,102 @@ class SessionStore:
             except Exception:
                 pass
         bus = EventBus()
-        from ..runtime.approval import ApprovalGate
-
-        agent = Agent(sess_settings, bus=bus, approval=ApprovalGate())
+        agent = Agent(sess_settings, bus=bus, approval=self._approval_gate(), social=social)
+        if social:
+            agent.approval.set_allow_all(True)
         sess = ChatSession(id=new_id("sess"), agent=agent, user_id=get_user_id())
         agent.session_id = sess.id
         with self._lock:
             self._sessions[sess.id] = sess
         return sess
+
+    def ensure_schedule_home(self) -> ChatSession:
+        """Durable, non-hidden session that owns tasks created from 会话版."""
+        from .tenant_context import get_user_id
+        from .model_config import apply_to_settings, load_model_config
+
+        uid = get_user_id()
+        raw = (uid or "default").strip() or "default"
+        safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in raw)[:64]
+        sid = f"schedhome_{safe}"
+        existing = self.get(sid)
+        if existing:
+            changed = False
+            if existing.hidden:
+                existing.hidden = False
+                changed = True
+            if is_untitled_session(existing.title):
+                existing.title = "日程"
+                changed = True
+            if changed:
+                self.persist(sid)
+            return existing
+        self.settings = get_settings()
+        apply_to_settings(self.settings, load_model_config())
+        sess_settings = self.settings.clone()
+        bus = EventBus()
+        agent = Agent(sess_settings, bus=bus, approval=self._approval_gate())
+        sess = ChatSession(id=sid, agent=agent, user_id=uid, title="日程", hidden=False)
+        agent.session_id = sess.id
+        with self._lock:
+            self._sessions[sid] = sess
+        self.persist(sid)
+        return sess
+
+    def anchor_schedule_session(self, sess: Optional[ChatSession]) -> ChatSession:
+        """Bind a new task to a session that will still exist when it fires.
+
+        Workbench chats keep the task. Hidden 会话版 turns use the 日程 home,
+        because their one-shot session is gone before the next run.
+        """
+        hidden = sess is None or bool(getattr(sess, "hidden", False)) or bool(
+            getattr(getattr(sess, "agent", None), "social", False)
+        )
+        if sess is not None and not hidden:
+            return sess
+        home = self.ensure_schedule_home()
+        if sess is not None and not home.busy:
+            folder = getattr(getattr(getattr(sess, "agent", None), "settings", None), "workspace", None)
+            if folder:
+                try:
+                    self.bind_workspace(home, str(folder))
+                except Exception:
+                    pass
+        return home
+
+    def bind_workspace(self, sess: ChatSession, workspace: Optional[str]) -> None:
+        """Rebind one idle session to the workspace supplied by its UI turn.
+
+        This is deliberately session-scoped: switching a social group's folder
+        must not mutate the tenant-wide default or other conversations.  It is
+        also safe for short-lived social sessions, whose synthetic ids make a
+        new session on nearly every member/wave call.
+        """
+        raw = str(workspace or "").strip()
+        if not raw:
+            return
+        from .workspace_store import remember_recent, resolve_workspace_path
+
+        folder = resolve_workspace_path(raw)
+        current = getattr(sess.agent.settings, "workspace", None)
+        try:
+            unchanged = current is not None and current.resolve() == folder
+        except Exception:
+            unchanged = False
+        if unchanged:
+            return
+        sess.agent.settings.workspace = folder
+        # Discoveries from the previous root must not be treated as facts in
+        # the newly selected folder. The next run rebuilds grounding as well.
+        try:
+            sess.agent.workspace_facts.clear()
+            sess.agent._refresh_workspace_grounding()
+        except Exception as exc:
+            log_exception(_log, f"workspace grounding failed for session {sess.id}", exc)
+        try:
+            remember_recent(folder)
+        except Exception:
+            pass
 
     def decide_approval(
         self,
@@ -481,7 +621,19 @@ class SessionStore:
             except Exception:
                 pass
         bus = EventBus()
-        agent = Agent(sess_settings, bus=bus, messages=messages)
+        agent = Agent(sess_settings, bus=bus, messages=messages, approval=self._approval_gate())
+        # Disk stores the full transcript so the chat can scroll back. The live
+        # window is only the working set — otherwise the first turn after open
+        # is already several times over the limit and every new read is dropped.
+        from ..runtime.context import park_overflow
+
+        live, archived = park_overflow(
+            agent.messages,
+            context_limit=max(8000, int(agent.settings.context_limit or 0)),
+            keep_recent_tokens=max(4000, int(agent.settings.keep_recent_tokens or 0)),
+        )
+        agent.messages = live
+        agent._archived_messages = list(archived)
         mtime = path.stat().st_mtime
         title = _prefer_title(meta.title, _title_from_messages(messages, ""), fallback=meta.id)
         sess = ChatSession(
@@ -491,6 +643,7 @@ class SessionStore:
             updated_at=mtime,
             title=title,
             user_id=meta.user_id or uid,
+            hidden=bool(meta.hidden),
             agent_tree=list(extra.get("agent_tree") or []) if isinstance(extra.get("agent_tree"), list) else [],
         )
         agent.session_id = sess.id
@@ -533,6 +686,11 @@ class SessionStore:
                 sid = meta.id or path.stem
                 user_count = _user_turn_count(messages)
                 if user_count <= 0:
+                    continue
+                # Social one-shot sessions (会话版临时会话) never belong in the
+                # workbench history — new builds mark them hidden on creation,
+                # older files are recognized by their single social prompt.
+                if meta.hidden or (user_count == 1 and _single_social_turn(messages)):
                     continue
                 mtime = path.stat().st_mtime
                 updated = mtime
@@ -592,6 +750,9 @@ class SessionStore:
             full_msgs = _full_transcript(s.agent)
             user_turns = _user_turn_count(full_msgs)
             if user_turns <= 0:
+                continue
+            # Social one-shot sessions never belong in the workbench history.
+            if s.hidden or (user_turns == 1 and _single_social_turn(full_msgs)):
                 continue
             prev = items.get(s.id)
             # Prefer the freshest interaction time (memory vs disk)
@@ -703,7 +864,9 @@ class SessionStore:
         # working set — otherwise context compression during a long chat would
         # permanently erase earlier turns from disk history.
         full_msgs = _full_transcript(sess.agent)
-        if _user_turn_count(full_msgs) <= 0:
+        # The 日程 home is created empty so a hidden social chat can anchor a
+        # future run. It must survive a restart even before the first fire.
+        if _user_turn_count(full_msgs) <= 0 and not str(session_id).startswith("schedhome_"):
             return None
         tree: list[Any] = []
         try:
@@ -722,6 +885,7 @@ class SessionStore:
             user_id=sess.user_id or None,
             title=sess.title or "",
             extra={"agent_tree": tree},
+            hidden=sess.hidden,
         )
         return str(path)
 

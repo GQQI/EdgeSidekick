@@ -1,6 +1,6 @@
 # Windows 离线安装包
 
-在**能联网的电脑**上打一次包，把生成的 `Sidekick-Setup-*-win-x64.exe` 拷到离线机器，双击即可安装。目标机**不需要** Python、Node.js，安装过程也**不访问网络**。
+在**能联网的电脑**上打一次包，把生成的 `EdgeSidekick-Setup-*-win-x64.exe` 拷到离线机器，双击即可安装。目标机**不需要** Python、Node.js，安装过程也**不访问网络**。
 
 对话仍需要模型 API（公网，或内网 / 本机 Ollama 等）。安装本身与运行壳不依赖外网。
 
@@ -31,19 +31,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1
 
 产物在 `desktop/dist/`：
 
-- `Sidekick-Setup-<version>-win-x64.exe` — NSIS 安装程序（推荐）
-- `Sidekick-<version>-win-x64.zip` — 解压即用的便携版
+- `EdgeSidekick-Setup-<version>-win-x64.exe` — NSIS 安装程序（推荐）
+- `EdgeSidekick-<version>-win-x64.zip` — 解压即用的便携版
 
 ## 在离线电脑上安装
 
 1. 拷贝 Setup `.exe`（U 盘 / 内网共享均可）
 2. 双击安装，可选目录；**不需要管理员**（默认装到当前用户目录）
-3. 开始菜单或桌面快捷方式启动 **Sidekick**
+3. 开始菜单或桌面快捷方式启动 **EdgeSidekick**
 4. 选工作区 → 设置里填模型 API（可指向内网）
 
-配置与会话写在 `%APPDATA%\Sidekick\`，卸载时默认保留。日志：`%APPDATA%\Sidekick\logs\backend.log`。
+配置与会话写在 `%APPDATA%\EdgeSidekick\`，卸载时默认保留。日志：`%APPDATA%\EdgeSidekick\logs\backend.log`。
 
-便携 zip：解压后运行 `Sidekick.exe`。
+便携 zip：解压后运行 `EdgeSidekick.exe`。
 
 ## 安装包里有什么
 

@@ -1,17 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import {
   authLogin,
   authLogout,
   authSetup,
+  onAuthLost,
   fetchShellJobs,
   fetchSkills,
+  fetchModel,
+  fetchSchedules,
+  subscribeScheduleLive,
+  browserClose,
+  fetchNetworkOnline,
+  truncateSession,
   type Health,
   type SessionItem,
   type ShellJobSnapshot,
+  type ScheduleTask,
   type SkillItem,
   type WorkspaceItem,
 } from "./api";
 import {
+  type SidePanel,
   loadExplorerCollapsed,
   loadExplorerWidth,
   loadSidePanel,
@@ -43,7 +52,6 @@ import { ActivitySidebar } from "./components/ActivitySidebar";
 import { AppHeader } from "./components/AppHeader";
 import type { BrowserOpenRequest } from "./components/BrowserPanel";
 import { ChatThread } from "./components/ChatThread";
-import { ChatTabsBar, type ChatTabView } from "./components/ChatTabsBar";
 import { ComposerBar } from "./components/ComposerBar";
 import { ConfirmBanner } from "./components/ConfirmBanner";
 import { DetailPanel } from "./components/DetailPanel";
@@ -51,6 +59,12 @@ import { EditRestoreModal } from "./components/EditRestoreModal";
 import { MemoryLibraryPanel } from "./components/MemoryLibrary";
 import { SandboxUrlPrompt, type SandboxUrlPromptState } from "./components/SandboxUrlPrompt";
 import { SettingsModal } from "./components/SettingsModal";
+import { SocialShell } from "./social/SocialShell";
+import { loadUiMode, saveUiMode, type UiMode } from "./uiMode";
+import { getDesktop } from "./desktopBridge";
+import {
+  captureWorkbenchSocialLinkFromLastView,
+} from "./social/workbenchSocialLink";
 import { AuthGate } from "./components/AuthGate";
 import { WelcomeGate } from "./components/WelcomeGate";
 import { useSessionBootstrap } from "./hooks/useSessionBootstrap";
@@ -100,6 +114,7 @@ export function App() {
   const [sessionsTotal, setSessionsTotal] = useState(0);
   const [sessionsTotalPages, setSessionsTotalPages] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [openBrowserWhenSettingsClose, setOpenBrowserWhenSettingsClose] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("workspace");
   const [mainView, setMainView] = useState<"chat" | "memory">("chat");
   const [stats, setStats] = useState({ tokens: 0, iters: 0 });
@@ -116,12 +131,152 @@ export function App() {
   const [explorerCollapsed, setExplorerCollapsed] = useState(loadExplorerCollapsed);
   const [sidePanel, setSidePanel] = useState(loadSidePanel);
   const [sandboxUrlPrompt, setSandboxUrlPrompt] = useState<SandboxUrlPromptState | null>(null);
+  const onCtrlClickUrl = useCallback((url: string, x: number, y: number) => {
+    setSandboxUrlPrompt({ url: sanitizeBrowserUrl(url) || url, x, y });
+  }, []);
   const [browserOpenRequest, setBrowserOpenRequest] = useState<BrowserOpenRequest | null>(null);
+  const [uiMode, setUiMode] = useState<UiMode>(() => loadUiMode());
+  const workbenchWsRef = useRef(activeWs);
+  if (uiMode === "workbench") workbenchWsRef.current = activeWs;
+  const closeBrowserSandbox = useCallback(() => {
+    setBrowserOpenRequest(null);
+    try {
+      const desktop = getDesktop();
+      if (desktop?.browser) {
+        // Blank the live view so a workspace/session switch does not keep the old page.
+        if (desktop.browser.navigate) void desktop.browser.navigate("about:blank").catch(() => undefined);
+        if (desktop.browser.hide) void desktop.browser.hide();
+      }
+    } catch {
+      /* ignore */
+    }
+    void browserClose().catch(() => undefined);
+  }, []);
+
+  const isPublicHttpUrl = (url: string) => {
+    const u = String(url || "").trim().toLowerCase();
+    if (!u.startsWith("http://") && !u.startsWith("https://")) return false;
+    try {
+      const host = new URL(u).hostname;
+      if (!host || host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host.endsWith(".localhost")) {
+        return false;
+      }
+    } catch {
+      return true;
+    }
+    return true;
+  };
+
+  const openBrowserSandbox = async (url: string) => {
+    const clean = sanitizeBrowserUrl(url) || url;
+    if (!clean) {
+      // Reveal-only: show the existing live view, do not loadURL.
+      setSidePanel("browser");
+      if (uiMode === "workbench") {
+        setExplorerCollapsed(false);
+        setExplorerWidth((w) => (w < 520 ? 640 : w));
+      }
+      // Bump nonce so an already-mounted BrowserPanel re-runs showLive/bounds
+      // without navigating. Keep prior url if any.
+      setBrowserOpenRequest((prev) => ({
+        url: prev?.url || "about:blank",
+        nonce: Date.now(),
+        alreadyDriven: true,
+      }));
+      return;
+    }
+    if (isPublicHttpUrl(clean)) {
+      const online = await fetchNetworkOnline();
+      if (!online) {
+        setToast(t("browserOfflineSkip") || "当前无法连接互联网，已跳过打开公网页面。");
+        return;
+      }
+    }
+    // Drive the Electron BrowserView immediately — do not wait for BrowserPanel
+    // to mount (social modal may be closed). This is what leaves about:blank.
+    // Mark alreadyDriven so BrowserPanel does NOT queue a second loadURL on
+    // navChain (that second job often runs after search and rewinds to home).
+    const desktop = getDesktop();
+    let driven = false;
+    if (desktop?.browser?.navigate && clean && clean !== "about:blank") {
+      try {
+        // Mirror desktop/main.mjs shallow-rewind guard so App-driven navigations
+        // cannot erase an in-progress results/article page either.
+        let cur = "";
+        try {
+          cur = String((await desktop.browser.getUrl?.()) || "");
+        } catch { cur = ""; }
+        const skipRewind = (() => {
+          try {
+            if (!cur || cur === "about:blank" || cur.startsWith("chrome://")) return false;
+            const pc = new URL(cur);
+            const pt = new URL(clean);
+            if (pc.protocol !== "http:" && pc.protocol !== "https:") return false;
+            if (pt.protocol !== "http:" && pt.protocol !== "https:") return false;
+            let ch = (pc.hostname || "").toLowerCase();
+            let th = (pt.hostname || "").toLowerCase();
+            if (ch.startsWith("www.")) ch = ch.slice(4);
+            if (th.startsWith("www.")) th = th.slice(4);
+            if (!ch || ch !== th) return false;
+            let cpath = pc.pathname || "/";
+            let tpath = pt.pathname || "/";
+            if (cpath !== "/" && cpath.endsWith("/")) cpath = cpath.slice(0, -1);
+            if (tpath !== "/" && tpath.endsWith("/")) tpath = tpath.slice(0, -1);
+            const tgtIsHome = (tpath === "/" || tpath === "") && !(pt.search || "").trim();
+            const curIsDeeper =
+              (cpath !== "/" && cpath !== "") || Boolean((pc.search || "").trim());
+            return Boolean(tgtIsHome && curIsDeeper);
+          } catch {
+            return false;
+          }
+        })();
+        if (skipRewind) {
+          driven = true; // treat as already on the live page
+          setBrowserOpenRequest({
+            url: cur || clean,
+            nonce: Date.now(),
+            alreadyDriven: true,
+          });
+          setSidePanel("browser");
+          if (uiMode === "workbench") {
+            setExplorerCollapsed(false);
+            setExplorerWidth((w) => (w < 520 ? 640 : w));
+          }
+          return;
+        }
+        await desktop.browser.navigate(clean);
+        driven = true;
+      } catch {
+        /* BrowserPanel / CDP attach will retry */
+      }
+    }
+    setBrowserOpenRequest({
+      url: clean,
+      nonce: Date.now(),
+      alreadyDriven: driven,
+    });
+    // Always mark the activity browser panel so a social modal / sidebar mount
+    // shows the live BrowserView (navigate alone leaves it at 1x1 / hidden).
+    setSidePanel("browser");
+    if (uiMode === "workbench") {
+      setExplorerCollapsed(false);
+      setExplorerWidth((w) => (w < 520 ? 640 : w));
+    }
+  };
+
   const lastBrowserOpenRef = useRef<{ url: string; at: number } | null>(null);
+  useEffect(() => {
+    saveUiMode(uiMode);
+  }, [uiMode]);
   const [shellJobs, setShellJobs] = useState<ShellJobSnapshot[]>([]);
+  const shellJobsRef = useRef<ShellJobSnapshot[]>([]);
+  shellJobsRef.current = shellJobs;
   const [jobsTick, setJobsTick] = useState(0);
   const [jobsFocusId, setJobsFocusId] = useState("");
   const jobStatusRef = useRef<Record<string, string>>({});
+  const [schedulesTick, setSchedulesTick] = useState(0);
+  const [scheduleTasks, setScheduleTasks] = useState<ScheduleTask[]>([]);
+  const scheduleLastRunRef = useRef<Record<string, number>>({});
   const [explorerWidth, setExplorerWidth] = useState(() => loadExplorerWidth(280));
   const [detailWidth, setDetailWidth] = useState(420);
   const [fsRefresh, setFsRefresh] = useState(0);
@@ -156,6 +311,7 @@ export function App() {
   const resizingRef = useRef(false);
   const resizingDetailRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
+  const desiredWsRef = useRef("");
   const askPendingRef = useRef(false);
   const planPendingRef = useRef(false);
   const executingPlanIdRef = useRef<string | null>(null);
@@ -325,7 +481,6 @@ export function App() {
     openSettings: (tab) => openSettingsRef.current(tab),
     openMemory: () => {
       setMainView("memory");
-      setExplorerCollapsed(true);
       setSettingsOpen(false);
     },
     openChat: () => setMainView("chat"),
@@ -376,11 +531,22 @@ export function App() {
    * Every side panel (search/files/browser/git/jobs/undo/history) reads
    * `activeWs`, so they all follow this switch automatically.
    */
+  function sameFolder(a?: string | null, b?: string | null) {
+    const na = String(a || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const nb = String(b || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    return Boolean(na) && na === nb;
+  }
+
   function switchToWorkspace(path: string) {
-    if (!path || path === activeWs?.path) return;
+    if (!path || sameFolder(path, activeWs?.path)) return;
+    desiredWsRef.current = path;
+    const norm = path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
     const targetId = workspaces.find((w) => w.path === path)?.id;
-    const key = targetId || path;
-    const existing = openTabs.find((t) => tabWorkspaceKey(t) === key);
+    const existing = openTabs.find((t) => {
+      if (targetId && t.workspaceId === targetId) return true;
+      const tabPath = (t.workspace || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+      return Boolean(tabPath) && tabPath === norm;
+    });
     if (existing) {
       selectChatTab(existing.id);
     } else {
@@ -393,36 +559,17 @@ export function App() {
     // keep showing the previous chat's folder while fetchSession is in flight.
     const tab = openTabs.find((t) => t.id === id);
     if (tab?.workspace) {
+      desiredWsRef.current = tab.workspace;
+      if (!sameFolder(tab.workspace, activeWs?.path)) {
+        setSessions(session.cachedSessions(tab.workspace, tab.workspaceId) ?? []);
+      }
       setActiveWs({
         path: tab.workspace,
         name: tab.workspaceName || tab.workspace.split(/[/\\]/).pop() || tab.workspace,
         id: tab.workspaceId,
       });
     }
-    void actions.openSession(id);
-  }
-
-  function closeTab(id: string) {
-    const closing = openTabs.find((t) => t.id === id);
-    setOpenTabs((prev) => prev.filter((t) => t.id !== id));
-    if (id !== sessionId) return;
-    const remaining = openTabs.filter((t) => t.id !== id);
-    // Closing the active tab must never jump to a DIFFERENT project's tab —
-    // that's what caused the "closes B, lands on A" bounce. Stay inside the
-    // same workspace (matched by id, not a raw path-string guess): reuse
-    // another of its tabs, or open a fresh draft there.
-    const key = closing ? tabWorkspaceKey(closing) : workspaceKey(activeWs);
-    const sameWs = key ? remaining.find((t) => tabWorkspaceKey(t) === key) : undefined;
-    const ws = closing?.workspace || activeWs?.path || "";
-    if (sameWs) {
-      selectChatTab(sameWs.id);
-    } else if (ws) {
-      void actions.newChatInWorkspace(ws);
-    } else if (remaining.length) {
-      selectChatTab(remaining[0].id);
-    } else {
-      void actions.newChat();
-    }
+    void actions.openSession(id, { workspacePath: tab?.workspace || activeWs?.path || "" });
   }
 
   /**
@@ -514,27 +661,6 @@ export function App() {
     });
   }, [sessionId, activeWs?.path, activeWs?.id, activeWs?.name]);
 
-  // The tab strip above the composer is scoped to the workspace on screen —
-  // other workspaces' chats stay open in the background (openTabs keeps them)
-  // but only surface again once you switch back to that workspace.
-  const activeWsKey = workspaceKey(activeWs);
-  const chatTabViews: ChatTabView[] = openTabs
-    .filter((tab) => !activeWsKey || !tabWorkspaceKey(tab) || tabWorkspaceKey(tab) === activeWsKey)
-    .map((tab) => {
-      const hit = historySessions.find((s) => s.id === tab.id);
-      const running =
-        chat.runningSessionIds.includes(tab.id) || Boolean(busy && tab.id === sessionId);
-      const rawTitle = (hit?.title || "").trim();
-      const untitled = !rawTitle || rawTitle === "新会话" || rawTitle === "New chat" || rawTitle === "Untitled";
-      return {
-        id: tab.id,
-        title: untitled ? t("sessionUntitled") : rawTitle,
-        workspaceName: hit?.workspace_name || tab.workspaceName || tab.workspace || "",
-        running,
-        active: tab.id === sessionId,
-      };
-    });
-
   const openTabWorkspaces = openTabs
     .filter((tab) => tab.workspace)
     .map((tab) => ({
@@ -543,8 +669,10 @@ export function App() {
       running: chat.runningSessionIds.includes(tab.id) || Boolean(busy && tab.id === sessionId),
     }));
 
-  const historyNeedsPoll =
-    busy || chat.runningSessionIds.length > 0 || openTabs.length > 1;
+  // Poll the history list only while something is actually streaming
+  // (this window's own streams are tracked in runningSessionIds). A constant
+  // idle poll — e.g. just because several tabs are open — is wasted traffic.
+  const historyNeedsPoll = busy || chat.runningSessionIds.length > 0;
 
   const reconcileRunningRef = useRef(chat.reconcileRunningSessions);
   reconcileRunningRef.current = chat.reconcileRunningSessions;
@@ -568,6 +696,16 @@ export function App() {
     setAuthPhase,
     setAccountUser,
   });
+
+  useEffect(() => {
+    return onAuthLost(() => {
+      setAccountUser(null);
+      setAuthPhase("login");
+      setSessionId(null);
+      setMessages([]);
+      setActiveWs(null);
+    });
+  }, []);
 
   useAppChrome({
     sidePanel,
@@ -620,10 +758,49 @@ export function App() {
     if (sessionId) saveActiveSessionId(sessionId, activeWs?.path || null);
   }, [sessionId, activeWs?.path]);
 
+  // The model pane renders blank without a setup. Boot fetches it once, but a
+  // failed/raced request would leave it null forever — lazily (re)load it when
+  // the user actually opens the model tab.
+  useEffect(() => {
+    if (!settingsOpen || settingsTab !== "model" || model) return;
+    let cancelled = false;
+    void fetchModel()
+      .then((m) => {
+        if (!cancelled) setModel(m);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsOpen, settingsTab, model]);
+
+  // Settings is a page dialog. The Electron browser view is a native layer
+  // above it, so keep that view parked until the dialog closes.
+  useEffect(() => {
+    if (settingsOpen || sandboxUrlPrompt || editRestorePrompt) {
+      void getDesktop()?.browser.hide();
+      return;
+    }
+    if (!openBrowserWhenSettingsClose || uiMode !== "workbench" || !browserOpenRequest?.url) return;
+    setOpenBrowserWhenSettingsClose(false);
+    setSidePanel("browser");
+    setExplorerCollapsed(false);
+    setExplorerWidth((w) => (w < 520 ? 640 : w));
+  }, [
+    settingsOpen,
+    sandboxUrlPrompt,
+    editRestorePrompt,
+    openBrowserWhenSettingsClose,
+    uiMode,
+    browserOpenRequest,
+  ]);
+
   // History (and the chat-tabs strip, filtered below) is scoped to the
   // workspace on screen — switching workspace must switch which history shows.
   useEffect(() => {
     if (!bootReady) return;
+    if (activeWs?.path) desiredWsRef.current = activeWs.path;
+    setSessions(session.cachedSessions(activeWs?.path, activeWs?.id) ?? []);
     void session.refreshSessions(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootReady, activeWs?.id, activeWs?.path]);
@@ -632,17 +809,42 @@ export function App() {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
 
+  // Workbench + social share one browser sandbox. Close only on a real
+  // workspace switch or when jumping between two concrete sessions.
+  // Do NOT close when sessionId goes null→id (first assignment mid-turn) —
+  // that used to blank the page and make the task look like it ran twice.
+  const browserScopeRef = useRef<{ ws: string; sess: string }>({ ws: "", sess: "" });
+  useEffect(() => {
+    const ws = String(activeWs?.id || activeWs?.path || "");
+    const sess = String(sessionId || "");
+    const prev = browserScopeRef.current;
+    browserScopeRef.current = { ws, sess };
+    if (!prev.ws && !prev.sess) return; // first paint
+    if (prev.ws !== ws) {
+      closeBrowserSandbox();
+      return;
+    }
+    if (prev.sess && sess && prev.sess !== sess) {
+      closeBrowserSandbox();
+    }
+  }, [activeWs?.id, activeWs?.path, sessionId, closeBrowserSandbox]);
+
   useEffect(() => {
     const onOpen = (ev: Event) => {
-      const url = String((ev as CustomEvent<{ url?: string }>).detail?.url || "");
+      const detail = (ev as CustomEvent<{ url?: string; revealOnly?: boolean }>).detail || {};
+      const url = String(detail.url || "");
       setSidePanel("browser");
       setExplorerCollapsed(false);
       setExplorerWidth((w) => (w < 520 ? 640 : w));
-      if (!url) return;
+      if (!url || detail.revealOnly) {
+        // Reveal existing live view; do not loadURL.
+        void openBrowserSandbox("");
+        return;
+      }
       const last = lastBrowserOpenRef.current;
       if (last && last.url === url && Date.now() - last.at < 1600) return;
       lastBrowserOpenRef.current = { url, at: Date.now() };
-      setBrowserOpenRequest({ url, nonce: Date.now() });
+      void openBrowserSandbox(url);
     };
     window.addEventListener("sidekick-browser-open", onOpen);
     return () => window.removeEventListener("sidekick-browser-open", onOpen);
@@ -670,12 +872,75 @@ export function App() {
       }
     };
     void pull();
-    const timer = window.setInterval(pull, 3000);
+    // Fast poll only while a job is running (timely completion toast);
+    // idle keeps a slow poll just to discover agent-started jobs.
+    let ticks = 0;
+    const timer = window.setInterval(() => {
+      ticks += 1;
+      const anyRunning = shellJobsRef.current.some((j) => j.status === "running");
+      if (anyRunning || ticks % 5 === 0) void pull();
+    }, 3000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
   }, [bootReady, authPhase, jobsTick]);
+
+  useEffect(() => {
+    const onSched = () => setSchedulesTick((n) => n + 1);
+    window.addEventListener("sidekick-schedule", onSched);
+    return () => window.removeEventListener("sidekick-schedule", onSched);
+  }, []);
+
+  // Scheduled runs happen off the chat request. This stream forwards their
+  // tokens into the open session (and refreshes the list when one starts or ends).
+  useEffect(() => {
+    if (!bootReady || authPhase !== "ok") return;
+    const ac = new AbortController();
+    let stopped = false;
+    const run = async () => {
+      while (!stopped) {
+        try {
+          await subscribeScheduleLive((ev) => {
+            window.dispatchEvent(new CustomEvent("sidekick-schedule-event", { detail: ev }));
+            if (ev.type === "schedule_trigger" || ev.type === "final" || ev.type === "error") {
+              window.dispatchEvent(new CustomEvent("sidekick-schedule", { detail: ev.data || {} }));
+            }
+          }, ac.signal);
+        } catch {
+          if (stopped || ac.signal.aborted) return;
+        }
+        if (stopped || ac.signal.aborted) return;
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+    };
+    void run();
+    return () => {
+      stopped = true;
+      ac.abort();
+    };
+  }, [bootReady, authPhase]);
+
+  // Slow poll: scheduled runs usually fire while no SSE stream is attached
+  // to their session, so last_run/next_run freshness comes from here.
+  useEffect(() => {
+    if (!bootReady || authPhase !== "ok") return;
+    let cancelled = false;
+    const pull = async () => {
+      try {
+        const res = await fetchSchedules();
+        if (!cancelled) setScheduleTasks(res.items || []);
+      } catch {
+        /* ignore */
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [bootReady, authPhase, schedulesTick]);
 
   useEffect(() => {
     const prev = jobStatusRef.current;
@@ -717,6 +982,26 @@ export function App() {
     jobStatusRef.current = next;
   }, [shellJobs, sessionId, t, chat]);
 
+  // Announce scheduled runs: reload the bound session if it's open, else toast.
+  useEffect(() => {
+    const prev = scheduleLastRunRef.current;
+    const next: Record<string, number> = { ...prev };
+    let reloadId = "";
+    for (const task of scheduleTasks) {
+      const lastRun = task.last_run || 0;
+      const was = prev[task.id];
+      next[task.id] = lastRun;
+      if (was === undefined || was === lastRun || !lastRun) continue;
+      if (task.session_id && sessionId && task.session_id === sessionId) {
+        reloadId = task.session_id;
+      } else {
+        setToast(t("schedulesRanToast", task.title));
+      }
+    }
+    scheduleLastRunRef.current = next;
+    if (reloadId) void actions.reloadSession(reloadId);
+  }, [scheduleTasks, sessionId, t, actions]);
+
   function openJobsPanel(jobId?: string) {
     if (jobId) setJobsFocusId(jobId);
     setSidePanel("jobs");
@@ -724,17 +1009,10 @@ export function App() {
     setExplorerWidth((w) => (w < 420 ? 480 : w));
   }
 
-  function onThreadScroll() {
-    const el = threadRef.current;
-    if (!el) return;
-    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stickBottomRef.current = dist < 80;
-  }
-
-  function openDetail(d: DetailView) {
+  const openDetail = useCallback((d: DetailView) => {
     stickBottomRef.current = false;
     setDetail(d);
-  }
+  }, []);
 
   const ctxPct = Math.min(100, Math.round((ctx.tokens / Math.max(1, ctx.limit)) * 100));
   const ctxWarn = ctxPct >= 72;
@@ -747,6 +1025,7 @@ export function App() {
         t={t}
         theme={theme}
         hasWorkspace={Boolean(activeWs?.path)}
+        hideSessionActions={uiMode === "social"}
         onOpenHistory={session.openHistoryPanel}
         onNewChat={() => void actions.newChat()}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -759,7 +1038,7 @@ export function App() {
           if (!sandboxUrlPrompt) return;
           const target = sanitizeBrowserUrl(sandboxUrlPrompt.url) || sandboxUrlPrompt.url;
           setSandboxUrlPrompt(null);
-          setBrowserOpenRequest({ url: target, nonce: Date.now() });
+          void openBrowserSandbox(target);
           setSidePanel("browser");
           setExplorerCollapsed(false);
           setExplorerWidth((w) => (w < 520 ? 640 : w));
@@ -817,7 +1096,124 @@ export function App() {
             busy={wsBusy}
             workspaces={workspaces}
             onBrowse={() => void actions.browseAndSetWorkspace()}
-            onSelect={(path) => void actions.switchWorkspace(path)}
+            onSelect={(path: string) => void actions.switchWorkspace(path)}
+          />
+        ) : uiMode === "social" ? (
+          <SocialShell
+            t={t}
+            sessionId={sessionId}
+            browserHeld={settingsOpen || Boolean(sandboxUrlPrompt) || Boolean(editRestorePrompt)}
+            workspacePath={activeWs?.path || null}
+            workspaces={workspaces}
+            onAdoptWorkspace={(path: string) => void actions.adoptWorkspace(path)}
+            onSessionId={setSessionId}
+            onOpenSettings={() => dialogs.openSettings()}
+            onToast={setToast}
+            onOpenBrowserUrl={(url: string) => {
+              void openBrowserSandbox(url);
+            }}
+            onCloseBrowserUrl={closeBrowserSandbox}
+            onWorkbenchReload={() => {
+              if (sessionId) void actions.reloadSession(sessionId);
+            }}
+            onWorkbenchClear={async () => {
+              if (!sessionId) return;
+              try {
+                await truncateSession(sessionId, 0);
+              } catch {
+                /* ignore */
+              }
+              setMessages([]);
+            }}
+            onOpenWorkbench={() => {
+              captureWorkbenchSocialLinkFromLastView();
+              setUiMode("workbench");
+              if (browserOpenRequest?.url) {
+                setSidePanel("browser");
+                setExplorerCollapsed(false);
+                setExplorerWidth((w) => (w < 520 ? 640 : w));
+              }
+            }}
+            renderCollabTool={(kind: SidePanel) => (
+              <ActivitySidebar
+                embedded
+                forcedPanel={kind}
+                t={t}
+                sidePanel={sidePanel}
+                setSidePanel={setSidePanel}
+                explorerCollapsed={explorerCollapsed}
+                setExplorerCollapsed={setExplorerCollapsed}
+                explorerWidth={explorerWidth}
+                fsRefresh={fsRefresh}
+                activeWs={activeWs}
+                workspaces={workspaces}
+                openTabWorkspaces={openTabWorkspaces}
+                sessions={historySessions}
+                sessionId={sessionId}
+                sessionsPage={sessionsPage}
+                sessionsTotalPages={sessionsTotalPages}
+                sessionsTotal={sessionsTotal}
+                navBusy={wsBusy}
+                onOpenHistoryPanel={session.openHistoryPanel}
+                onRefreshSessions={session.refreshSessions}
+                onOpenSession={(id) => {
+                  const hit = historySessions.find((s) => s.id === id);
+                  void actions.openSession(id, {
+                    workspacePath: hit?.workspace || activeWs?.path || "",
+                  });
+                }}
+                onNewChat={actions.newChat}
+                onSwitchWorkspace={(path: string) => {
+                  window.dispatchEvent(
+                    new CustomEvent("sidekick-social-bind-workspace", { detail: { path } }),
+                  );
+                  void actions.adoptWorkspace(path);
+                }}
+                onBrowseWorkspace={() => void actions.browseAndSetWorkspace()}
+                onForgetWorkspace={forgetWorkspaceEverywhere}
+                onDeleteSession={actions.removeSession}
+                onOpenSettings={() => dialogs.openSettings()}
+                onOpenFile={(file, opts) => openDetail(fileToDetail(file, opts))}
+                activeFilePath={detail?.type === "file" ? detail.path : null}
+                onFileDeleted={(path) => {
+                  setDetail((d) => {
+                    if (d?.type !== "file") return d;
+                    if (d.path === path || d.path.startsWith(`${path}/`)) return null;
+                    return d;
+                  });
+                  setFsRefresh((n) => n + 1);
+                }}
+                onResizeStart={() => {
+                  resizingRef.current = true;
+                  document.body.classList.add("resizing-sidebar");
+                }}
+                onPickDomElement={(el) => {
+                  setAttachments((prev) => [
+                    ...prev,
+                    {
+                      id: uid(),
+                      name: chipLabelForDom(el),
+                      path: el.xpath || el.css_path || el.url || "dom",
+                      kind: "dom-element",
+                      text: formatDomElementForAgent(el),
+                    },
+                  ]);
+                  setToast(t("browserElementAdded"));
+                }}
+                browserOpenRequest={browserOpenRequest}
+                browserSuspended={settingsOpen || Boolean(sandboxUrlPrompt) || Boolean(editRestorePrompt)}
+                onWorkspaceMutated={() => setFsRefresh((n) => n + 1)}
+                mainView={mainView}
+                onOpenMemory={() => {
+                  setMainView("memory");
+                  setSettingsOpen(false);
+                }}
+                onOpenChat={() => setMainView("chat")}
+                jobsRunning={shellJobs.filter((j) => j.status === "running").length}
+                jobsFocusId={jobsFocusId}
+                jobsRefreshKey={jobsTick}
+              />
+            )}
           />
         ) : (
           <>
@@ -837,23 +1233,20 @@ export function App() {
               sessionsPage={sessionsPage}
               sessionsTotalPages={sessionsTotalPages}
               sessionsTotal={sessionsTotal}
+              navBusy={wsBusy}
               onOpenHistoryPanel={session.openHistoryPanel}
               onRefreshSessions={session.refreshSessions}
               onOpenSession={(id) => {
                 const hit = historySessions.find((s) => s.id === id);
-                if (hit?.workspace) {
-                  setActiveWs({
-                    path: hit.workspace,
-                    name:
-                      hit.workspace_name ||
-                      hit.workspace.split(/[/\\]/).pop() ||
-                      hit.workspace,
-                  });
-                }
-                void actions.openSession(id);
+                const wanted = desiredWsRef.current;
+                if (hit?.workspace && wanted && !sameFolder(hit.workspace, wanted)) return;
+                void actions.openSession(id, {
+                  workspacePath: hit?.workspace || wanted || activeWs?.path || "",
+                });
               }}
               onNewChat={actions.newChat}
               onSwitchWorkspace={switchToWorkspace}
+              onBrowseWorkspace={() => void actions.browseAndSetWorkspace()}
               onForgetWorkspace={forgetWorkspaceEverywhere}
               onDeleteSession={actions.removeSession}
               onOpenSettings={() => dialogs.openSettings()}
@@ -890,13 +1283,14 @@ export function App() {
               mainView={mainView}
               onOpenMemory={() => {
                 setMainView("memory");
-                setExplorerCollapsed(true);
                 setSettingsOpen(false);
               }}
               onOpenChat={() => setMainView("chat")}
               jobsRunning={shellJobs.filter((j) => j.status === "running").length}
               jobsFocusId={jobsFocusId}
               jobsRefreshKey={jobsTick}
+              schedulesCount={scheduleTasks.filter((task) => task.enabled).length}
+              schedulesRefreshKey={schedulesTick}
             />
             {mainView === "memory" ? (
               <MemoryLibraryPanel
@@ -907,13 +1301,6 @@ export function App() {
             ) : (
               <>
                 <section className="chat pane">
-                  <ChatTabsBar
-                    t={t}
-                    tabs={chatTabViews}
-                    onSelect={selectChatTab}
-                    onClose={closeTab}
-                    onNewTab={() => void actions.newChat()}
-                  />
                   <ChatThread
                     t={t}
                     messages={messages}
@@ -927,7 +1314,6 @@ export function App() {
                     copiedId={copiedId}
                     threadRef={threadRef}
                     bottomRef={bottomRef}
-                    onThreadScroll={onThreadScroll}
                     onSetDetail={openDetail}
                     onSend={actions.send}
                     onStopChat={chat.stopChat}
@@ -936,9 +1322,7 @@ export function App() {
                     onEditDraftChange={setEditDraft}
                     onCancelEdit={actions.cancelEdit}
                     onRequestSubmitEdit={actions.requestSubmitEdit}
-                    onCtrlClickUrl={(url, x, y) =>
-                      setSandboxUrlPrompt({ url: sanitizeBrowserUrl(url) || url, x, y })
-                    }
+                    onCtrlClickUrl={onCtrlClickUrl}
                     onToast={setToast}
                     askPrompt={askPrompt}
                     askChoice={askChoice}
@@ -1047,6 +1431,22 @@ export function App() {
           setTheme={setTheme}
           setLocale={setLocale}
           setDensity={setDensity}
+          uiMode={uiMode}
+          setUiMode={(mode) => {
+            if (mode === "social" && uiMode === "workbench") {
+              workbenchWsRef.current = activeWs;
+            }
+            if (mode === "workbench") {
+              captureWorkbenchSocialLinkFromLastView();
+              const saved = workbenchWsRef.current;
+              if (saved?.path) setActiveWs(saved);
+              // The native browser paints above this dialog. Opening the
+              // workbench panel now leaves a black view over Settings.
+              void getDesktop()?.browser.hide();
+              if (browserOpenRequest?.url) setOpenBrowserWhenSettingsClose(true);
+            }
+            setUiMode(mode);
+          }}
           settingsTab={settingsTab}
           setSettingsTab={setSettingsTab}
           onClose={() => setSettingsOpen(false)}
@@ -1054,7 +1454,26 @@ export function App() {
           workspaces={workspaces}
           wsBusy={wsBusy}
           onBrowseWorkspace={actions.browseAndSetWorkspace}
-          onSwitchWorkspace={actions.switchWorkspace}
+          onSwitchWorkspace={(path) => {
+            if (uiMode === "social") {
+              window.dispatchEvent(
+                new CustomEvent("sidekick-social-bind-workspace", { detail: { path } }),
+              );
+              void actions.adoptWorkspace(path);
+              return;
+            }
+            const norm = path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const targetId = workspaces.find((w) => w.path === path)?.id;
+            const existing = openTabs.find((t) => {
+              if (targetId && t.workspaceId === targetId) return true;
+              const tabPath = (t.workspace || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+              return Boolean(tabPath) && tabPath === norm;
+            });
+            void (async () => {
+              await actions.switchWorkspace(path);
+              if (existing) await actions.openSession(existing.id, { workspacePath: path });
+            })();
+          }}
           onForgetWorkspace={forgetWorkspaceEverywhere}
           sessions={historySessions}
           model={model}
@@ -1065,6 +1484,9 @@ export function App() {
           live={live}
           accountUser={accountUser}
           onToast={(msg) => setToast(msg)}
+          autoApproveTools={Boolean(health?.auto_approve_tools)}
+          autoApproveBusy={dialogs.autoApproveBusy}
+          onToggleAutoApprove={(enabled) => void dialogs.toggleAutoApprove(enabled)}
           onSkillsChanged={() => {
             void fetchSkills().then(setSkills).catch(() => undefined);
           }}
@@ -1080,4 +1502,5 @@ export function App() {
       )}
     </div>
   );
+
 }

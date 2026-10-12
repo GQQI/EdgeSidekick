@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,16 @@ class ChatRequest(BaseModel):
     # When creating a new session (no session_id), pin it to this folder so the
     # chat follows the UI's selected workspace instead of the tenant default.
     workspace: str | None = None
+    # Social / group chat: text reply only — do not bind workbench tools
+    # (prevents delegate_task when the user says "评价其他智能体").
+    disable_tools: bool = False
+    # Social (会话版) one-shot call: if a fresh session has to be created for
+    # this turn, keep it out of the workbench history listing.
+    hidden: bool = False
+    # Group harness already assigned this member. Do not let them spawn another team.
+    block_delegate: bool = False
+    # One-shot classification (who the message is for). No tools, no plan, one reply.
+    classify: bool = False
 
 
 class SessionCreate(BaseModel):
@@ -172,6 +182,16 @@ class SkillValidateBody(BaseModel):
     markdown: str = ""
 
 
+class SkillFileWriteBody(BaseModel):
+    content: str = Field(..., min_length=0)
+
+
+class SkillFileCreateBody(BaseModel):
+    path: str = Field(..., min_length=1, max_length=512)
+    type: Literal["file", "folder"] = "file"
+    content: str = ""
+
+
 class SkillImportDirBody(BaseModel):
     path: str = Field(..., min_length=2, max_length=1024)
     overwrite: bool = False
@@ -191,6 +211,13 @@ class ApprovalDecision(BaseModel):
     approved: bool
     remember: bool = False
     patch_args: dict[str, Any] | None = None
+
+
+class PrefsUpdate(BaseModel):
+    auto_approve_tools: bool | None = None
+    systemone_url: str | None = None
+    systemone_model: str | None = None
+    systemone_key: str | None = None
 
 
 class AskAnswer(BaseModel):
@@ -214,6 +241,41 @@ class BrowserNavigateBody(BaseModel):
     url: str
 
 
+class BrowserActBody(BaseModel):
+    lane: str = "social"
+    op: str = "click"
+    x: float = 0
+    y: float = 0
+    text: str = ""
+    key: str = ""
+
+
 class BrowserPickBody(BaseModel):
     timeout_ms: int = 60000
     with_screenshot: bool = True
+
+
+class ScheduleCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    kind: Literal["once", "daily", "weekly", "interval", "monthly"]
+    at: str | None = None  # "YYYY-MM-DD HH:MM" (once)
+    time: str | None = None  # "HH:MM" (daily/weekly/monthly)
+    weekdays: list[int] | None = None  # weekly: 0=Mon..6=Sun
+    interval_minutes: int | None = Field(None, ge=5, le=10080)
+    until: str | None = None  # inclusive end date YYYY-MM-DD
+    month_day: int | None = Field(None, ge=1, le=31)
+    session_id: str = Field(..., min_length=1)
+    enabled: bool = True
+
+
+class SchedulePatch(BaseModel):
+    enabled: bool | None = None
+    title: str | None = Field(None, min_length=1, max_length=120)
+    prompt: str | None = Field(None, min_length=1, max_length=8000)
+    at: str | None = None
+    time: str | None = None
+    weekdays: list[int] | None = None
+    interval_minutes: int | None = Field(None, ge=5, le=10080)
+    until: str | None = None
+    month_day: int | None = Field(None, ge=1, le=31)

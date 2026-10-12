@@ -34,10 +34,10 @@ export function IconRobotCube({ size = 28, className, ...rest }: Props) {
       <rect x="16" y="16" width="32" height="28" rx="8" fill={`url(#${id}-body)`} />
       <rect x="20" y="22" width="24" height="12" rx="4" fill="#f9fafb" opacity="0.95" />
       <g className="rc-eyes">
-        <circle cx="27" cy="28" r="2.2" fill="#111827" />
-        <circle cx="37" cy="28" r="2.2" fill="#111827" />
+        <circle cx="27" cy="28" r="2.2" fill="#101a2b" />
+        <circle cx="37" cy="28" r="2.2" fill="#101a2b" />
       </g>
-      <path d="M26 34.5c2.2 2 9.8 2 12 0" stroke="#111827" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M26 34.5c2.2 2 9.8 2 12 0" stroke="#101a2b" strokeWidth="1.8" strokeLinecap="round" />
 
       <path d="M16 30c-5 2-7 8-5 12" stroke="#1f2937" strokeWidth="3.2" strokeLinecap="round" />
       <path d="M48 28c4-1 9 2 10 7" stroke="#1f2937" strokeWidth="3.2" strokeLinecap="round" />

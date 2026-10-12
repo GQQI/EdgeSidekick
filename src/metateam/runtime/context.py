@@ -50,8 +50,14 @@ def _content_text(msg: dict[str, Any]) -> str:
 
 
 def message_tokens(msg: dict[str, Any]) -> int:
+    """Tokens that are actually sent.
+
+    ``reasoning`` / ``reasoning_content`` stay on the message for the thinking
+    bubble, but the provider payload omits them. Counting them made compression
+    delete file bodies to make room for text the model never receives, and the
+    model then read those files again.
+    """
     n = estimate_tokens(_content_text(msg))
-    n += estimate_tokens(str(msg.get("reasoning") or msg.get("reasoning_content") or ""))
     n += estimate_tokens(str(msg.get("name") or ""))
     for tc in msg.get("tool_calls") or []:
         fn = tc.get("function") or {}
@@ -145,6 +151,49 @@ _CLEARED_PREFIX = "[cleared tool result:"
 _RANGE_TRAILER_RE = re.compile(r"lines (\d+)-(\d+) of (\d+)")
 
 
+_BROWSER_STUB_TOOLS = frozenset(
+    {
+        "browser_navigate",
+        "browser_console",
+        "browser_snapshot",
+        "browser_network",
+        "browser_diagnostics",
+        "browser_get_page_content",
+    }
+)
+
+
+def _browser_digest(text: str) -> str:
+    """Keep url / title / entry count when a browser payload is cleared."""
+    raw = (text or "").strip()
+    if not raw or raw.lower().startswith("error"):
+        return ""
+    bits: list[str] = []
+    data: Optional[dict[str, Any]] = None
+    if raw.startswith("{"):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict):
+            data = parsed
+    if data is not None:
+        url = str(data.get("url") or "")[:160]
+        if url:
+            bits.append(url)
+        title = str(data.get("title") or "")[:60]
+        if title:
+            bits.append(title)
+        if "count" in data:
+            bits.append(f"entries={data.get('count')}")
+        obs = data.get("observation")
+        if isinstance(obs, str) and obs.strip():
+            bits.append(obs.strip().split("\n", 1)[0][:80])
+    if not bits and not raw.startswith("{"):
+        bits.append(raw.split("\n", 1)[0][:100])
+    return "; ".join(bit for bit in bits if bit)[:180]
+
+
 def _tool_result_stub(msg: dict[str, Any]) -> str:
     """Claude-style clear_tool_uses: keep the call, drop the bulky payload."""
     name = str(msg.get("name") or "tool")
@@ -157,10 +206,11 @@ def _tool_result_stub(msg: dict[str, Any]) -> str:
         first = text.strip().split("\n", 1)[0][:80]
         if first and not first.startswith("ERROR"):
             extra = f" ({first})"
-    return (
-        f"{_CLEARED_PREFIX} {name}{extra}. "
-        "Call the same tool again if you still need the raw text.]"
-    )
+    elif name in _BROWSER_STUB_TOOLS:
+        digest = _browser_digest(text)
+        if digest:
+            extra = f" ({digest})"
+    return f"{_CLEARED_PREFIX} {name}{extra}. The payload was dropped to free context.]"
 
 
 def current_turn_start(messages: list[dict[str, Any]]) -> int:
@@ -241,10 +291,7 @@ def _hard_trim_tool_payloads(messages: list[dict[str, Any]], cap: int = 1200) ->
     return out
 
 
-_SQUEEZE_NOTE = (
-    "\n…[truncated to fit the context window — call the tool again with a "
-    "narrower range (offset/limit, tighter query) if you need the rest]"
-)
+_SQUEEZE_NOTE = "\n…[truncated]"
 
 
 def squeeze_fresh_tool_results(
@@ -443,6 +490,58 @@ def _split_keep_recent(
     return head, tail
 
 
+def _detach_oldest_group(
+    rest: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Remove the oldest non-user message and any tool results that belong to it."""
+    if len(rest) <= 2:
+        return rest, []
+    for i, m in enumerate(rest[:-1]):
+        if m.get("role") == "user":
+            continue
+        start = i
+        end = i + 1
+        if m.get("role") == "tool" and i > 0:
+            prev = rest[i - 1]
+            if prev.get("role") == "assistant" and prev.get("tool_calls"):
+                start = i - 1
+        if rest[start].get("role") == "assistant" and rest[start].get("tool_calls"):
+            end = start + 1
+            while end < len(rest) and rest[end].get("role") == "tool":
+                end += 1
+        return rest[:start] + rest[end:], rest[start:end]
+    return rest, []
+
+
+def park_overflow(
+    messages: list[dict[str, Any]],
+    *,
+    context_limit: int,
+    keep_recent_tokens: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Keep a working set; return older messages unchanged for the archive.
+
+    Opening a long chat used to load the entire transcript into the live
+    window, so the next read was trimmed to free space and the model fetched
+    the same file again. The archived prefix is not summarized here — display
+    code stitches it back. Only the live tail is shortened, and only when that
+    tail alone is still over the limit.
+    """
+    if not messages:
+        return [], []
+    limit = max(2000, int(context_limit or 0))
+    if messages_tokens(messages) <= limit:
+        return list(messages), []
+    system = messages[0] if messages[0].get("role") == "system" else None
+    body = list(messages[1:] if system else messages)
+    keep = max(2000, min(int(keep_recent_tokens or 0) or limit, limit))
+    head, tail = _split_keep_recent(body, keep)
+    live = ([system] if system else []) + tail
+    if messages_tokens(live) > limit:
+        live, _did = cheap_compact(live)
+    return live, head
+
+
 def _build_compaction_message(pins: str, memory: str) -> dict[str, Any]:
     parts = [COMPACTION_MARK]
     if pins.strip():
@@ -620,14 +719,13 @@ def ensure_fit(
         guard.append(body[0])
         rest = body[1:]
     while messages_tokens(([system] if system else []) + guard + rest) > context_limit and len(rest) > 2:
-        # Drop oldest non-user first; only then drop older assistant/tool.
-        drop_at = 0
-        for i, m in enumerate(rest[:-1]):
-            if m.get("role") != "user":
-                drop_at = i
-                break
-        dropped.append(rest[drop_at])
-        rest = rest[:drop_at] + rest[drop_at + 1 :]
+        # Drop one assistant together with the tool results it owns. Removing
+        # only the assistant leaves role=tool messages and the next request 400s.
+        nxt, removed = _detach_oldest_group(rest)
+        if not removed:
+            break
+        dropped.extend(removed)
+        rest = nxt
     out = ([system] if system else []) + guard + rest
     meta["final_tokens"] = messages_tokens(out)
     meta["hard_trimmed"] = True

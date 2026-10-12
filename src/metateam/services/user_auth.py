@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import secrets
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,13 @@ TOKEN_HEADER = "x-sidekick-token"
 LEGACY_TOKEN_PATH = ROOT / "data" / ".local_token"
 
 PBKDF2_ITERATIONS = 120_000
+# A login stays valid while the app is used. Each use pushes expiry out by
+# this much. Thirty days with no use requires a fresh login.
+TOKEN_TTL_SEC = 60 * 60 * 24 * 30
+# Avoid rewriting auth_tokens.json on every poll. Once an hour is enough
+# for the sliding window to track real use.
+_SLIDE_MIN_SEC = 60 * 60
+_token_lock = threading.Lock()
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -301,30 +309,52 @@ def _save_tokens(data: dict[str, Any]) -> None:
     _write_json(TOKENS_PATH, data)
 
 
-def issue_token(user_id: str, *, ttl_sec: int = 60 * 60 * 24 * 30) -> str:
+def issue_token(user_id: str, *, ttl_sec: int = TOKEN_TTL_SEC) -> str:
     token = secrets.token_urlsafe(32)
-    data = _load_tokens()
-    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
-    tokens[token] = {"user_id": user_id, "created_at": time.time(), "expires_at": time.time() + ttl_sec}
-    # prune expired
     now = time.time()
-    tokens = {
-        k: v
-        for k, v in tokens.items()
-        if isinstance(v, dict) and float(v.get("expires_at") or 0) > now
-    }
-    data["tokens"] = tokens
-    _save_tokens(data)
+    with _token_lock:
+        data = _load_tokens()
+        tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+        tokens[token] = {"user_id": user_id, "created_at": now, "expires_at": now + ttl_sec}
+        tokens = {
+            k: v
+            for k, v in tokens.items()
+            if isinstance(v, dict) and float(v.get("expires_at") or 0) > now
+        }
+        data["tokens"] = tokens
+        _save_tokens(data)
     return token
 
 
 def revoke_token(token: str | None) -> None:
     if not token:
         return
-    data = _load_tokens()
-    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
-    if token in tokens:
-        del tokens[token]
+    with _token_lock:
+        data = _load_tokens()
+        tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+        if token in tokens:
+            del tokens[token]
+            data["tokens"] = tokens
+            _save_tokens(data)
+
+
+def _slide_token_expiry(raw: str) -> None:
+    """Push a still-valid login out to a fresh 30 days from this use."""
+    now = time.time()
+    target = now + TOKEN_TTL_SEC
+    with _token_lock:
+        data = _load_tokens()
+        tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+        entry = tokens.get(raw)
+        if not isinstance(entry, dict):
+            return
+        exp = float(entry.get("expires_at") or 0)
+        if exp <= now:
+            return
+        if exp >= target - _SLIDE_MIN_SEC:
+            return
+        entry["expires_at"] = target
+        tokens[raw] = entry
         data["tokens"] = tokens
         _save_tokens(data)
 
@@ -348,6 +378,7 @@ def resolve_token(token: str | None) -> Optional[tuple[str, str]]:
         uid = str(entry.get("user_id") or "").strip()
         user = get_user(uid) if uid else None
         if user:
+            _slide_token_expiry(raw)
             return user.id, user.username
 
     # Legacy device token — only before multi-user setup

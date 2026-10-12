@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-_THINK_OPEN = re.compile(r"<(think|thinking)\s*>", re.IGNORECASE)
-_THINK_CLOSE = re.compile(r"</(think|thinking)\s*>", re.IGNORECASE)
+_THINK_OPEN = re.compile(r"<(think|thinking|thought)\b[^>]*>", re.IGNORECASE)
+_THINK_CLOSE = re.compile(r"</(think|thinking|thought)\s*>", re.IGNORECASE)
+_OPEN_NAMES = ("think", "thinking", "thought")
 _OPEN_PREFIXES = (
     "<",
     "<t",
@@ -14,8 +15,10 @@ _OPEN_PREFIXES = (
     "<thi",
     "<thin",
     "<think",
+    "<thought",
     "<thinking",
     "<think>",
+    "<thought>",
     "<thinking>",
 )
 _CLOSE_PREFIXES = (
@@ -26,8 +29,10 @@ _CLOSE_PREFIXES = (
     "</thi",
     "</thin",
     "</think",
+    "</thought",
     "</thinking",
     "</think>",
+    "</thought>",
     "</thinking>",
 )
 
@@ -42,6 +47,24 @@ def _partial_suffix_len(buf: str, prefixes: tuple[str, ...]) -> int:
         if any(p.startswith(suffix) for p in prefixes):
             max_keep = i
     return max_keep
+
+
+def _incomplete_open_hold(buf: str) -> int:
+    """Hold back `<think …>` / `<thought …>` until the closing `>` arrives."""
+    if not buf:
+        return 0
+    low = buf.lower()
+    idx = low.rfind("<")
+    if idx < 0:
+        return _partial_suffix_len(buf, _OPEN_PREFIXES)
+    tail = low[idx:]
+    if ">" in tail:
+        return _partial_suffix_len(buf, _OPEN_PREFIXES)
+    rest = tail[1:]
+    for name in _OPEN_NAMES:
+        if name.startswith(rest) or rest.startswith(name):
+            return len(buf) - idx
+    return _partial_suffix_len(buf, _OPEN_PREFIXES)
 
 
 def split_think_tags(text: str) -> tuple[str, str]:
@@ -78,7 +101,7 @@ class ThinkTagSplitter:
             if not self._in_think:
                 m = _THINK_OPEN.search(self._buf)
                 if not m:
-                    keep = _partial_suffix_len(self._buf, _OPEN_PREFIXES)
+                    keep = _incomplete_open_hold(self._buf)
                     emit = self._buf[:-keep] if keep else self._buf
                     self._buf = self._buf[-keep:] if keep else ""
                     if emit:

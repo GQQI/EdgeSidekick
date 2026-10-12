@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   answerAsk,
   attachSessionEvents,
@@ -42,54 +42,9 @@ import {
   type ToolUpsertCtx,
 } from "./chat/toolUpserts";
 
-export type ChatStreamDeps = {
-  t: (key: MsgKey, ...args: string[]) => string;
-  locale: string;
-  sessionId: string | null;
-  sessionIdRef: React.MutableRefObject<string | null>;
-  activeWs: { path: string; name: string; id?: string } | null;
-  chatMode: "plan" | "agent";
-  setMessages: React.Dispatch<React.SetStateAction<ChatMsg[]>>;
-  setInput: React.Dispatch<React.SetStateAction<string>>;
-  setBusy: React.Dispatch<React.SetStateAction<boolean>>;
-  setLive: React.Dispatch<React.SetStateAction<LiveLine[]>>;
-  setSubs: React.Dispatch<React.SetStateAction<SubNode[]>>;
-  setDetail: React.Dispatch<React.SetStateAction<DetailView>>;
-  setCtx: React.Dispatch<React.SetStateAction<{ tokens: number; limit: number }>>;
-  setCompressState: React.Dispatch<
-    React.SetStateAction<{
-      active: boolean;
-      message: string;
-      attempt: number;
-      maxAttempts: number;
-      before: number;
-      after?: number;
-    } | null>
-  >;
-  setActivePlan: React.Dispatch<React.SetStateAction<ActivePlan | null>>;
-  setPlanConfirm: React.Dispatch<React.SetStateAction<PlanConfirmState | null>>;
-  setApproval: React.Dispatch<React.SetStateAction<ApprovalPrompt | null>>;
-  setAskPrompt: React.Dispatch<React.SetStateAction<AskPrompt | null>>;
-  setAskChoice: React.Dispatch<React.SetStateAction<string>>;
-  setAskOtherText: React.Dispatch<React.SetStateAction<string>>;
-  setFsRefresh: React.Dispatch<React.SetStateAction<number>>;
-  setToast: React.Dispatch<React.SetStateAction<string>>;
-  setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
-  setStats: React.Dispatch<React.SetStateAction<{ tokens: number; iters: number }>>;
-  setSkills: React.Dispatch<React.SetStateAction<SkillItem[]>>;
-  setMemory: React.Dispatch<React.SetStateAction<string>>;
-  setSettingsTab: (tab: SettingsTab) => void;
-  setSettingsOpen: (v: boolean) => void;
-  setQueued: React.Dispatch<React.SetStateAction<QueuedMsg[]>>;
-  approval: ApprovalPrompt | null;
-  askPrompt: AskPrompt | null;
-  planConfirm: PlanConfirmState | null;
-  stickBottomRef: React.MutableRefObject<boolean>;
-  askPendingRef: React.MutableRefObject<boolean>;
-  planPendingRef: React.MutableRefObject<boolean>;
-  executingPlanIdRef: React.MutableRefObject<string | null>;
-  refreshSessionsRef: React.MutableRefObject<(page?: number) => Promise<void>>;
-};
+export type { ChatStreamDeps } from "./chatStreamTypes";
+import type { ChatStreamDeps } from "./chatStreamTypes";
+
 
 export function useChatStream(deps: ChatStreamDeps) {
   const {
@@ -138,6 +93,9 @@ export function useChatStream(deps: ChatStreamDeps) {
   };
 
   const transcriptRef = useRef<ChatMsg[]>([]);
+  const messagesFlushTimerRef = useRef<number | null>(null);
+  const detailFlushTimerRef = useRef<number | null>(null);
+  const pendingDetailRef = useRef<((d: DetailView) => DetailView) | null>(null);
   const stageRef = useRef(0);
   const streamIdRef = useRef<string | null>(null);
   const streamTextRef = useRef("");
@@ -183,10 +141,77 @@ export function useChatStream(deps: ChatStreamDeps) {
     });
   }
 
-  function commit(next: ChatMsg[]) {
-    transcriptRef.current = next;
-    setMessages(next);
+  function publishSubs() {
+    const next = transcriptRef.current
+      .filter((m) => m.role === "subagent" && m.subagent)
+      .map((m) => m.subagent!);
+    setSubs((prev) => {
+      if (prev.length === next.length && prev.every((n, i) => n === next[i])) return prev;
+      return next;
+    });
   }
+
+  function flushDetailNow() {
+    if (detailFlushTimerRef.current != null) {
+      window.clearTimeout(detailFlushTimerRef.current);
+      detailFlushTimerRef.current = null;
+    }
+    const fn = pendingDetailRef.current;
+    pendingDetailRef.current = null;
+    if (fn) setDetail(fn);
+  }
+
+  function queueDetail(updater: (d: DetailView) => DetailView, immediate = true) {
+    const prev = pendingDetailRef.current;
+    pendingDetailRef.current = prev ? (d) => updater(prev(d)) : updater;
+    if (immediate) {
+      flushDetailNow();
+      return;
+    }
+    if (detailFlushTimerRef.current != null) return;
+    detailFlushTimerRef.current = window.setTimeout(() => {
+      detailFlushTimerRef.current = null;
+      flushDetailNow();
+    }, 50);
+  }
+
+  function flushMessagesNow() {
+    if (messagesFlushTimerRef.current != null) {
+      window.clearTimeout(messagesFlushTimerRef.current);
+      messagesFlushTimerRef.current = null;
+    }
+    setMessages(transcriptRef.current);
+    publishSubs();
+  }
+
+  function scheduleMessagesFlush() {
+    if (messagesFlushTimerRef.current != null) return;
+    // Streaming tokens arrive far faster than paint. Coalesce so a long thread
+    // is not fully reconciled on every SSE chunk.
+    messagesFlushTimerRef.current = window.setTimeout(() => {
+      messagesFlushTimerRef.current = null;
+      setMessages(transcriptRef.current);
+      publishSubs();
+    }, 50);
+  }
+
+  function commit(next: ChatMsg[], immediate = true) {
+    transcriptRef.current = next;
+    if (immediate) flushMessagesNow();
+    else scheduleMessagesFlush();
+  }
+
+  useEffect(
+    () => () => {
+      if (messagesFlushTimerRef.current != null) {
+        window.clearTimeout(messagesFlushTimerRef.current);
+      }
+      if (detailFlushTimerRef.current != null) {
+        window.clearTimeout(detailFlushTimerRef.current);
+      }
+    },
+    [],
+  );
 
   function loadTranscript(next: ChatMsg[]) {
     const maxStage = next.reduce((acc, m) => Math.max(acc, m.stage ?? 0), 0);
@@ -210,13 +235,18 @@ function bumpStage() {
   stageRef.current += 1;
 }
 
-function updateMsg(id: string, patch: Partial<ChatMsg>) {
-  commit(transcriptRef.current.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+function updateMsg(id: string, patch: Partial<ChatMsg>, immediate = true) {
+  const list = transcriptRef.current;
+  const idx = list.findIndex((m) => m.id === id);
+  if (idx < 0) return;
+  const next = list.slice();
+  next[idx] = { ...list[idx], ...patch };
+  commit(next, immediate);
 }
 
 /** Keep the open tool detail panel in sync when status/callId advances. */
-function syncToolPanel(tool: ToolCard, prevCallId?: string) {
-  setDetail((d) => {
+function syncToolPanel(tool: ToolCard, prevCallId?: string, immediate = true) {
+  queueDetail((d) => {
     if (d?.type !== "tool") return d;
     const same =
       d.tool.id === tool.id ||
@@ -234,7 +264,7 @@ function syncToolPanel(tool: ToolCard, prevCallId?: string) {
           tool.status === "done" ||
           tool.status === "error"));
     return same ? { type: "tool", tool } : d;
-  });
+  }, immediate);
 }
 
 function findToolMsg(opts: {
@@ -304,6 +334,7 @@ function updateSubagentMsg(childId: string, patch: Partial<SubNode>) {
 function patchSubagent(
   childId: string,
   fn: (s: SubNode) => SubNode,
+  immediate = false,
 ) {
   if (!childId) return;
   const hitMsg = transcriptRef.current.find(
@@ -320,20 +351,22 @@ function patchSubagent(
       : mapSubNode(hitMsg.subagent, childId, fn);
   if (!mappedRoot) return;
   const patched = findSubNode(mappedRoot, childId) || mappedRoot;
-  updateMsg(hitMsg.id, {
-    subagent: mappedRoot,
-    content: mappedRoot.summary || mappedRoot.goal,
-  });
-  setSubs((prev) => {
-    const without = prev.filter((s) => s.id !== childId && s.id !== hitMsg.subagent?.id);
-    return [...without, mappedRoot];
-  });
-  setDetail((d) =>
-    d?.type === "subagent" && d.subagent.id === childId
-      ? { type: "subagent", subagent: patched }
-      : d?.type === "subagent" && d.subagent.id === mappedRoot.id
-        ? { type: "subagent", subagent: mappedRoot }
-        : d,
+  updateMsg(
+    hitMsg.id,
+    {
+      subagent: mappedRoot,
+      content: mappedRoot.summary || mappedRoot.goal,
+    },
+    immediate,
+  );
+  queueDetail(
+    (d) =>
+      d?.type === "subagent" && d.subagent.id === childId
+        ? { type: "subagent", subagent: patched }
+        : d?.type === "subagent" && d.subagent.id === mappedRoot.id
+          ? { type: "subagent", subagent: mappedRoot }
+          : d,
+    immediate,
   );
 }
 
@@ -368,12 +401,11 @@ function sealStoppedTurn() {
       return { ...message, subagent, content: subagent.summary || message.content };
     }
     if (message.role === "tool" && message.tool && ["streaming", "running", "pending"].includes(message.tool.status)) {
-      return { ...message, tool: { ...message.tool, status: "error", result: message.tool.result || "ERROR: cancelled" } };
+      return { ...message, tool: { ...message.tool, status: "error" as const, result: message.tool.result || "ERROR: cancelled" } };
     }
     return message;
   });
   commit(next);
-  setSubs(next.filter((m) => m.role === "subagent" && m.subagent).map((m) => m.subagent!));
 }
 
 function looksLikeOptionList(text: string): boolean {
@@ -510,13 +542,17 @@ function ensureStreamBubble(reset: boolean) {
 
 function syncStreamBubble() {
   const id = streamIdRef.current!;
-  updateMsg(id, {
-    content: streamTextRef.current,
-    reasoning: streamReasoningRef.current || undefined,
-    streaming: true,
-    reasoningStreaming:
-      Boolean(streamReasoningRef.current) && !streamTextRef.current.trim(),
-  });
+  updateMsg(
+    id,
+    {
+      content: streamTextRef.current,
+      reasoning: streamReasoningRef.current || undefined,
+      streaming: true,
+      reasoningStreaming:
+        Boolean(streamReasoningRef.current) && !streamTextRef.current.trim(),
+    },
+    false,
+  );
 }
 
 function appendStreamChunk(chunk: string, reset = false, discard = false) {
@@ -553,7 +589,7 @@ function appendReasoningChunk(chunk: string, reset = false) {
   syncStreamBubble();
 }
 
-function finalizeAssistant(text: string, opts?: { stopped?: boolean }) {
+function finalizeAssistant(text: string, opts?: { stopped?: boolean; reasoning?: string }) {
   if (turnDoneRef.current) return;
   turnDoneRef.current = true;
   for (const p of thinkSplitRef.current.flush()) {
@@ -581,6 +617,9 @@ function finalizeAssistant(text: string, opts?: { stopped?: boolean }) {
     body = incoming || streamed;
   }
   let reasoning = streamReasoningRef.current.trim();
+  if (!reasoning && opts?.reasoning) {
+    reasoning = String(opts.reasoning).trim();
+  }
   if (/<\/?think/i.test(body)) {
     const peeled = splitThinkTags(body);
     body = peeled.content.trim();
@@ -746,6 +785,7 @@ const toolUpsertCtx: ToolUpsertCtx = {
   findToolMsg,
   updateMsg,
   syncToolPanel,
+  queueDetail,
   appendMsg,
   removeMsg,
   commit,
@@ -874,7 +914,10 @@ async function sendChat(
           void refreshSessionsRef.current();
           if (!isLiveListener(gen)) return;
           const stopped = Boolean(meta.cancelled);
-          finalizeAssistant(textOut, { stopped });
+          finalizeAssistant(textOut, {
+            stopped,
+            reasoning: String(meta.reasoning || ""),
+          });
           if (stopped && String(textOut || "").trim()) {
             setToast(t("stoppedKeep"));
           }
@@ -1015,7 +1058,10 @@ async function attachLive(sid: string) {
           void refreshSessionsRef.current();
           if (!isLiveListener(gen)) return;
           const stopped = Boolean(meta.cancelled);
-          finalizeAssistant(textOut, { stopped });
+          finalizeAssistant(textOut, {
+            stopped,
+            reasoning: String(meta.reasoning || ""),
+          });
           alignCanvasFromSession(sid);
           setStats({
             tokens: Number(meta.tokens || 0),
@@ -1131,6 +1177,99 @@ function resumeFromSnapshot(detail: SessionDetail) {
   }
   if (detail.busy) void attachLive(detail.id);
 }
+
+  const scheduleCtxRef = useRef<Parameters<typeof handleRuntimeEvent>[1] | null>(null);
+  scheduleCtxRef.current = {
+    ...toolUpsertCtx,
+    t,
+    locale,
+    sessionId,
+    sessionIdRef,
+    setPlanConfirm,
+    setActivePlan,
+    planPendingRef,
+    executingPlanIdRef,
+    patchSubagent,
+    sealSubassistant,
+    setLive,
+    setSessionId,
+    setCtx,
+    setCompressState,
+    appendStreamChunk,
+    appendReasoningChunk,
+    setApproval,
+    findToolMsg,
+    updateMsg,
+    syncToolPanel,
+    setDetail,
+    stripDuplicateAskBubble,
+    askPendingRef,
+    setAskChoice,
+    setAskOtherText,
+    setAskPrompt,
+    setFsRefresh,
+    setSubs,
+    appendMsg,
+    commit,
+    bumpStage,
+  };
+
+  useEffect(() => {
+    const onScheduleEvent = (e: Event) => {
+      const ev = (e as CustomEvent<RuntimeEvent>).detail;
+      const ctx = scheduleCtxRef.current;
+      if (!ev || !ctx) return;
+      const sid = String(ev.data?.session_id || "");
+      const current = ctx.sessionIdRef.current || ctx.sessionId || "";
+      if (!sid || sid !== current) return;
+      if (ev.type === "schedule_trigger") {
+        if (String(ev.data?.event || "") !== "started") return;
+        streamIdRef.current = null;
+        streamTextRef.current = "";
+        streamReasoningRef.current = "";
+        nativeReasoningRef.current = false;
+        thinkSplitRef.current.reset();
+        bumpStage();
+        stickBottomRef.current = true;
+        setBusyState(true);
+        markSessionRunning(sid);
+        const taskId = String(ev.data?.task_id || "task");
+        appendMsg({
+          id: `sched-user-${taskId}-${Math.floor(Number(ev.ts || Date.now()))}`,
+          role: "user",
+          content: `定时任务 · ${String(ev.data?.title || "").trim()}`,
+        });
+        return;
+      }
+      if (ev.type === "final") {
+        const text = String(ev.data?.text || "");
+        if (!streamTextRef.current.trim() && text.trim()) {
+          if (streamIdRef.current) streamTextRef.current = text;
+          else appendMsg({ id: uid(), role: "assistant", content: text });
+        }
+        sealStreamBubble();
+        markSessionIdle(sid);
+        setBusyState(false);
+        void refreshSessionsRef.current();
+        void drainQueueSoon();
+        return;
+      }
+      if (ev.type === "error") {
+        sealStreamBubble();
+        appendMsg({
+          id: uid(),
+          role: "assistant",
+          content: String(ev.data?.message || "定时任务执行失败"),
+        });
+        markSessionIdle(sid);
+        setBusyState(false);
+        return;
+      }
+      handleRuntimeEvent(ev, ctx);
+    };
+    window.addEventListener("sidekick-schedule-event", onScheduleEvent);
+    return () => window.removeEventListener("sidekick-schedule-event", onScheduleEvent);
+  }, []);
 
   return {
     transcriptRef,

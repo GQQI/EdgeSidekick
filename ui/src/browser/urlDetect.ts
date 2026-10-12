@@ -1,10 +1,56 @@
 /** Detect / sanitize http(s) URLs in chat text and browser navigation. */
 
 /**
- * ASCII URL body only — stops before markdown (*_~`), CJK, and whitespace.
+ * ASCII URL body. Brackets and parentheses are not consumed: they are markdown
+ * link syntax, and a greedy match was rewriting shell snippets such as
+ * `BASE=https://…` into `BASE=[https://…](https://…` with the closing `)` dropped.
+ * Balanced parentheses that are part of the URL itself are handled by findHttpUrls.
  */
 export const URL_RE =
-  /https?:\/\/[A-Za-z0-9][-A-Za-z0-9._~:/?#\[\]@!$&'()+,;=%]*/gi;
+  /https?:\/\/[A-Za-z0-9][-A-Za-z0-9._~:/?#@!$&'+,;=%]*/gi;
+
+const URL_TRAIL = /[,.;:!?，。；！？*_~`]/;
+
+/** Http(s) spans in `src`. Trailing punctuation and markdown delimiters stay outside the match. */
+export function findHttpUrls(src: string): Array<{ index: number; raw: string }> {
+  const text = src || "";
+  const out: Array<{ index: number; raw: string }> = [];
+  const re = /https?:\/\//gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const start = m.index;
+    let i = start + m[0].length;
+    if (!/[A-Za-z0-9]/.test(text[i] || "")) continue;
+    let depth = 0;
+    while (i < text.length) {
+      const c = text[i];
+      if (c === "(") {
+        depth += 1;
+        i += 1;
+        continue;
+      }
+      if (c === ")") {
+        if (depth === 0) break;
+        depth -= 1;
+        i += 1;
+        continue;
+      }
+      if (c === "[" || c === "]") break;
+      if (!/[-A-Za-z0-9._~:/?#@!$&'+,;=%]/.test(c)) break;
+      i += 1;
+    }
+    while (depth > 0 && text[i - 1] === "(") {
+      i -= 1;
+      depth -= 1;
+    }
+    while (i > start + m[0].length && URL_TRAIL.test(text[i - 1])) i -= 1;
+    const raw = text.slice(start, i);
+    if (raw.length <= m[0].length) continue;
+    out.push({ index: start, raw });
+    re.lastIndex = i;
+  }
+  return out;
+}
 
 export function normalizeDetectedUrl(raw: string): string {
   let u = (raw || "").trim();
@@ -88,8 +134,7 @@ export function sanitizeBrowserUrl(raw: string): string {
     /* keep */
   }
 
-  const re = new RegExp(URL_RE.source, "i");
-  const matched = text.match(re)?.[0];
+  const matched = findHttpUrls(text)[0]?.raw;
   let candidate = normalizeDetectedUrl(matched || (/^https?:\/\//i.test(text) ? text : ""));
   if (!candidate) return "";
 
@@ -114,53 +159,85 @@ export function isHttpUrl(value: string): boolean {
 }
 
 /**
- * Normalize chat markdown URLs so only the clean URL becomes a link.
- *
- * - ``**http://localhost:5176**，已在`` → ``[http://localhost:5176](http://localhost:5176)，已在``
- *   (drop bold wrappers — they confuse GFM autolink and look like part of the URL)
- * - bare URLs → explicit ``[url](url)`` so GFM cannot swallow trailing junk
+ * Do not rewrite chat text into markdown links.
+ * Inserting `[url](url)` deletes or invents brackets and parentheses, so a
+ * shell assignment like `BASE="https://example.com"` was shown as
+ * `BASE="[https://example.com](https://example.com` with the closing `)` gone.
+ * Links are added later as nodes whose visible text is the original slice.
  */
 export function prepMarkdownForUrls(src: string): string {
-  let s = src || "";
+  return src || "";
+}
 
-  // 1) Strip ** around URLs (optional junk inside bold) → clean markdown link
-  s = s.replace(/\*\*\s*((?:https?:\/\/)[^*]*?)\s*\*\*/gi, (_m, inner: string) => {
-    const clean = sanitizeBrowserUrl(inner);
-    return clean ? `[${clean}](${clean})` : `**${inner}**`;
-  });
+const FILE_RE = /(^|[\s])((?:\.\/)?[\w./\\\-\u4e00-\u9fff]+\.(?:html?|pdf))(?=$|[\s,，。;；])/gi;
 
-  // 2) Convert every remaining bare URL to an explicit link (skip inside existing links)
-  let out = "";
-  let i = 0;
-  const re = new RegExp(URL_RE.source, "gi");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s))) {
-    const start = m.index;
-    out += s.slice(i, start);
-    const url = m[0];
-    const prev2 = s.slice(Math.max(0, start - 2), start);
-    const prev1 = start > 0 ? s[start - 1] : "";
-    if (prev2 === "](" || prev1 === "[" || prev1 === "(") {
-      out += url;
-    } else {
-      const clean = sanitizeBrowserUrl(url);
-      out += clean ? `[${clean}](${clean})` : url;
-    }
-    i = start + url.length;
+type MdNode = {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: MdNode[];
+};
+
+/** Spans that may become links. Visible text is always `raw` itself. */
+export function literalLinkSpans(src: string): Array<{ index: number; raw: string; href: string }> {
+  const text = src || "";
+  const spans: Array<{ index: number; raw: string; href: string }> = [];
+  for (const hit of findHttpUrls(text)) {
+    const href = sanitizeBrowserUrl(hit.raw);
+    if (href) spans.push({ index: hit.index, raw: hit.raw, href });
   }
-  out += s.slice(i);
+  const fileRe = new RegExp(FILE_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = fileRe.exec(text))) {
+    const file = m[2];
+    const index = m.index + m[1].length;
+    if (spans.some((s) => index < s.index + s.raw.length && index + file.length > s.index)) continue;
+    spans.push({ index, raw: file, href: file });
+  }
+  spans.sort((a, b) => a.index - b.index);
+  return spans;
+}
 
-  // 3) Bare workspace files (report.html / report.pdf) → markdown links we intercept.
-  return out.replace(
-    /(^|[\s])((?:\.\/)?[\w./\\\-\u4e00-\u9fff]+\.(?:html?|pdf))(?=$|[\s,，。;；])/gi,
-    (full, pre: string, file: string, offset: number, whole: string) => {
-      const idx = offset + pre.length;
-      const prev2 = whole.slice(Math.max(0, idx - 2), idx);
-      const prev1 = idx > 0 ? whole[idx - 1] : "";
-      if (prev2 === "](" || prev1 === "[" || prev1 === "(") return full;
-      return `${pre}[${file}](${file})`;
-    },
-  );
+function splitTextNode(value: string): MdNode[] {
+  const spans = literalLinkSpans(value);
+  if (!spans.length) return [{ type: "text", value }];
+  const out: MdNode[] = [];
+  let last = 0;
+  for (const span of spans) {
+    if (span.index < last) continue;
+    if (span.index > last) out.push({ type: "text", value: value.slice(last, span.index) });
+    out.push({
+      type: "link",
+      url: span.href,
+      children: [{ type: "text", value: span.raw }],
+    });
+    last = span.index + span.raw.length;
+  }
+  if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+  return out;
+}
+
+const SKIP_LINKIFY = new Set(["code", "inlineCode", "link", "linkReference", "definition"]);
+
+function linkifyNode(node: MdNode) {
+  if (!node.children || SKIP_LINKIFY.has(node.type)) return;
+  const next: MdNode[] = [];
+  for (const child of node.children) {
+    if (child.type === "text" && typeof child.value === "string") {
+      next.push(...splitTextNode(child.value));
+    } else {
+      linkifyNode(child);
+      next.push(child);
+    }
+  }
+  node.children = next;
+}
+
+/** Remark plugin: wrap URLs and local html/pdf in links without changing characters. */
+export function remarkLinkifyLiteral() {
+  return (tree: MdNode) => {
+    linkifyNode(tree);
+  };
 }
 
 /**
@@ -175,16 +252,15 @@ export function splitDirtyUrlLabel(label: string): {
 } | null {
   const src = label || "";
   if (!src.trim()) return null;
-  const re = new RegExp(URL_RE.source, "i");
-  const m = re.exec(src);
-  if (!m) return null;
-  const href = sanitizeBrowserUrl(m[0]);
+  const hit = findHttpUrls(src)[0];
+  if (!hit) return null;
+  const href = sanitizeBrowserUrl(hit.raw);
   if (!href) return null;
   return {
     href,
-    text: displayHttpUrl(href),
-    before: src.slice(0, m.index),
-    after: src.slice(m.index + m[0].length),
+    text: hit.raw,
+    before: src.slice(0, hit.index),
+    after: src.slice(hit.index + hit.raw.length),
   };
 }
 
@@ -213,26 +289,24 @@ export function sandboxUrlGesture(
   return true;
 }
 
-export type TextSegment = { type: "text"; value: string } | { type: "url"; value: string };
+export type TextSegment = { type: "text"; value: string } | { type: "url"; value: string; href: string };
 
 export function splitTextWithUrls(text: string): TextSegment[] {
   const src = text || "";
   if (!src) return [];
   const out: TextSegment[] = [];
-  const re = new RegExp(URL_RE.source, "gi");
   let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
-    const start = m.index;
+  for (const hit of findHttpUrls(src)) {
+    const start = hit.index;
     if (start > last) out.push({ type: "text", value: src.slice(last, start) });
-    const raw = m[0];
-    const url = sanitizeBrowserUrl(raw);
-    if (url) {
-      out.push({ type: "url", value: displayHttpUrl(url) });
+    const href = sanitizeBrowserUrl(hit.raw);
+    if (href) {
+      // Keep the original characters on screen. The href is only for navigation.
+      out.push({ type: "url", value: hit.raw, href: displayHttpUrl(href) });
     } else {
-      out.push({ type: "text", value: raw });
+      out.push({ type: "text", value: hit.raw });
     }
-    last = start + raw.length;
+    last = start + hit.raw.length;
   }
   if (last < src.length) out.push({ type: "text", value: src.slice(last) });
   return out.length ? out : [{ type: "text", value: src }];

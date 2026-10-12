@@ -13,7 +13,7 @@ license: Complete terms in LICENSE.txt
 
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
 
-## Sidekick / 离线适配
+## EdgeSidekick / 离线适配
 
 - 全程离线：不要开外网浏览器 companion，不要启动本地 web server。
 - 需要确认时用 `ask_user`，一次一个问题。

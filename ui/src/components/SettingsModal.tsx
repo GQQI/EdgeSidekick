@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { McpSettings } from "./McpSettings";
 import { SkillSettings } from "./SkillSettings";
 import { ModelSettings } from "./ModelSettings";
@@ -7,6 +7,7 @@ import type { LiveLine, SettingsTab, SubNode } from "../types/chat";
 import type { ModelSetup } from "../types/modelSetup";
 import type { SessionItem, WorkspaceItem } from "../api";
 import type { Density, Locale, MsgKey, Theme } from "../i18n";
+import type { UiMode } from "../uiMode";
 import { IconCheck, IconChat, IconFolder, IconTrash } from "./icons";
 
 const APP_VERSION = "0.3.1";
@@ -19,6 +20,8 @@ export type SettingsModalProps = {
   setTheme: (theme: Theme) => void;
   setLocale: (locale: Locale) => void;
   setDensity: (density: Density) => void;
+  uiMode: UiMode;
+  setUiMode: (mode: UiMode) => void;
   settingsTab: SettingsTab;
   setSettingsTab: (tab: SettingsTab) => void;
   onClose: () => void;
@@ -39,6 +42,9 @@ export type SettingsModalProps = {
   onLogout?: () => void;
   onToast?: (msg: string) => void;
   onSkillsChanged?: () => void;
+  autoApproveTools?: boolean;
+  autoApproveBusy?: boolean;
+  onToggleAutoApprove?: (enabled: boolean) => void;
 };
 
 export function SettingsModal({
@@ -49,6 +55,8 @@ export function SettingsModal({
   setTheme,
   setLocale,
   setDensity,
+  uiMode,
+  setUiMode,
   settingsTab,
   setSettingsTab,
   onClose,
@@ -69,13 +77,22 @@ export function SettingsModal({
   onLogout,
   onToast,
   onSkillsChanged,
+  autoApproveTools = false,
+  autoApproveBusy = false,
+  onToggleAutoApprove,
 }: SettingsModalProps) {
   const logEndRef = useRef<HTMLLIElement | null>(null);
+  const [confirmAllowAll, setConfirmAllowAll] = useState(false);
+  const switchOn = autoApproveTools || confirmAllowAll;
 
   useEffect(() => {
     if (settingsTab !== "runtime") return;
     logEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [settingsTab, live.length]);
+
+  useEffect(() => {
+    if (settingsTab !== "safety" || autoApproveTools) setConfirmAllowAll(false);
+  }, [settingsTab, autoApproveTools]);
 
   const closeAndSave = () => {
     // Model edits are deliberately staged in React state.  This is the only
@@ -112,6 +129,7 @@ export function SettingsModal({
           {(
             [
               ["workspace", t("tabWorkspace")],
+              ["safety", t("tabSafety")],
               ["model", t("tabModel")],
               ["skills", t("tabSkills")],
               ["mcp", "MCP"],
@@ -212,16 +230,88 @@ export function SettingsModal({
             </div>
           )}
 
-          {settingsTab === "model" && model && (
-            <ModelSettings
-              setup={model}
-              locale={locale}
-              saving={modelSaving}
-              onChange={onModelChange}
-              onSave={(next, opts) => void onModelSave(next, opts)}
-              t={t}
-            />
+          {settingsTab === "safety" && (
+            <div className="settings-pane settings-pane-fill appearance-pane">
+              <header className="settings-pane-intro">
+                <h3>{t("safetyTitle")}</h3>
+                <p className="hint">{t("safetyHint")}</p>
+              </header>
+              <div className="settings-card-list">
+                <div className="appearance-row">
+                  <div className="safety-copy">
+                    <span className="appearance-label">{t("safetyAutoApprove")}</span>
+                    <p className="hint">{t("safetyAutoApproveHint")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className={`memory-toggle${switchOn ? " on" : ""}`}
+                    role="switch"
+                    aria-checked={switchOn}
+                    disabled={autoApproveBusy || !onToggleAutoApprove}
+                    title={switchOn ? t("safetyAutoApproveOn") : t("safetyAutoApproveOff")}
+                    onClick={() => {
+                      if (autoApproveTools) {
+                        setConfirmAllowAll(false);
+                        onToggleAutoApprove?.(false);
+                        return;
+                      }
+                      setConfirmAllowAll((open) => !open);
+                    }}
+                  >
+                    <i />
+                  </button>
+                </div>
+              </div>
+              {confirmAllowAll && !autoApproveTools && (
+                <div className="safety-risk" role="alertdialog" aria-label={t("safetyAutoApproveRiskTitle")}>
+                  <strong>{t("safetyAutoApproveRiskTitle")}</strong>
+                  <p>{t("safetyAutoApproveRisk")}</p>
+                  <div className="safety-risk-actions">
+                    <button
+                      type="button"
+                      className="ghost"
+                      disabled={autoApproveBusy}
+                      onClick={() => setConfirmAllowAll(false)}
+                    >
+                      {t("safetyAutoApproveCancel")}
+                    </button>
+                    <button
+                      type="button"
+                      className="primary danger"
+                      disabled={autoApproveBusy}
+                      onClick={() => void onToggleAutoApprove?.(true)}
+                    >
+                      {t("safetyAutoApproveConfirm")}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {autoApproveTools && (
+                <p className="safety-risk-active" role="status">
+                  {t("safetyAutoApproveActive")}
+                </p>
+              )}
+            </div>
           )}
+
+          {settingsTab === "model" &&
+            (model ? (
+              <ModelSettings
+                setup={model}
+                locale={locale}
+                saving={modelSaving}
+                onChange={onModelChange}
+                onSave={(next, opts) => void onModelSave(next, opts)}
+                t={t}
+              />
+            ) : (
+              // `model` can still be null if the boot-time fetch raced or
+              // failed — show a loading hint instead of a blank pane.
+              <div className="settings-pane">
+                <h3>{t("tabModel")}</h3>
+                <p className="hint">{t("loading")}</p>
+              </div>
+            ))}
 
           {settingsTab === "skills" && (
             <SkillSettings t={t} onToast={onToast} onChanged={onSkillsChanged} />
@@ -255,6 +345,26 @@ export function SettingsModal({
               </header>
 
               <div className="settings-card-list">
+                <div className="appearance-row appearance-mode-card">
+                  <span className="appearance-label">{t("uiModeLabel")}</span>
+                  <button
+                    type="button"
+                    className={`mode-option${uiMode === "workbench" ? " active" : ""}`}
+                    onClick={() => setUiMode("workbench")}
+                  >
+                    <strong>{t("uiModeWorkbench")}</strong>
+                    <span>{t("uiModeWorkbenchDesc")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-option${uiMode === "social" ? " active" : ""}`}
+                    onClick={() => setUiMode("social")}
+                  >
+                    <strong>{t("uiModeSocial")}</strong>
+                    <span>{t("uiModeSocialDesc")}</span>
+                  </button>
+                </div>
+
                 <div className="appearance-row">
                   <span className="appearance-label">{t("language")}</span>
                   <div className="seg-control" role="group" aria-label={t("language")}>

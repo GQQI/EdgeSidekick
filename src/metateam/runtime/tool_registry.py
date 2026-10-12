@@ -57,6 +57,66 @@ class ToolRegistry:
         return sorted(self._tools.keys())
 
 
+# Observation-only tools kept when a turn runs with disable_tools (e.g. the
+# 会话版 group decision pass). Everything that mutates the workspace, runs
+# shell, delegates, or asks the user stays excluded so the pass cannot act.
+READONLY_TOOLS = frozenset(
+    {
+        # workspace reads
+        "read_file",
+        "list_dir",
+        "search_text",
+        # codebase structure
+        "codebase_overview",
+        "codebase_find_similar",
+        "codebase_impact",
+        "coherence_checklist",
+        # repo state
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_branch",
+        # web / browser observation. browser_navigate is not observation:
+        # it opens the in-app browser, so a read-only pass must not have it.
+        "web_search",
+        "browser_observe",
+        "browser_snapshot",
+        "browser_scroll",
+        "browser_get_page_content",
+        "browser_extract_content",
+        "browser_wait",
+        "browser_diagnostics",
+        # memory / schedule visibility (reads only)
+        "memory_list",
+        "memory_read",
+        "list_scheduled_tasks",
+    }
+)
+
+
+DELEGATE_TOOL_NAMES = frozenset({"delegate_task", "delegate_dialogue", "ask_agent"})
+
+
+def drop_delegate_schemas(schemas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove nested-agent tools. The group harness is already the orchestrator."""
+    out: list[dict[str, Any]] = []
+    for schema in schemas or []:
+        name = str(((schema or {}).get("function") or {}).get("name") or "")
+        if name not in DELEGATE_TOOL_NAMES:
+            out.append(schema)
+    return out
+
+
+def filter_readonly_schemas(schemas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only READONLY_TOOLS entries from OpenAI-style tool schemas."""
+    out: list[dict[str, Any]] = []
+    for schema in schemas or []:
+        name = str(((schema or {}).get("function") or {}).get("name") or "")
+        if name in READONLY_TOOLS:
+            out.append(schema)
+    return out
+
+
 _ARG_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
     "search_text": {
         "query": ("query", "pattern", "text", "search", "q", "needle", "keyword"),

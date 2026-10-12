@@ -1,10 +1,11 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   answerAsk,
   confirmPlan,
   decideApproval,
   fetchHealth,
   saveModel,
+  savePrefs,
   writeFileContent,
 } from "../api";
 import type { PlanTask } from "../components/TaskPlanPanel";
@@ -37,7 +38,7 @@ export type DialogsDeps = {
   setSettingsOpen: (v: boolean) => void;
   setModel: (m: ModelSetup | null) => void;
   setModelSaving: (v: boolean) => void;
-  setHealth: (h: Health | null) => void;
+  setHealth: React.Dispatch<React.SetStateAction<Health | null>>;
   setToast: (msg: string) => void;
   setApproval: React.Dispatch<React.SetStateAction<ApprovalPrompt | null>>;
   setAskPrompt: React.Dispatch<React.SetStateAction<AskPrompt | null>>;
@@ -90,6 +91,28 @@ export function useDialogs(deps: DialogsDeps) {
     setFsRefresh,
     onNewChat,
   } = deps;
+
+  const [autoApproveBusy, setAutoApproveBusy] = useState(false);
+
+  const toggleAutoApprove = useCallback(
+    async (enabled: boolean) => {
+      setAutoApproveBusy(true);
+      try {
+        const res = await savePrefs({ auto_approve_tools: enabled });
+        const on = Boolean(res.auto_approve_tools);
+        setHealth((h) => (h ? { ...h, auto_approve_tools: on } : h));
+        if (on) setApproval(null);
+        setToast(on ? t("safetyAutoApproveOn") : t("safetyAutoApproveOff"));
+        return on;
+      } catch (e) {
+        setToast(e instanceof Error ? e.message : String(e));
+        return null;
+      } finally {
+        setAutoApproveBusy(false);
+      }
+    },
+    [setHealth, setApproval, setToast, t],
+  );
 
   const openSettings = useCallback(
     (tab: SettingsTab = "workspace") => {
@@ -316,5 +339,7 @@ export function useDialogs(deps: DialogsDeps) {
     resolveApproval,
     resolveAsk,
     resolvePlanConfirm,
+    autoApproveBusy,
+    toggleAutoApprove,
   };
 }

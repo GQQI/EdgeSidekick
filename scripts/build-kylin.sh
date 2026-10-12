@@ -91,6 +91,7 @@ PIP_INDEX="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 export ELECTRON_MIRROR="${ELECTRON_MIRROR:-https://npmmirror.com/mirrors/electron/}"
 export ELECTRON_BUILDER_BINARIES_MIRROR="${ELECTRON_BUILDER_BINARIES_MIRROR:-https://npmmirror.com/mirrors/electron-builder-binaries/}"
 export PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST:-https://npmmirror.com/mirrors/playwright}"
+export npm_config_registry="${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}"
 
 step() { printf '\n=== %s ===\n' "$1"; }
 
@@ -224,14 +225,29 @@ install_playwright() {
   fi
 }
 
+# node_modules copied from Windows omit Linux optional binaries (rollup, electron).
+ensure_linux_npm() {
+  local dir="$1"
+  local marker="$2"
+  local label="$3"
+  (
+    cd "$dir"
+    if [[ -e "$marker" ]]; then
+      return 0
+    fi
+    echo "  ${label}: Linux native package missing, reinstalling npm dependencies"
+    rm -rf node_modules
+    npm install
+  )
+}
+
 build_ui() {
   step "Building UI"
   need_cmd npm
+  local rollup_pkg="node_modules/@rollup/rollup-linux-${ARCH}-gnu"
+  ensure_linux_npm "$ROOT/ui" "$rollup_pkg" "ui"
   (
     cd "$ROOT/ui"
-    if [[ ! -d node_modules ]]; then
-      npm install
-    fi
     npm run build
   )
 }
@@ -241,18 +257,16 @@ build_packages() {
   [[ -x "$PY_DIR/bin/python3" ]] || { echo "payload/python missing" >&2; exit 1; }
   [[ -f "$PAYLOAD/ui/dist/index.html" ]] || { echo "payload/ui/dist missing" >&2; exit 1; }
   need_cmd npx
+  ensure_linux_npm "$ROOT/desktop" "node_modules/electron/dist/electron" "desktop"
   (
     cd "$ROOT/desktop"
-    if [[ ! -d node_modules/electron-builder ]]; then
-      npm install
-    fi
     npx electron-builder --linux deb AppImage tar.gz --"$ARCH"
   )
 }
 
 # ---- main ----
 echo
-echo " Sidekick 麒麟 / Linux offline packages"
+echo " EdgeSidekick 麒麟 / Linux offline packages"
 echo " ------------------------------------"
 echo " Repo: $ROOT"
 echo " Arch: $ARCH ($PY_TRIPLE)"
@@ -307,8 +321,8 @@ find "$ROOT/desktop/dist" -maxdepth 1 -type f \( \
 \) -printf '  %f  (%k KB)\n' 2>/dev/null || \
   ls -lh "$ROOT/desktop/dist"/*kylin* 2>/dev/null || true
 echo
-echo " Install .deb:   sudo dpkg -i desktop/dist/Sidekick-*-kylin-*.deb && sudo apt-get install -f -y"
-echo " AppImage:       chmod +x *.AppImage && ./Sidekick-*-kylin-*.AppImage"
-echo " Portable:       tar -xzf Sidekick-*-kylin-*.tar.gz && ./Sidekick-*/sidekick"
-echo " Config/logs:    ~/.config/Sidekick/"
+echo " Install .deb:   sudo dpkg -i desktop/dist/EdgeSidekick-*-kylin-*.deb && sudo apt-get install -f -y"
+echo " AppImage:       chmod +x *.AppImage && ./EdgeSidekick-*-kylin-*.AppImage"
+echo " Portable:       tar -xzf EdgeSidekick-*-kylin-*.tar.gz && ./EdgeSidekick-*/edgesidekick"
+echo " Config/logs:    ~/.config/EdgeSidekick/"
 echo

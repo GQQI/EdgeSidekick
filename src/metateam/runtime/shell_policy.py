@@ -4,31 +4,35 @@ from __future__ import annotations
 
 import re
 
-_LONG_RUNNING_RE = re.compile(
+_DAEMON_RE = re.compile(
     r"("
     r"npm\s+run\s+(dev|start|serve)|"
     r"yarn\s+(dev|start)|"
     r"pnpm\s+(dev|start)|"
-    r"\bvite\b|"
+    r"(?:^|[\n;&|])\s*(?:npx\s+)?vite\b|"
     r"webpack-dev-server|"
     r"next\s+dev|"
     r"uvicorn\b.*(--reload|\breload\b)|"
     r"flask\s+run|"
     r"django(-admin)?\s+runserver|"
-    r"python\s+-m\s+http\.server|"
+    r"python(?:3)?\s+-m\s+http\.server|"
     r"npx\s+serve|"
     r"nodemon\b|"
     r"tail\s+-f|"
-    r"--watch\b|"
-    r"torchrun\b|accelerate\s+launch|"
-    r"python\s+\S*(train|finetune|experiment)"
+    r"--watch\b"
     r")",
     re.I,
 )
 
 
+def is_daemon_command(command: str) -> bool:
+    """True for processes that are not expected to exit (dev servers, watchers)."""
+    return bool(_DAEMON_RE.search(command or ""))
+
+
 def is_long_running_command(command: str) -> bool:
-    return bool(_LONG_RUNNING_RE.search(command or ""))
+    """Alias used by verify_run / older call sites — daemons only, not training jobs."""
+    return is_daemon_command(command)
 
 
 _TAIL_FILTER_RE = re.compile(

@@ -14,16 +14,28 @@ from ...core.config import get_settings
 from ...runtime.tools import skill_tool_name
 from ...services.skills import (
     compose_skill_markdown,
+    create_skill_package_entry,
     delete_skill,
+    delete_skill_package_file,
     find_skill,
     import_skill_dir,
     import_skill_markdown,
+    list_skill_package_files,
     load_skills,
+    read_skill_package_file,
+    skill_package_dir,
     validate_skill_text,
     write_skill,
+    write_skill_package_file,
 )
 from ..http import require_loopback
-from ..schemas import SkillImportDirBody, SkillValidateBody, SkillWriteBody
+from ..schemas import (
+    SkillFileCreateBody,
+    SkillFileWriteBody,
+    SkillImportDirBody,
+    SkillValidateBody,
+    SkillWriteBody,
+)
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 
@@ -169,7 +181,13 @@ def api_skill(name: str) -> dict[str, Any]:
     sk = find_skill(s.skills_dir, name)
     if sk is None:
         raise HTTPException(404, "skill not found")
-    return {**_public(sk), "body": sk.read_body()}
+    root = skill_package_dir(sk)
+    return {
+        **_public(sk),
+        "body": sk.read_body(),
+        "root": str(root),
+        "files": list_skill_package_files(sk),
+    }
 
 
 @router.put("/{name}")
@@ -189,6 +207,80 @@ def api_skill_update(name: str, body: SkillWriteBody) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"status": "ok", "skill": {**_public(sk), "body": sk.read_body()}}
+
+
+
+@router.get("/{name}/files/{file_path:path}")
+def api_skill_file(name: str, file_path: str) -> dict[str, Any]:
+    s = get_settings()
+    sk = find_skill(s.skills_dir, name)
+    if sk is None:
+        raise HTTPException(404, "skill not found")
+    try:
+        return read_skill_package_file(sk, file_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "file not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.put("/{name}/files/{file_path:path}")
+def api_skill_file_put(
+    name: str, file_path: str, body: SkillFileWriteBody
+) -> dict[str, Any]:
+    s = get_settings()
+    sk = find_skill(s.skills_dir, name)
+    if sk is None:
+        raise HTTPException(404, "skill not found")
+    try:
+        result = write_skill_package_file(
+            sk, file_path, body.content, skills_dir=s.skills_dir
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "file not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"status": "ok", **result}
+
+
+
+
+@router.post("/{name}/files")
+def api_skill_file_create(name: str, body: SkillFileCreateBody) -> dict[str, Any]:
+    s = get_settings()
+    sk = find_skill(s.skills_dir, name)
+    if sk is None:
+        raise HTTPException(404, "skill not found")
+    try:
+        result = create_skill_package_entry(
+            sk,
+            body.path,
+            entry_type=body.type,
+            content=body.content or "",
+            skills_dir=s.skills_dir,
+        )
+    except FileExistsError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"status": "ok", **result}
+
+
+@router.delete("/{name}/files/{file_path:path}")
+def api_skill_file_delete(name: str, file_path: str) -> dict[str, Any]:
+    s = get_settings()
+    sk = find_skill(s.skills_dir, name)
+    if sk is None:
+        raise HTTPException(404, "skill not found")
+    try:
+        result = delete_skill_package_file(
+            sk, file_path, skills_dir=s.skills_dir
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "file not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"status": "ok", **result}
 
 
 @router.delete("/{name}")

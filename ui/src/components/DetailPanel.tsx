@@ -66,7 +66,9 @@ export function DetailPanel({
   const title =
     detail.type === "tool"
       ? `${t("detailTool")} · ${detail.tool.name}`
-      : detail.type === "subagent"
+      : detail.type === "ask"
+        ? "ask"
+        : detail.type === "subagent"
         ? `${t("detailSubagent")} · ${subagentDisplayName(detail.subagent)}`
         : detail.type === "changes"
           ? t("gitReviewList")
@@ -132,7 +134,9 @@ export function DetailPanel({
             detailDiffLoading={detailDiffLoading}
             onPickUrl={pickUrl}
           />
-        ) : detail.type === "subagent" ? (
+        ) : detail.type === "ask" ? (
+        <AskEdgeDetail t={t} detail={detail} />
+      ) : detail.type === "subagent" ? (
           <SubagentDetail t={t} detail={detail} onPickUrl={pickUrl} onChange={onChange} />
         ) : detail.type === "changes" ? (
           <ReviewPanel
@@ -234,6 +238,65 @@ function ToolDetail({
   );
 }
 
+
+function AskEdgeDetail({
+  t,
+  detail,
+}: {
+  t: Props["t"];
+  detail: Extract<NonNullable<DetailView>, { type: "ask" }>;
+}) {
+  const ask = detail.ask;
+  const vis = ask.visibility || {};
+  return (
+    <div className="detail-body ask-edge-detail">
+      <div className="detail-meta">
+        {(ask.kind || "consult").toUpperCase()}
+        {ask.status ? ` · ${ask.status}` : ""}
+      </div>
+      <h3 className="ask-edge-title">{ask.need || ask.goal_slice || "Ask"}</h3>
+      <div className="ask-edge-grid">
+        <div><span className="ask-k">what</span>{ask.what || "—"}</div>
+        <div><span className="ask-k">how</span>{ask.how || "—"}</div>
+        <div><span className="ask-k">who</span>{ask.who || "—"}</div>
+        <div><span className="ask-k">when</span>{ask.when || "—"}</div>
+      </div>
+      {ask.why ? <p className="ask-edge-why"><span className="ask-k">why</span>{ask.why}</p> : null}
+      <div className="ask-edge-vis">
+        <div className="ask-k">visibility.share</div>
+        <div className="ask-vis-tags">
+          {(vis.share || []).length
+            ? (vis.share || []).map((s) => (
+                <span key={s} className="ask-tag share">{s}</span>
+              ))
+            : "—"}
+        </div>
+        <div className="ask-k">visibility.redact</div>
+        <div className="ask-vis-tags">
+          {(vis.redact || []).length
+            ? (vis.redact || []).map((s) => (
+                <span key={s} className="ask-tag redact">{s}</span>
+              ))
+            : "—"}
+        </div>
+        {vis.quote_policy ? (
+          <div className="ask-edge-quote">quote: {vis.quote_policy}</div>
+        ) : null}
+      </div>
+      {ask.summary ? (
+        <div className="ask-edge-summary">
+          <div className="ask-k">reply</div>
+          <pre>{ask.summary}</pre>
+        </div>
+      ) : null}
+      <div className="ask-edge-ids">
+        <span>from: {ask.from_id || "lead"}</span>
+        <span>to: {ask.to_id || "—"}</span>
+      </div>
+    </div>
+  );
+}
+
 function SubagentDetail({
   t,
   detail,
@@ -267,7 +330,7 @@ function SubagentDetail({
             >
               <div className="subagent-card-head">
                 <span className="subagent-card-badge">
-                  {t("subtaskLabel")}
+                  {"Ask"}
                   {child.role ? ` · ${child.role}` : ""}
                 </span>
                 <span className="subagent-card-status">

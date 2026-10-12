@@ -1,1 +1,5 @@
 *.bat text eol=crlf
+
+# Shell scripts must be LF for Linux/Kylin
+*.sh text eol=lf
+

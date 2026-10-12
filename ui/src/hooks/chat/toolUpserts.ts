@@ -15,11 +15,12 @@ export type ToolUpsertCtx = {
     name?: string;
     statuses?: ToolCard["status"][];
   }) => ChatMsg | undefined;
-  updateMsg: (id: string, patch: Partial<ChatMsg>) => void;
-  syncToolPanel: (tool: ToolCard, prevCallId?: string) => void;
+  updateMsg: (id: string, patch: Partial<ChatMsg>, immediate?: boolean) => void;
+  syncToolPanel: (tool: ToolCard, prevCallId?: string, immediate?: boolean) => void;
+  queueDetail: (updater: (d: DetailView) => DetailView, immediate?: boolean) => void;
   appendMsg: (msg: ChatMsg) => void;
   removeMsg: (id: string) => void;
-  commit: (next: ChatMsg[]) => void;
+  commit: (next: ChatMsg[], immediate?: boolean) => void;
   setSubs: React.Dispatch<React.SetStateAction<SubNode[]>>;
   setDetail: React.Dispatch<React.SetStateAction<DetailView>>;
   transcriptRef: React.MutableRefObject<ChatMsg[]>;
@@ -79,17 +80,18 @@ function mergeDelegateArgs(current: unknown, incoming: unknown): unknown {
 
 /** Auto-open / refresh write_file preview only when it won't steal focus. */
 function revealWriteFileDetail(
-  setDetail: React.Dispatch<React.SetStateAction<DetailView>>,
+  ctx: ToolUpsertCtx,
   tool: ToolCard,
+  immediate = true,
 ) {
-  setDetail((d) => {
+  ctx.queueDetail((d) => {
     if (d == null) return { type: "tool", tool };
     if (d.type !== "tool") return d;
     const same =
       d.tool.id === tool.id ||
       (Boolean(tool.callId) && d.tool.callId === tool.callId);
     return same ? { type: "tool", tool } : d;
-  });
+  }, immediate);
 }
 
 export function upsertToolStart(ev: RuntimeEvent, ctx: ToolUpsertCtx) {
@@ -122,7 +124,7 @@ export function upsertToolStart(ev: RuntimeEvent, ctx: ToolUpsertCtx) {
     ctx.syncToolPanel(tool, prevCallId);
     if (name === "write_file") {
       const preview = writeFilePreview(tool.args);
-      if (preview) revealWriteFileDetail(ctx.setDetail, tool);
+      if (preview) revealWriteFileDetail(ctx, tool);
     }
     if (name === "delegate_task") seedDelegateCanvas(ctx, tool.args, tool.callId, undefined, true);
     return tool;
@@ -138,7 +140,7 @@ export function upsertToolStart(ev: RuntimeEvent, ctx: ToolUpsertCtx) {
   };
   ctx.appendMsg({ id: tool.id, role: "tool", content: "", tool });
   ctx.syncToolPanel(tool);
-  if (name === "write_file") revealWriteFileDetail(ctx.setDetail, tool);
+  if (name === "write_file") revealWriteFileDetail(ctx, tool);
   if (name === "delegate_task") seedDelegateCanvas(ctx, tool.args, tool.callId, undefined, true);
   return tool;
 }
@@ -191,9 +193,9 @@ export function upsertToolDelta(ev: RuntimeEvent, ctx: ToolUpsertCtx) {
       status: "streaming",
       summary,
     };
-    ctx.updateMsg(active.id, { tool });
-    ctx.syncToolPanel(tool, prevCallId);
-    revealWriteFileDetail(ctx.setDetail, tool);
+    ctx.updateMsg(active.id, { tool }, false);
+    ctx.syncToolPanel(tool, prevCallId, false);
+    revealWriteFileDetail(ctx, tool, false);
     if ((name || active.tool.name) === "delegate_task") {
       seedDelegateCanvas(ctx, tool.args, tool.callId, undefined, true);
     }
@@ -211,7 +213,7 @@ export function upsertToolDelta(ev: RuntimeEvent, ctx: ToolUpsertCtx) {
   };
   ctx.appendMsg({ id: tool.id, role: "tool", content: "", tool });
   ctx.syncToolPanel(tool);
-  revealWriteFileDetail(ctx.setDetail, tool);
+  revealWriteFileDetail(ctx, tool);
   if ((name || "tool") === "delegate_task") {
     seedDelegateCanvas(ctx, tool.args, tool.callId, undefined, true);
   }

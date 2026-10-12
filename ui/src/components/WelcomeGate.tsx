@@ -38,7 +38,7 @@ export function WelcomeGate({
             <BrandMark size={52} />
           </span>
           <div className="welcome-brand-text">
-            <span className="welcome-brand-name">Sidekick</span>
+            <span className="welcome-brand-name">EdgeSidekick</span>
             <span className="welcome-brand-sub">AI AGENT SYSTEM</span>
           </div>
         </div>

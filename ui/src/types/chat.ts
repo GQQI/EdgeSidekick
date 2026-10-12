@@ -89,6 +89,8 @@ export type ChatMsg = {
   stage?: number;
   /** Which agent produced this row — never mix two agents into one bubble. */
   agent_id?: string;
+  /** Display name for assistant bubble label (e.g. 墨白). */
+  speaker_name?: string;
   /** Uploaded files shown as chips in the bubble (not the full model payload). */
   attachments?: MsgAttachment[];
   /** When this message was recorded, in epoch milliseconds. */
@@ -98,7 +100,15 @@ export type ChatMsg = {
 };
 
 export type LiveLine = { id: string; text: string; kind: string };
-export type SettingsTab = "workspace" | "model" | "mcp" | "skills" | "runtime" | "appearance" | "account";
+export type SettingsTab =
+  | "workspace"
+  | "safety"
+  | "model"
+  | "mcp"
+  | "skills"
+  | "runtime"
+  | "appearance"
+  | "account";
 
 export type QueuedMsg = {
   id: string;
@@ -115,9 +125,34 @@ export type PendingConfirm = {
   run: () => void | Promise<void>;
 };
 
+
+/** Directed multi-agent AskPacket edge for canvas visualization. */
+export type AskEdge = {
+  id: string;
+  from_id: string;
+  to_id: string;
+  kind: "consult" | "delegate" | "dialogue" | string;
+  what?: string;
+  how?: string;
+  who?: string;
+  when?: string;
+  why?: string;
+  need?: string;
+  goal_slice?: string;
+  visibility?: {
+    share?: string[];
+    redact?: string[];
+    quote_policy?: string;
+    relation?: string;
+  };
+  status?: "asking" | "done" | "error" | string;
+  summary?: string;
+};
+
 export type DetailView =
   | { type: "tool"; tool: ToolCard }
   | { type: "subagent"; subagent: SubNode }
+  | { type: "ask"; ask: AskEdge }
   | { type: "changes"; selectedPath: string | null }
   | {
       type: "file";

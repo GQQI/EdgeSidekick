@@ -1,4 +1,4 @@
-"""ask_user and delegate_task."""
+"""ask_user, delegate_task, delegate_dialogue, ask_agent — with AskPacket visibility."""
 
 from __future__ import annotations
 
@@ -9,9 +9,27 @@ from typing import Any, Optional
 
 from ...core.events import new_id
 from ..ask import normalize_option_labels
+from ..coord.policy import (
+    enrich_child_context,
+    enrich_consult_context,
+    enrich_dialogue_extra,
+    format_delegate_payload,
+    parse_child_summary,
+    prepare_user_ask,
+)
 from ..tool_registry import Tool, ToolRegistry
 from .context import ToolContext
 
+
+
+
+def _record_ask_edge(ctx: ToolContext, edge: dict[str, Any]) -> None:
+    fn = getattr(ctx, "note_ask_edge", None)
+    if callable(fn):
+        try:
+            fn(edge)
+        except Exception:
+            pass
 
 def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
     settings = ctx.settings
@@ -26,9 +44,34 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
             options: list[str],
             allow_custom: bool = True,
             custom_label: str = "其他（请补充）",
+            what: str = "",
+            how: str = "",
+            why: str = "",
+            stop: str = "",
+            goal_slice: str = "",
+            constraints: str = "",
+            evidence: str = "",
+            prior_answers: str = "",
+            share: Optional[list[str]] = None,
+            redact: Optional[list[str]] = None,
         ) -> str:
-            return ask_user_fn(
+            q, packet = prepare_user_ask(
                 question=question,
+                what=what,
+                how=how or "options",
+                why=why,
+                stop=stop,
+                goal_slice=goal_slice,
+                constraints=constraints,
+                evidence=evidence,
+                prior_answers=prior_answers,
+                share=share,
+                redact=redact,
+            )
+            # Packet is applied to the visible question; options UI unchanged.
+            _ = packet
+            return ask_user_fn(
+                question=q,
                 options=normalize_option_labels(options),
                 allow_custom=bool(allow_custom),
                 custom_label=custom_label or "其他（请补充）",
@@ -37,26 +80,33 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
         reg.register(
             Tool(
                 "ask_user",
-                "Ask the user to clarify ONLY when a real decision or missing info blocks progress. "
-                "Do NOT use ask_user to present 要点, summaries, plans, status lists, or findings "
-                "— those belong in markdown assistant text. Do NOT use it to list past user tasks "
-                "or answer meta questions from chat history. "
-                "The UI shows clickable buttons for mutually exclusive choices only. "
-                "Provide question + options (array of 2–12 short labels). Set allow_custom=true "
-                "so the user can type a custom answer. Wait for the result before continuing.",
+                "Ask the user ONLY when a real mutually exclusive decision or missing "
+                "fact blocks progress (including irreversible deletes). "
+                "question is one direct question. options is 2–12 labels, each naming "
+                "one choice — not a paragraph and not a 要点. Put reasons and path "
+                "lists in why/constraints. Carry what=decision how=options when the "
+                "user must pick. Do NOT use ask_user to display summaries, plans, or "
+                "findings; those belong in markdown. allow_custom lets the user type "
+                "a custom answer.",
                 {
                     "type": "object",
                     "properties": {
                         "question": {
                             "type": "string",
-                            "description": "Clear question explaining what you need.",
+                            "description": (
+                                "One direct question naming the decision. "
+                                "Not a summary heading and not a placeholder."
+                            ),
                         },
                         "options": {
                             "type": "array",
                             "items": {"type": "string"},
                             "minItems": 2,
                             "maxItems": 12,
-                            "description": "2–12 choice labels shown as buttons.",
+                            "description": (
+                                "2–12 mutually exclusive choices. Each item is one "
+                                "button label, not a paragraph or a finding."
+                            ),
                         },
                         "allow_custom": {
                             "type": "boolean",
@@ -67,6 +117,48 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                             "type": "string",
                             "description": "Label for the custom/other choice.",
                             "default": "其他（请补充）",
+                        },
+                        "what": {
+                            "type": "string",
+                            "description": "AskAct.what: decision|fact|preference|constraint|review|clarify",
+                        },
+                        "how": {
+                            "type": "string",
+                            "description": "AskAct.how: options|short_answer|structured|evidence",
+                        },
+                        "why": {
+                            "type": "string",
+                            "description": "Why this ask is needed now.",
+                        },
+                        "stop": {
+                            "type": "string",
+                            "description": "What counts as a sufficient answer.",
+                        },
+                        "goal_slice": {
+                            "type": "string",
+                            "description": "Short goal slice the user may see.",
+                        },
+                        "constraints": {
+                            "type": "string",
+                            "description": "Hard constraints safe to show the user.",
+                        },
+                        "evidence": {
+                            "type": "string",
+                            "description": "Optional evidence refs (usually redacted for users).",
+                        },
+                        "prior_answers": {
+                            "type": "string",
+                            "description": "Prior related answers to avoid re-asking.",
+                        },
+                        "share": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "VisibilitySpec.share override.",
+                        },
+                        "redact": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "VisibilitySpec.redact override.",
                         },
                     },
                     "required": ["question", "options"],
@@ -87,6 +179,16 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
             query: str = "",
             prompt: str = "",
             description: str = "",
+            what: str = "",
+            how: str = "",
+            why: str = "",
+            stop: str = "",
+            need: str = "",
+            evidence: str = "",
+            constraints: str = "",
+            prior_answers: str = "",
+            share: Optional[list[str]] = None,
+            redact: Optional[list[str]] = None,
         ) -> str:
             items: list[dict[str, Any]]
             goal_s = str(goal or task or query or prompt or description or "").strip()
@@ -96,7 +198,13 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                 items = []
                 for raw in tasks:
                     if isinstance(raw, str) and raw.strip():
-                        items.append({"goal": raw.strip(), "context": context, "role": role})
+                        items.append(
+                            {
+                                "goal": raw.strip(),
+                                "context": context,
+                                "role": role,
+                            }
+                        )
                         continue
                     if not isinstance(raw, dict):
                         continue
@@ -115,17 +223,43 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                             "goal": g,
                             "context": str(raw.get("context") or context or "").strip(),
                             "role": str(raw.get("role") or role or "leaf"),
+                            "what": str(raw.get("what") or what or ""),
+                            "how": str(raw.get("how") or how or ""),
+                            "why": str(raw.get("why") or why or ""),
+                            "stop": str(raw.get("stop") or stop or ""),
+                            "need": str(raw.get("need") or need or ""),
+                            "evidence": str(raw.get("evidence") or evidence or ""),
+                            "constraints": str(raw.get("constraints") or constraints or ""),
+                            "prior_answers": str(
+                                raw.get("prior_answers") or prior_answers or ""
+                            ),
+                            "share": raw.get("share", share),
+                            "redact": raw.get("redact", redact),
                         }
                     )
             elif goal_s:
-                items = [{"goal": goal_s, "context": context, "role": role}]
+                items = [
+                    {
+                        "goal": goal_s,
+                        "context": context,
+                        "role": role,
+                        "what": what,
+                        "how": how,
+                        "why": why,
+                        "stop": stop,
+                        "need": need,
+                        "evidence": evidence,
+                        "constraints": constraints,
+                        "prior_answers": prior_answers,
+                        "share": share,
+                        "redact": redact,
+                    }
+                ]
             else:
                 return "ERROR: provide goal or tasks[]"
             if not items:
                 return "ERROR: provide goal or tasks[]"
 
-            # No hard reject on task count — extra workers queue on the
-            # thread pool (max_concurrent_children is concurrency, not a cap).
             workers = max(1, int(settings.max_concurrent_children or 3))
             planned: list[dict[str, Any]] = []
             for it in items:
@@ -143,20 +277,61 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
 
             def _one(idx: int, item: dict[str, Any]) -> tuple[int, str]:
                 g = str(item.get("goal") or "").strip()
-                child_ctx = str(item.get("context") or "").strip()
-                r = str(item.get("role") or role or "leaf")
                 if not g:
                     return idx, "ERROR: empty goal"
+                child_ctx, packet = enrich_child_context(
+                    goal=g,
+                    context=str(item.get("context") or "").strip(),
+                    role=str(item.get("role") or role or "leaf"),
+                    what=str(item.get("what") or ""),
+                    how=str(item.get("how") or ""),
+                    why=str(item.get("why") or ""),
+                    stop=str(item.get("stop") or ""),
+                    need=str(item.get("need") or ""),
+                    evidence=str(item.get("evidence") or ""),
+                    constraints=str(item.get("constraints") or ""),
+                    prior_answers=str(item.get("prior_answers") or ""),
+                    share=item.get("share") if isinstance(item.get("share"), list) else share,
+                    redact=item.get("redact") if isinstance(item.get("redact"), list) else redact,
+                )
+                _record_ask_edge(
+                    ctx,
+                    {
+                        "id": str(item.get("child_id") or new_id("ask")),
+                        "from_id": "",
+                        "to_id": str(item.get("child_id") or ""),
+                        "kind": "delegate",
+                        "what": str(item.get("what") or "execute"),
+                        "how": str(item.get("how") or "consult"),
+                        "who": "child",
+                        "when": "now",
+                        "why": str(item.get("why") or ""),
+                        "need": g,
+                        "goal_slice": g,
+                        "visibility": packet.to_dict().get("visibility") if hasattr(packet, "to_dict") else {},
+                        "status": "asking",
+                    },
+                )
+
                 try:
                     summary = run_child(
                         goal=g,
                         context=child_ctx,
-                        role=r,
+                        role=str(item.get("role") or role or "leaf"),
                         child_id=str(item.get("child_id") or ""),
                     )
                 except Exception as exc:  # noqa: BLE001
                     summary = f"ERROR: child failed: {exc}"
-                return idx, summary
+                parsed = parse_child_summary(summary, goal=g)
+                wrapped = {
+                    "index": idx,
+                    "goal": g,
+                    "child_id": str(item.get("child_id") or ""),
+                    "ask_packet": packet.to_dict(),
+                    "result": parsed.to_dict(),
+                    "summary": parsed.findings or summary,
+                }
+                return idx, json.dumps(wrapped, ensure_ascii=False)
 
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futs = [
@@ -167,15 +342,23 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                     i, summary = fut.result()
                     results[i] = summary
 
-            payload = [
-                {
-                    "index": i,
-                    "goal": planned[i].get("goal"),
-                    "summary": results[i],
-                }
-                for i in range(len(planned))
-            ]
-            return json.dumps(payload, ensure_ascii=False, indent=2)
+            payload: list[dict[str, Any]] = []
+            for i in range(len(planned)):
+                raw = results[i] or ""
+                try:
+                    payload.append(json.loads(raw))
+                except Exception:
+                    parsed = parse_child_summary(raw, goal=str(planned[i].get("goal") or ""))
+                    payload.append(
+                        {
+                            "index": i,
+                            "goal": planned[i].get("goal"),
+                            "child_id": planned[i].get("child_id"),
+                            "result": parsed.to_dict(),
+                            "summary": raw,
+                        }
+                    )
+            return format_delegate_payload(payload)
 
         def delegate_dialogue(
             topic: str = "",
@@ -183,9 +366,20 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
             rounds: int = 3,
             extra: str = "",
             mode: str = "",
+            why: str = "",
+            share: Optional[list[str]] = None,
+            redact: Optional[list[str]] = None,
         ) -> str:
             from ..dialogue import normalize_speakers, run_sequential_dialogue
 
+            extra_s, packet = enrich_dialogue_extra(
+                topic=topic,
+                extra=extra,
+                mode=mode,
+                why=why,
+                share=share,
+                redact=redact,
+            )
             try:
                 parsed = normalize_speakers(speakers)
                 n_rounds = max(1, min(int(rounds or 3), 8))
@@ -197,7 +391,7 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                         topic=topic_s,
                         speakers=parsed,
                         rounds=n_rounds,
-                        extra=extra,
+                        extra=extra_s,
                         mode=mode_s,
                     )
                 finally:
@@ -208,17 +402,116 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                 return f"ERROR: {exc}"
             except Exception as exc:  # noqa: BLE001
                 return f"ERROR: dialogue failed: {exc}"
+            if isinstance(result, dict):
+                result = dict(result)
+                result["ask_packet"] = packet.to_dict()
             return json.dumps(result, ensure_ascii=False, indent=2)
+
+        def ask_agent(
+            question: str,
+            target: str = "",
+            goal_slice: str = "",
+            evidence: str = "",
+            constraints: str = "",
+            prior_answers: str = "",
+            why: str = "",
+            stop: str = "",
+            role: str = "leaf",
+            share: Optional[list[str]] = None,
+            redact: Optional[list[str]] = None,
+        ) -> str:
+            """Directed peer consult: A asks B with an explicit visibility packet."""
+            q = (question or "").strip()
+            if not q:
+                return "ERROR: question is required"
+            child_ctx, packet = enrich_consult_context(
+                question=q,
+                goal_slice=goal_slice,
+                evidence=evidence,
+                constraints=constraints,
+                prior_answers=prior_answers,
+                target=target,
+                why=why,
+                stop=stop,
+                share=share,
+                redact=redact,
+            )
+            _record_ask_edge(
+                ctx,
+                {
+                    "id": new_id("ask"),
+                    "from_id": "",
+                    "to_id": target or "",
+                    "kind": "consult",
+                    "what": "fact",
+                    "how": "consult",
+                    "who": "peer",
+                    "when": "now",
+                    "why": why or "peer consult",
+                    "need": q,
+                    "goal_slice": goal_slice,
+                    "visibility": packet.to_dict().get("visibility") if hasattr(packet, "to_dict") else {},
+                    "status": "asking",
+                },
+            )
+
+            goal = f"Consult answer: {q}" if not target else f"Consult ({target}): {q}"
+            try:
+                summary = run_child(
+                    goal=goal,
+                    context=child_ctx,
+                    role=(role or "leaf"),
+                    child_id=new_id("agent"),
+                )
+            except Exception as exc:  # noqa: BLE001
+                return f"ERROR: ask_agent failed: {exc}"
+            parsed = parse_child_summary(summary, goal=goal)
+            _record_ask_edge(
+                ctx,
+                {
+                    "id": "",  # update latest consult by need match in note handler? send full
+                    "from_id": "",
+                    "to_id": target or "",
+                    "kind": "consult",
+                    "what": "fact",
+                    "how": "consult",
+                    "who": "peer",
+                    "when": "now",
+                    "why": why or "peer consult",
+                    "need": q,
+                    "goal_slice": goal_slice,
+                    "visibility": packet.to_dict().get("visibility") if hasattr(packet, "to_dict") else {},
+                    "status": "done",
+                    "summary": (parsed.findings or summary or "")[:500],
+                },
+            )
+
+            return json.dumps(
+                {
+                    "target": target or "",
+                    "question": q,
+                    "ask_packet": packet.to_dict(),
+                    "result": parsed.to_dict(),
+                    "summary": parsed.findings or summary,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
 
         reg.register(
             Tool(
                 "delegate_task",
                 "DEFAULT: spawn isolated subagent(s) for work (search, research, "
                 "edit, gather sources). Parallel: tasks=[{goal,context,role?}]. "
-                "Parent gets summaries and synthesizes. Children cannot hear each "
-                "other. Use this when the user wants several agents to work "
-                "separately then merge — NOT delegate_dialogue. "
-                "Children may re-delegate if spawn depth remains.",
+                "Each task is wrapped in an AskPacket (what/how/who/when + VisibilitySpec); "
+                "siblings stay isolated by default. Parent receives structured results "
+                "(findings / recommendation / open_questions). "
+                "Workers see NO parent history: goal must state the objective and "
+                "what done means; context must carry the output format to merge, "
+                "tool guidance (use/skip), and boundaries (out of scope). Set stop "
+                "per task so workers end on sufficient evidence. "
+                "NOT for live multi-party talk — use delegate_dialogue. "
+                "For one directed question to another agent, prefer ask_agent.",
                 {
                     "type": "object",
                     "properties": {
@@ -237,20 +530,45 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                                     "goal": {"type": "string"},
                                     "context": {"type": "string"},
                                     "role": {"type": "string"},
+                                    "what": {"type": "string"},
+                                    "how": {"type": "string"},
+                                    "why": {"type": "string"},
+                                    "stop": {"type": "string"},
+                                    "need": {"type": "string"},
+                                    "evidence": {"type": "string"},
+                                    "constraints": {"type": "string"},
+                                    "share": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "redact": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
                                 },
                                 "required": ["goal"],
                             },
+                        },
+                        "what": {"type": "string"},
+                        "how": {"type": "string"},
+                        "why": {"type": "string"},
+                        "stop": {"type": "string"},
+                        "need": {"type": "string"},
+                        "evidence": {"type": "string"},
+                        "constraints": {"type": "string"},
+                        "prior_answers": {"type": "string"},
+                        "share": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "redact": {
+                            "type": "array",
+                            "items": {"type": "string"},
                         },
                     },
                     "required": [],
                 },
                 delegate_task,
-                # Safe to run multiple delegate_task calls concurrently: each
-                # spawns an isolated child agent, and shared parent bookkeeping
-                # (children list / canvas index) is protected by Agent._child_lock.
-                # This matters because some models emit N separate delegate_task
-                # calls (one per worker) instead of a single tasks=[...] call —
-                # without this, those N calls would run strictly one-at-a-time.
                 parallel_safe=True,
             )
         )
@@ -259,23 +577,21 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                 "delegate_dialogue",
                 "ONLY for live in-character turns where parties hear each other "
                 "(debate, negotiation, military sim, tabletop) — 2 to 8 named "
-                "parties. Each party is a FULL agent with the same tools as you, "
-                "kept across rounds, and may spawn further agents. "
-                "NOT for parallel research, search, or 'start N agents then "
-                "summarize' — that is delegate_task. Do NOT write a code simulator. "
-                "Do NOT enter Plan mode. If the user did not specify the exact "
-                "scenario, party list, or format, ask_user and/or search first. "
+                "parties. Visibility defaults to dialogue_turn (stance + capped "
+                "excerpts; no raw tool dumps). "
+                "NOT for parallel research — that is delegate_task. "
+                "For a single directed consult, use ask_agent. "
                 "speakers: [{name, brief}]. mode is a free label. rounds: 1–8.",
                 {
                     "type": "object",
                     "properties": {
                         "topic": {
                             "type": "string",
-                            "description": "Scenario in the user's own words. Do not invent a motion they did not state.",
+                            "description": "Scenario in the user's own words.",
                         },
                         "mode": {
                             "type": "string",
-                            "description": "Free-form session type, e.g. simulation, negotiation, debate, tabletop.",
+                            "description": "Free-form session type, e.g. simulation, negotiation, debate.",
                         },
                         "speakers": {
                             "type": "array",
@@ -284,18 +600,9 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "description": "Party name (any label: 红方, NATO, 调解人, …).",
-                                    },
-                                    "brief": {
-                                        "type": "string",
-                                        "description": "That party's role, objective, or constraints.",
-                                    },
-                                    "stance": {
-                                        "type": "string",
-                                        "description": "Alias of brief.",
-                                    },
+                                    "name": {"type": "string"},
+                                    "brief": {"type": "string"},
+                                    "stance": {"type": "string"},
                                 },
                                 "required": ["name"],
                             },
@@ -305,16 +612,69 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                             "minimum": 1,
                             "maximum": 8,
                             "default": 3,
-                            "description": "How many full cycles through all parties.",
                         },
                         "extra": {
                             "type": "string",
                             "description": "Optional extra rules (fog of war, time, scoring).",
+                        },
+                        "why": {"type": "string"},
+                        "share": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "redact": {
+                            "type": "array",
+                            "items": {"type": "string"},
                         },
                     },
                     "required": ["topic", "speakers"],
                 },
                 delegate_dialogue,
                 parallel_safe=False,
+            )
+        )
+        reg.register(
+            Tool(
+                "ask_agent",
+                "Ask another agent a directed question with an AskPacket "
+                "(what/how/who/when + VisibilitySpec). Use for peer consult — "
+                "not a full debate (delegate_dialogue) and not bulk parallel work "
+                "(delegate_task). Siblings remain isolated unless you explicitly "
+                "share fields via share[]. Returns findings / open_questions.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "What you need from the other agent.",
+                        },
+                        "target": {
+                            "type": "string",
+                            "description": "Optional role/name label for who is asked.",
+                        },
+                        "goal_slice": {"type": "string"},
+                        "evidence": {"type": "string"},
+                        "constraints": {"type": "string"},
+                        "prior_answers": {"type": "string"},
+                        "why": {"type": "string"},
+                        "stop": {"type": "string"},
+                        "role": {
+                            "type": "string",
+                            "enum": ["leaf", "orchestrator"],
+                            "default": "leaf",
+                        },
+                        "share": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "redact": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["question"],
+                },
+                ask_agent,
+                parallel_safe=True,
             )
         )

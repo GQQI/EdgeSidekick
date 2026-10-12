@@ -10,3 +10,4 @@ python-multipart>=0.0.9
 cryptography>=42.0.0
 playwright>=1.40.0
 pytest>=8.0.0
+pypdf>=4.0.0

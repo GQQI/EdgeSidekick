@@ -1,0 +1,6 @@
+/* Split entry — imports only; see sibling CSS modules. */
+@import "./social-layout.css";
+@import "./social-polish.css";
+@import "./social-chat.css";
+@import "./social-share-browser.css";
+@import "./social-sheets.css";

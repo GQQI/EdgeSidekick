@@ -18,6 +18,8 @@ import { IconChevronRight, IconRefresh, IconX } from "./icons";
 export type BrowserOpenRequest = {
   url: string;
   nonce: number;
+  /** App already called desktop.browser.navigate — panel must not queue another loadURL. */
+  alreadyDriven?: boolean;
 };
 
 type Props = {
@@ -62,18 +64,32 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
   const sessionUrlRef = useRef("");
   const hostRef = useRef<HTMLDivElement | null>(null);
   const openSeqRef = useRef(0);
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
   sessionUrlRef.current = sessionUrl;
 
   const syncBounds = useCallback(async () => {
     if (!desktop) return;
+    // Settings and other dialogs sit in the page. The native view paints
+    // above them, so a delayed show() while suspended is the black curtain.
+    if (suspendedRef.current) {
+      await desktop.browser.hide();
+      return;
+    }
     const bounds = readBounds(hostRef.current);
     if (!bounds) return;
-    if (sessionUrlRef.current) await desktop.browser.show(bounds);
-    else await desktop.browser.setBounds(bounds);
+    // Always show() with real bounds. setBounds alone is a no-op while the
+    // BrowserView is hidden, which left social modal mounts stuck at the
+    // startup 1x1 guest until a later sessionUrl flip.
+    await desktop.browser.show(bounds);
   }, [desktop]);
 
   const showLive = useCallback(async () => {
     if (!desktop) return;
+    if (suspendedRef.current) {
+      await desktop.browser.hide();
+      return;
+    }
     const bounds = readBounds(hostRef.current);
     if (!bounds) return;
     await desktop.browser.show(bounds);
@@ -127,6 +143,10 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
   // Live BrowserView lifecycle + bounds sync.
   useEffect(() => {
     if (!live || !desktop) return;
+    if (suspended) {
+      void desktop.browser.hide();
+      return;
+    }
     void showLive();
     const ro = new ResizeObserver(() => {
       void syncBounds();
@@ -139,32 +159,42 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
     });
     const offNav = desktop.browser.onNavigated((next) => {
       if (!next || next === "about:blank") return;
-      setSessionUrl(next);
+      if (next && next !== "about:blank") setSessionUrl(next);
       setUrl(next);
       setMessage("");
+      // No auto-scroll here: it fired on every did-navigate / redirect /
+      // in-page event, so pages like baidu.com visibly jumped to the bottom
+      // right after loading — reads as random self-scrolling to the user.
     });
     const offFail = desktop.browser.onLoadFailure((info) => {
       setMessage(`${t("browserLoadFail")}: ${info.description || info.code} (${info.url})`);
     });
-    // Layout settles after paint.
-    const t1 = window.setTimeout(() => void syncBounds(), 50);
-    const t2 = window.setTimeout(() => void syncBounds(), 300);
+    // Layout settles after paint (social modal mounts late; retry show).
+    const timers = [0, 50, 120, 300, 800].map((ms) =>
+      window.setTimeout(() => void syncBounds(), ms),
+    );
+    const raf = window.requestAnimationFrame(() => void syncBounds());
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
+      window.cancelAnimationFrame(raf);
+      for (const id of timers) window.clearTimeout(id);
       ro.disconnect();
       window.removeEventListener("resize", onWin);
       offBounds();
       offNav();
       offFail();
+      // The native view paints above the page. Leaving it up covers the next
+      // sidebar. Hide only; do not navigate, so coming back keeps the page.
       void desktop.browser.hide();
     };
-  }, [live, desktop, showLive, syncBounds, t]);
+  }, [live, desktop, showLive, syncBounds, t, suspended]);
 
+  // Non-live (no Electron BrowserView): poll screenshots on a fixed cadence,
+  // skipping ticks while a fetch is still in flight so jobs never pile up.
+  const shotInFlightRef = useRef(false);
   useEffect(() => {
     if (live) return;
     if (!sessionUrl) {
-      if (pollRef.current) window.clearInterval(pollRef.current);
+      if (pollRef.current) window.clearTimeout(pollRef.current);
       pollRef.current = null;
       if (shotSrcRef.current) {
         URL.revokeObjectURL(shotSrcRef.current);
@@ -173,17 +203,28 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
       }
       return;
     }
-    void refreshShot();
-    pollRef.current = window.setInterval(() => setShotBust(Date.now()), 2500);
+    let cancelled = false;
+    const INTERVAL = 2000;
+    const tick = async () => {
+      if (cancelled || shotInFlightRef.current) {
+        if (!cancelled) pollRef.current = window.setTimeout(() => void tick(), INTERVAL);
+        return;
+      }
+      shotInFlightRef.current = true;
+      try {
+        await refreshShot();
+      } finally {
+        shotInFlightRef.current = false;
+        if (!cancelled) pollRef.current = window.setTimeout(() => void tick(), INTERVAL);
+      }
+    };
+    void tick();
     return () => {
-      if (pollRef.current) window.clearInterval(pollRef.current);
+      cancelled = true;
+      if (pollRef.current) window.clearTimeout(pollRef.current);
+      pollRef.current = null;
     };
   }, [sessionUrl, refreshShot, live]);
-
-  useEffect(() => {
-    if (live || !sessionUrl || !shotBust) return;
-    void refreshShot();
-  }, [shotBust, sessionUrl, refreshShot, live]);
 
   async function openTarget(targetRaw: string) {
     const trimmed = targetRaw.trim() || "about:blank";
@@ -210,6 +251,15 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
         try {
           const cur = await desktop.browser.getUrl();
           if (cur && cur !== "about:blank" && sameHttpUrl(cur, target)) {
+            if (seq !== openSeqRef.current) return;
+            setSessionUrl(cur);
+            setUrl(cur);
+            setMessage("");
+            await syncBounds();
+            return;
+          }
+          // Stale openRequest (homepage) after search must not loadURL home again.
+          if (cur && cur !== "about:blank" && isShallowSiteRewind(cur, target)) {
             if (seq !== openSeqRef.current) return;
             setSessionUrl(cur);
             setUrl(cur);
@@ -277,7 +327,43 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
   }, [suspended, live, desktop, showLive, syncBounds]);
 
   useEffect(() => {
-    if (!openRequest?.url || !openRequest.nonce) return;
+    // Reveal-only bumps may omit url (keep current guest page). Still need nonce.
+    if (!openRequest?.nonce) return;
+    if (!openRequest?.url && !openRequest.alreadyDriven) return;
+    // App.tsx may already have called desktop.browser.navigate for this
+    // request (social sheet / panel not mounted yet). A second navigate is
+    // queued on Electron's navChain and often fires AFTER the agent has
+    // submitted a search — rewinding results back to the homepage.
+    if (openRequest.alreadyDriven) {
+      void (async () => {
+        try {
+          // Modal host may still be 0x0 on first paint — retry show.
+          for (const ms of [0, 50, 150, 400]) {
+            if (ms) await new Promise((r) => window.setTimeout(r, ms));
+            await showLive();
+            await syncBounds();
+          }
+          if (desktop) {
+            const cur = await desktop.browser.getUrl();
+            if (cur && cur !== "about:blank") {
+              setSessionUrl(cur);
+              setUrl(cur);
+            } else if (openRequest.url && openRequest.url !== "about:blank") {
+              setSessionUrl(openRequest.url);
+              setUrl(openRequest.url);
+            }
+          } else {
+            setSessionUrl(openRequest.url);
+            setUrl(openRequest.url);
+          }
+          setMessage("");
+          await syncBounds();
+        } catch {
+          /* ignore — live URL events will catch up */
+        }
+      })();
+      return;
+    }
     void openTarget(openRequest.url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest?.nonce]);
@@ -452,7 +538,7 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
         )}
       </div>
 
-      {sessionUrl ? (
+      {sessionUrl && sessionUrl !== "about:blank" ? (
         <p className="hint browser-session-url" title={sessionUrl}>
           {chipLabelSession(sessionUrl)}
         </p>
@@ -479,12 +565,47 @@ function sameHttpUrl(a: string, b: string): boolean {
   return Boolean(na && nb && na === nb);
 }
 
-function chipLabelSession(u: string) {
+/** Skip navigations that would rewind results/article pages to the site home. */
+function isShallowSiteRewind(current: string, target: string): boolean {
+  const cur = (current || "").trim();
+  const tgt = (target || "").trim();
+  if (!cur || !tgt) return false;
+  if (cur === "about:blank" || cur.startsWith("chrome://")) return false;
   try {
-    const parsed = new URL(u);
-    return parsed.host + parsed.pathname;
+    const pc = new URL(cur);
+    const pt = new URL(tgt);
+    if (pc.protocol !== "http:" && pc.protocol !== "https:") return false;
+    if (pt.protocol !== "http:" && pt.protocol !== "https:") return false;
+    let ch = (pc.hostname || "").toLowerCase();
+    let th = (pt.hostname || "").toLowerCase();
+    if (ch.startsWith("www.")) ch = ch.slice(4);
+    if (th.startsWith("www.")) th = th.slice(4);
+    if (!ch || ch !== th) return false;
+    let cpath = pc.pathname || "/";
+    let tpath = pt.pathname || "/";
+    if (cpath !== "/" && cpath.endsWith("/")) cpath = cpath.slice(0, -1);
+    if (tpath !== "/" && tpath.endsWith("/")) tpath = tpath.slice(0, -1);
+    const tgtIsHome = (tpath === "/" || tpath === "") && !(pt.search || "").trim();
+    const curIsDeeper =
+      (cpath !== "/" && cpath !== "") || Boolean((pc.search || "").trim());
+    return Boolean(tgtIsHome && curIsDeeper);
   } catch {
-    return u;
+    return false;
+  }
+}
+
+
+function chipLabelSession(u: string) {
+  const raw = String(u || "").trim();
+  if (!raw || raw === "about:blank") return "";
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "about:") return "";
+    const host = parsed.host || parsed.hostname || "";
+    const path = parsed.pathname === "/" ? "" : parsed.pathname;
+    return (host + path) || raw;
+  } catch {
+    return raw;
   }
 }
 

@@ -16,7 +16,7 @@ from .services.session import latest_session, load_session, save_session
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="metateam",
-        description="Sidekick — multi-agent workspace runtime",
+        description="EdgeSidekick — multi-agent workspace runtime",
     )
     parser.add_argument("-q", "--query", help="Single-shot prompt (non-interactive)")
     parser.add_argument(
@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    print("Sidekick  ·  /exit  /stats  /new  /save  /skills")
+    print("EdgeSidekick  ·  /exit  /stats  /new  /save  /skills")
     print(f"workspace: {settings.workspace}")
     print(f"model: {settings.model}")
     while True:

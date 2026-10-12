@@ -18,6 +18,8 @@ class SessionMeta:
     updated_at: str = ""
     user_id: str = ""
     title: str = ""
+    # Social (会话版) one-shot sessions: hidden from the workbench history list.
+    hidden: bool = False
 
 
 def _now_id() -> str:
@@ -55,6 +57,7 @@ def save_session(
     user_id: Optional[str] = None,
     title: str = "",
     extra: Optional[dict[str, Any]] = None,
+    hidden: bool = False,
 ) -> Path:
     from .tenant_context import get_user_id
 
@@ -63,12 +66,14 @@ def save_session(
     path = sessions_dir(root, uid) / f"{sid}.json"
     created = _now_iso()
     prev_title = ""
+    prev_hidden = False
     if path.exists():
         try:
             old_meta, _ = load_session(path)
             if old_meta.created_at:
                 created = old_meta.created_at
             prev_title = old_meta.title or ""
+            prev_hidden = old_meta.hidden
         except Exception:
             pass
     meta = SessionMeta(
@@ -79,6 +84,7 @@ def save_session(
         workspace=str(workspace),
         user_id=uid,
         title=(title or prev_title or "").strip(),
+        hidden=hidden or prev_hidden,
     )
     path.write_text(
         json.dumps(
@@ -113,6 +119,7 @@ def load_session_bundle(
         workspace=str(m.get("workspace") or ""),
         user_id=str(m.get("user_id") or ""),
         title=str(m.get("title") or ""),
+        hidden=bool(m.get("hidden")),
     )
     messages = data.get("messages") or []
     if not isinstance(messages, list):

@@ -1,5 +1,6 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DetailView, SubNode, SubTranscriptItem } from "../types/chat";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { AskEdge, DetailView, SubNode, SubTranscriptItem } from "../types/chat";
+import { getAskEdges, subscribeAskEdges } from "../state/askEdgesStore";
 import type { MsgKey } from "../i18n";
 import { subagentDisplayName, stripToolCallMarkup } from "../utils/chatHelpers";
 
@@ -333,10 +334,10 @@ function DeskAgentCanvas({
       ctx.clearRect(0, 0, 120, 104);
       const style = getComputedStyle(canvas);
       const theme: PaintTheme = {
-        ink: style.getPropertyValue("--ink").trim() || "#202938",
-        muted: style.getPropertyValue("--muted").trim() || "#718096",
+        ink: style.getPropertyValue("--ink").trim() || "#101a2b",
+        muted: style.getPropertyValue("--muted").trim() || "#66768a",
         surface: style.getPropertyValue("--surface").trim() || "#ffffff",
-        accent: style.getPropertyValue("--accent").trim() || "#4f77c7",
+        accent: style.getPropertyValue("--accent").trim() || "#2f6fed",
       };
       const pulse = working ? (Math.sin(now / (240 - pace * 90)) + 1) / 2 : 0;
       const bob = working ? Math.sin(now / (300 - pace * 150)) * (1.1 + pace * 0.55) : 0;
@@ -404,10 +405,11 @@ function clip(text: string, n: number) {
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 }
 
-function lastAssistant(node: SubNode): SubTranscriptItem | undefined {
+function lastAssistant(node: SubNode): Extract<SubTranscriptItem, { kind: "assistant" }> | undefined {
   const items = node.transcript || [];
   for (let i = items.length - 1; i >= 0; i--) {
-    if (items[i].kind === "assistant") return items[i];
+    const item = items[i];
+    if (item.kind === "assistant") return item;
   }
   return undefined;
 }
@@ -428,7 +430,7 @@ function statusBubble(node: SubNode, t: Props["t"]): { text: string; streaming: 
   return null;
 }
 
-export function AgentCanvas({ nodes, t, detail, onSetDetail }: Props) {
+function AgentCanvasInner({ nodes, t, detail, onSetDetail }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 560, h: 280 });
   const [mood, setMood] = useState<Record<string, Face>>({});
@@ -461,6 +463,23 @@ export function AgentCanvas({ nodes, t, detail, onSetDetail }: Props) {
     return sum + count(n);
   }, 0), [roots]);
   const laid = useMemo(() => layoutForest(roots, size.w, size.h), [roots, size.w, size.h]);
+  const askEdges = useSyncExternalStore(subscribeAskEdges, getAskEdges, getAskEdges);
+  const visibleAsks = useMemo(() => {
+    const ids = new Set<string>();
+    const walk = (n: SubNode) => {
+      ids.add(n.id);
+      (n.children || []).forEach(walk);
+    };
+    roots.forEach(walk);
+    // include lead-looking empty from_id edges targeting visible nodes
+    return askEdges.filter(
+      (e) =>
+        (e.to_id && ids.has(e.to_id)) ||
+        (e.from_id && ids.has(e.from_id)) ||
+        (!e.from_id && e.to_id && ids.has(e.to_id)),
+    );
+  }, [askEdges, roots]);
+
   const byId = useMemo(() => new Map(laid.map((item) => [item.node.id, item])), [laid]);
   const dialogue = isDialogue(roots);
   const glowId = `agent-glow-${useId().replace(/:/g, "")}`;
@@ -533,6 +552,10 @@ export function AgentCanvas({ nodes, t, detail, onSetDetail }: Props) {
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
+          
+            <marker id="ask-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" className="agent-ask-arrow" />
+            </marker>
           </defs>
           {laid.map((item) => {
             if (!item.parentId) return null;
@@ -545,6 +568,52 @@ export function AgentCanvas({ nodes, t, detail, onSetDetail }: Props) {
                 d={`M ${parent.x} ${parent.y + 18} Q ${(parent.x + item.x) / 2} ${(parent.y + item.y) / 2 - 8} ${item.x} ${item.y - 18}`}
                 fill="none"
               />
+            );
+          })}
+          {visibleAsks.map((edge) => {
+            const to = byId.get(edge.to_id);
+            if (!to) return null;
+            const from =
+              (edge.from_id && byId.get(edge.from_id)) ||
+              laid.find((x) => !x.parentId) ||
+              null;
+            if (!from) return null;
+            const mx = (from.x + to.x) / 2;
+            const my = (from.y + to.y) / 2 - 28;
+            const label =
+              edge.need?.trim() ||
+              edge.goal_slice?.trim() ||
+              `${edge.what || "ask"}/${edge.how || edge.kind}`;
+            const short = label.length > 22 ? `${label.slice(0, 20)}…` : label;
+            const active = detail?.type === "ask" && detail.ask.id === edge.id;
+            return (
+              <g
+                key={`ask-${edge.id || `${edge.to_id}-${edge.need}`}`}
+                className={`agent-ask-edge${active ? " active" : ""}${edge.status === "asking" ? " asking" : ""}`}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onSetDetail({ type: "ask", ask: edge });
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                <path
+                  className="agent-ask-link"
+                  d={`M ${from.x} ${from.y + 10} Q ${mx} ${my} ${to.x} ${to.y - 16}`}
+                  fill="none"
+                  markerEnd="url(#ask-arrow)"
+                />
+                <rect
+                  className="agent-ask-chip-bg"
+                  x={mx - Math.min(70, short.length * 3.4) - 6}
+                  y={my - 10}
+                  width={Math.min(140, short.length * 6.8 + 16)}
+                  height={18}
+                  rx={9}
+                />
+                <text className="agent-ask-chip" x={mx} y={my + 3} textAnchor="middle">
+                  {short}
+                </text>
+              </g>
             );
           })}
           {laid.map((item) =>
@@ -619,6 +688,14 @@ export function AgentCanvas({ nodes, t, detail, onSetDetail }: Props) {
     </div>
   );
 }
+
+export const AgentCanvas = memo(AgentCanvasInner, (prev, next) => {
+  if (prev.t !== next.t || prev.detail !== next.detail || prev.onSetDetail !== next.onSetDetail) {
+    return false;
+  }
+  if (prev.nodes.length !== next.nodes.length) return false;
+  return prev.nodes.every((node, i) => node === next.nodes[i]);
+});
 
 function depthRing(depth: number) {
   if (depth === 0) return 34;

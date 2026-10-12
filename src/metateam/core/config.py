@@ -26,7 +26,7 @@ _SRC_FROM_FILE = Path(__file__).resolve().parents[2]
 _REPO_FROM_FILE = Path(__file__).resolve().parents[3]
 
 # Packaged Windows install: Electron sets SIDEKICK_REPO_ROOT (read-only payload)
-# and SIDEKICK_DATA_DIR (%APPDATA%\Sidekick). Unset → source-tree layout.
+# and SIDEKICK_DATA_DIR (%APPDATA%\EdgeSidekick). Unset → source-tree layout.
 _repo_override = _path_from_env("SIDEKICK_REPO_ROOT")
 REPO_ROOT = _repo_override or _REPO_FROM_FILE
 SRC_ROOT = _path_from_env("SIDEKICK_SRC_ROOT") or (
@@ -85,6 +85,26 @@ def infer_context_limit(model: str) -> int:
         if key in m:
             return n
     return 48_000
+
+
+def working_context_budget(window: int, explicit: int = 0) -> int:
+    """Hot working set for compression and the UI.
+
+    The provider window stays the ceiling. The working set is a fraction of it
+    so a long turn can finish before compaction, without waiting until the
+    whole window is full. An explicit META_CONTEXT_LIMIT is kept when it is
+    smaller than the window; a value that equals the full window is ignored.
+    """
+    window = max(0, int(window or 0))
+    explicit = max(0, int(explicit or 0))
+    if explicit > 0 and (window <= 0 or explicit < window):
+        return max(8_000, min(explicit, window or explicit))
+    if window <= 48_000:
+        return window or 48_000
+    budget = int(window * 0.45)
+    if budget < 48_000:
+        budget = min(window - 8_000, 56_000)
+    return max(48_000, min(budget, 96_000, window - 8_000))
 
 
 def _bool(name: str, default: bool = True) -> bool:
@@ -165,7 +185,7 @@ class Settings:
     allow_shell: bool = field(default_factory=lambda: _bool("META_ALLOW_SHELL", True))
     # Shell cwd stays in workspace; outside paths need approval (not a copy FS)
     shell_sandbox: bool = field(default_factory=lambda: _bool("META_SHELL_SANDBOX", True))
-    shell_timeout: int = int(os.getenv("META_SHELL_TIMEOUT", "90"))
+    shell_timeout: int = int(os.getenv("META_SHELL_TIMEOUT", "20"))
     # Enable MCP tool discovery when mcp package + mcp.json servers are present
     mcp_enabled: bool = field(default_factory=lambda: _bool("META_MCP_ENABLED", True))
 

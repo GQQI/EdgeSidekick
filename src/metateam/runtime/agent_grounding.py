@@ -3,9 +3,40 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 from .coherence import format_turn_policy_block, merge_policy_into_system, policy_for_turn
+
+
+def minimal_grounding(workspace: Path) -> str:
+    """Cheap ground-truth block for leaf subagents (no index, no history).
+
+    Leaf workers normally run with zero environment awareness — they invent
+    src/ layouts or miss files that exist. This pins the real workspace root
+    plus a small top-level listing so the first read/search lands.
+    """
+    ws = Path(workspace).resolve()
+    shown: list[str] = []
+    try:
+        entries = sorted(ws.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        for e in entries[:20]:
+            if e.name.startswith("."):
+                continue
+            shown.append(f"{'dir' if e.is_dir() else 'file'}:{e.name}")
+    except OSError:
+        pass
+    lines = [
+        "## Workspace ground truth (authoritative)",
+        f"WORKSPACE: {ws}",
+        "All tool paths are WORKSPACE-relative (forward slashes). "
+        "Use only paths from this list or confirmed by a tool — never invent layouts.",
+    ]
+    if shown:
+        lines.append("Top-level now: " + ", ".join(shown))
+    else:
+        lines.append("Top-level now: (empty)")
+    return "\n".join(lines)
 
 
 class AgentGroundingMixin:
@@ -51,23 +82,28 @@ class AgentGroundingMixin:
         lines = [
             "## Workspace ground truth (authoritative)",
             f"Root: {ws}",
-            "Do NOT invent paths like src/, app/, components/ unless listed below or just confirmed by a tool this turn.",
-            "If a previous tool showed only certain files (e.g. index.html), treat that as current reality until tools say otherwise.",
         ]
-        try:
-            from ..services import codebase_memory as cbm
+        if not getattr(self, "social", False):
+            lines.append(
+                "Do NOT invent paths like src/, app/, components/ unless listed below or just confirmed by a tool this turn."
+            )
+            lines.append(
+                "If a previous tool showed only certain files (e.g. index.html), treat that as current reality until tools say otherwise."
+            )
+            try:
+                from ..services import codebase_memory as cbm
 
-            idx = cbm.get_or_build_index(ws)
-            paths = [fe.path for fe in idx.files[:20]]
-            lines.append(f"Indexed files ({len(idx.files)}; use codebase_overview / search_text for the rest):")
-            if paths:
-                lines.extend(f"- {p}" for p in paths)
-            else:
-                lines.append("- (none)")
-        except Exception as exc:  # noqa: BLE001
-            from ..core.logutil import get_logger, log_exception
+                idx = cbm.get_or_build_index(ws)
+                paths = [fe.path for fe in idx.files[:20]]
+                lines.append(f"Indexed files ({len(idx.files)}; use codebase_overview / search_text for the rest):")
+                if paths:
+                    lines.extend(f"- {p}" for p in paths)
+                else:
+                    lines.append("- (none)")
+            except Exception as exc:  # noqa: BLE001
+                from ..core.logutil import get_logger, log_exception
 
-            log_exception(get_logger("metateam.agent"), "grounding index failed", exc)
+                log_exception(get_logger("metateam.agent"), "grounding index failed", exc)
 
         try:
             entries = sorted(ws.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
@@ -75,7 +111,7 @@ class AgentGroundingMixin:
             for e in entries[:40]:
                 if e.name.startswith(".") and e.name not in {
                     ".sidekick",
-                    ".yutianlang",
+                    ".edgesidekick",
                 }:
                     continue
                 shown.append(f"{'dir' if e.is_dir() else 'file'}:{e.name}")

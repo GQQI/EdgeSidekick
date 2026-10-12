@@ -1,4 +1,5 @@
 import "./styles/app.css";
+import "./styles/social.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";

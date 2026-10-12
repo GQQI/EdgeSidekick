@@ -14,6 +14,7 @@ from .delegate import register_ask_and_delegate
 from .files import register_file_tools
 from .git import register_git_tools
 from .memory import register_memory_tools
+from .scheduler import register_scheduler_tools
 from .shell import register_shell_tools
 from .web import register_web_tools
 from .skills import register_skill_tools
@@ -29,6 +30,7 @@ def build_registry(
     talk_only: bool = False,
     end_party_session: Optional[Callable[[], None]] = None,
     note_canvas_tasks: Optional[Callable[..., None]] = None,
+    note_ask_edge: Optional[Callable[..., None]] = None,
 ) -> ToolRegistry:
     reg = ToolRegistry()
     if talk_only:
@@ -40,6 +42,7 @@ def build_registry(
         ask_user_fn=ask_user_fn,
         end_party_session=end_party_session,
         note_canvas_tasks=note_canvas_tasks,
+        note_ask_edge=note_ask_edge,
     )
     register_file_tools(reg, ctx)
     register_codebase_tools(reg, ctx)
@@ -47,6 +50,7 @@ def build_registry(
     register_shell_tools(reg, ctx)
     register_skill_tools(reg, ctx)
     register_memory_tools(reg, ctx)
+    register_scheduler_tools(reg, ctx)
     register_ask_and_delegate(reg, ctx)
     register_browser_tools(reg, ctx)
     register_web_tools(reg)

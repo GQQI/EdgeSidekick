@@ -21,7 +21,7 @@ import {
 
 export type CanvasSyncCtx = {
   transcriptRef: MutableRefObject<ChatMsg[]>;
-  commit: (next: ChatMsg[]) => void;
+  commit: (next: ChatMsg[], immediate?: boolean) => void;
   setSubs: Dispatch<SetStateAction<SubNode[]>>;
 };
 
@@ -60,6 +60,7 @@ export function replaceStageSubagents(
   ctx: CanvasSyncCtx,
   nodes: SubNode[],
   stage?: number,
+  immediate = true,
 ) {
   if (!nodes.length) return;
   const live = ctx.transcriptRef.current;
@@ -94,8 +95,7 @@ export function replaceStageSubagents(
     return mergeSubNode(prevMsg?.subagent, n);
   });
   const msgs = merged.map((n) => asSubagentMsg(n, targetStage));
-  ctx.commit(placeCanvasMessages(live, msgs, targetStage));
-  ctx.setSubs(merged);
+  ctx.commit(placeCanvasMessages(live, msgs, targetStage), immediate);
 }
 
 function canvasStageFromTranscript(live: ChatMsg[], treeTurn = 0): number {
@@ -145,6 +145,9 @@ export function seedDelegateCanvas(
   const existing = stageCanvasNodes(live, stage);
   // A partial stream of arguments must not wipe slots already painted.
   if (running && existing.length > items.length) return;
+  // Same slot count: JSON is still growing character-by-character — skip
+  // rebuilding the whole forest until a new task appears or the call ends.
+  if (running && existing.length === items.length && existing.length > 0) return;
   const used = new Set<string>();
   const seeded: SubNode[] = items.map((item, i) => {
     const byGoal = existing.find(
@@ -193,5 +196,5 @@ export function seedDelegateCanvas(
       /* ignore incomplete JSON */
     }
   }
-  replaceStageSubagents(ctx, seeded, stage);
+  replaceStageSubagents(ctx, seeded, stage, !running);
 }

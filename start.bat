@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 echo.
-echo  Sidekick
+echo  EdgeSidekick
 echo  ----------------------------------------------------
 echo.
 
@@ -24,7 +24,7 @@ echo.
 set "ERR=%ERRORLEVEL%"
 echo.
 if not "%ERR%"=="0" (
-  echo Sidekick exited with code %ERR%
+  echo EdgeSidekick exited with code %ERR%
   goto :fail_pause
 )
 pause

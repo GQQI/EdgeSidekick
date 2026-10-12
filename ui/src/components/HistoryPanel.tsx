@@ -57,6 +57,7 @@ type Props = {
   onOpen: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => Promise<void>;
+  busy?: boolean;
 };
 
 export function HistoryPanel({
@@ -70,6 +71,7 @@ export function HistoryPanel({
   onOpen,
   onNew,
   onDelete,
+  busy = false,
 }: Props) {
   const { t, locale } = usePrefs();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -104,7 +106,8 @@ export function HistoryPanel({
         </div>
       </div>
       <div className="history-scroll side-history-scroll">
-        {sessions.length === 0 && <p className="hint">{t("historyEmpty")}</p>}
+        {busy ? <p className="hint">正在切换…</p> : null}
+        {sessions.length === 0 && !busy && <p className="hint">{t("historyEmpty")}</p>}
         {(["today", "yesterday", "earlier"] as const).map((gid) => {
           const items = sessions.filter((s) => historyGroupId(s.updated_at) === gid);
           if (items.length === 0) return null;
@@ -142,7 +145,9 @@ export function HistoryPanel({
                         type="button"
                         className={`history-open${s.id === activeSessionId ? " active" : ""}${running ? " running" : ""}`}
                         aria-busy={running || undefined}
+                        disabled={busy}
                         onClick={() => {
+                          if (busy) return;
                           setPendingDeleteId(null);
                           onOpen(s.id);
                         }}

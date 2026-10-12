@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EdgeSidekick 使用手册</title>
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  .guide { max-width: 860px; margin: 0 auto; padding: 120px 24px 80px; }
+  .guide h1 { font-size: 34px; font-weight: 800; margin-bottom: 12px; }
+  .guide .lead { color: var(--muted); font-size: 17px; margin-bottom: 36px; line-height: 1.7; }
+  .guide h2 { font-size: 22px; font-weight: 800; margin: 40px 0 14px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .guide h3 { font-size: 17px; font-weight: 700; margin: 22px 0 8px; }
+  .guide p, .guide li { color: var(--text); line-height: 1.75; font-size: 15.5px; }
+  .guide ul { padding-left: 1.3em; margin: 8px 0 16px; }
+  .guide code, .guide pre { font-family: var(--mono); }
+  .guide pre { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow: auto; font-size: 13.5px; margin: 12px 0 18px; }
+  .guide .tip { background: rgba(47,111,237,.08); border: 1px solid rgba(47,111,237,.18); border-radius: 12px; padding: 12px 14px; margin: 14px 0; font-size: 14.5px; }
+  .guide .toc a { display: inline-block; margin: 4px 10px 4px 0; color: var(--blue); text-decoration: none; font-weight: 600; }
+  .guide-nav { display:flex; gap:12px; flex-wrap:wrap; margin-bottom: 24px; }
+  .guide-nav a { color: var(--muted); text-decoration:none; font-size: 14px; }
+  .guide-nav a:hover { color: var(--blue); }
+</style>
+</head>
+<body>
+<nav class="nav scrolled" id="nav">
+  <div class="nav-in">
+    <a class="logo" href="../index.html"><span class="logo-mark"><img src="../assets/favicon.svg" alt=""></span>EdgeSidekick</a>
+    <div class="nav-actions">
+      <div class="nav-switches">
+        <a class="icon-btn" href="user-guide.en.html" title="English" style="text-decoration:none;display:grid;place-items:center;width:40px;height:40px">EN</a>
+        <button class="icon-btn" id="themeToggle" type="button" title="Theme">☾</button>
+      </div>
+      <a class="nav-cta" href="../index.html">返回官网</a>
+    </div>
+  </div>
+</nav>
+<main class="guide">
+  <div class="guide-nav">
+    <a href="../index.html">← 官网</a>
+    <a href="user-guide.en.html">English</a>
+  </div>
+  <h1>EdgeSidekick 使用手册</h1>
+  <p class="lead">本地多智能体 AI 工作台。本手册说明安装启动、工作台与会话版、对话、主题、Skills 与基础设置。</p>
+  <div class="toc">
+    <a href="#install">安装与启动</a>
+    <a href="#modes">工作台 vs 会话版</a>
+    <a href="#chat">对话协作</a>
+    <a href="#themes">浅色 / 深色</a>
+    <a href="#skills">Skills</a>
+    <a href="#settings">基础设置</a>
+  </div>
+
+  <h2 id="install">1. 安装与启动</h2>
+  <h3>源码运行（通用）</h3>
+  <pre>python -m pip install -r requirements.txt
+python main.py</pre>
+  <p>浏览器打开 <code>http://127.0.0.1:8787</code>。</p>
+  <h3>桌面端</h3>
+  <ul>
+    <li>Windows：双击 <code>start-desktop.bat</code>，或使用打包好的安装包 / 便携 zip。</li>
+    <li>麒麟 / Linux：使用 <code>.deb</code> / AppImage，或按 README 构建桌面端。</li>
+  </ul>
+  <div class="tip">首次启动会要求选择<strong>工作区文件夹</strong>。历史、Memory 等数据保存在本地磁盘，默认不出境。</div>
+
+  <h2 id="modes">2. 工作台模式 vs 会话版</h2>
+  <h3>工作台（Workbench）</h3>
+  <p>面向工程与任务：主智能体调度子智能体、文件编辑、Shell、浏览器沙箱、任务面板。适合写代码、改文档、跑命令。</p>
+  <h3>会话版（Social / Session）</h3>
+  <p>面向对话与多人协作感：会话列表、私聊式界面，同样可调用智能体能力。适合日常问答、持续话题跟进。</p>
+  <p>两者共用同一本地运行时与模型配置，可按场景切换。</p>
+
+  <h2 id="chat">3. 对话与多智能体</h2>
+  <ul>
+    <li>在输入框发送消息；回复以流式（SSE）呈现。</li>
+    <li>主智能体可调度子智能体协同；写文件、Shell、改 Memory 等通常需<strong>人类确认</strong>。</li>
+    <li>支持附件、停止生成、编辑后重发；必要时可回滚相关文件变更。</li>
+  </ul>
+
+  <h2 id="themes">4. 主题与语言</h2>
+  <ul>
+    <li><strong>浅色清爽</strong>：日间阅读与长时间编码。</li>
+    <li><strong>深色沉浸</strong>：夜间低刺激工作。</li>
+    <li>界面支持中 / 英切换；官网与应用内可分别记忆偏好。</li>
+  </ul>
+
+  <h2 id="skills">5. Skills 技能包</h2>
+  <ul>
+    <li>将技能包放入 <code>src/skills/</code>（或租户 skills 目录）。</li>
+    <li>对话中用 <code>/skill</code> 按需调用；工具按需加载，避免每轮塞入巨型 prompt。</li>
+    <li>内置示例覆盖写作、调试、演示文稿等场景，可按需增删。</li>
+  </ul>
+
+  <h2 id="settings">6. 基础设置</h2>
+  <ul>
+    <li><strong>模型</strong>：主模型 / 子智能体 / 压缩模型可分开配置；支持自备 API Key 或本地 Ollama。</li>
+    <li><strong>工作区</strong>：设置 → 选择本地文件夹；可切换最近工作区。</li>
+    <li><strong>浏览器沙箱</strong>：桌面端 BrowserView / Web Playwright；Select Mode 点选 DOM，智能体用 <code>browser_*</code> 工具操作页面。</li>
+    <li><strong>Memory / 任务 / MCP</strong>：MEMORY.md 可追加或改写（需确认）；任务面板跟踪进度；MCP 接入外部工具。</li>
+  </ul>
+  <div class="tip">API Key 与令牌只保存在本机配置中。分发演示包前请清空 <code>src/data</code> 中的个人令牌与密钥。</div>
+
+  <p style="margin-top:48px;color:var(--muted)">更多技术细节见仓库根目录 <code>README.md</code>。</p>
+</main>
+<script>
+(function(){
+  var t=localStorage.getItem('esk-theme')||'light';
+  function apply(x){t=x;document.documentElement.setAttribute('data-theme',x==='dark'?'dark':'light');localStorage.setItem('esk-theme',x);var b=document.getElementById('themeToggle');if(b)b.textContent=x==='dark'?'☀':'☾';}
+  apply(t);
+  var b=document.getElementById('themeToggle');
+  if(b)b.onclick=function(){apply(t==='dark'?'light':'dark');};
+})();
+</script>
+</body>
+</html>

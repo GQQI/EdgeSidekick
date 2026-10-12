@@ -6,7 +6,7 @@ from pathlib import Path
 
 # First existing file wins. Team-shared conventions belong in git, not MEMORY.md.
 CANDIDATES = (
-    ".yutianlang/rules.md",
+    ".edgesidekick/rules.md",
     ".sidekick/rules.md",
     "AGENTS.md",
 )

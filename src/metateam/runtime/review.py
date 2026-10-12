@@ -12,7 +12,7 @@ from ..services.memory import append_memory
 from ..services.skills import load_skills
 
 
-_REVIEW_PROMPT = """You are a silent learning reviewer for Sidekick.
+_REVIEW_PROMPT = """You are a silent learning reviewer for EdgeSidekick.
 
 Given the recent transcript excerpt, decide if anything durable should be saved.
 Return ONLY JSON:

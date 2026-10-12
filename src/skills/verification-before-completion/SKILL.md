@@ -14,7 +14,7 @@ license: Complete terms in LICENSE.txt
 
 **Core principle:** Evidence before claims, always.
 
-## Sidekick / 离线适配
+## EdgeSidekick / 离线适配
 
 - 用 `run_shell` 跑项目里已有的测试 / lint / 构建命令，完整读输出。
 - 没有可运行检查时（纯文案、设计讨论），用对照清单逐条核对，不要假装跑过测试。

@@ -1,6 +1,14 @@
 /** Persist left activity sidebar selection across refresh. */
 
-export type SidePanel = "files" | "search" | "history" | "browser" | "git" | "undo" | "jobs";
+export type SidePanel =
+  | "files"
+  | "search"
+  | "history"
+  | "browser"
+  | "git"
+  | "undo"
+  | "jobs"
+  | "schedules";
 
 const SIDE_PANEL_KEY = "sidekick.sidePanel";
 const EXPLORER_COLLAPSED_KEY = "sidekick.explorerCollapsed";
@@ -16,7 +24,8 @@ export function loadSidePanel(): SidePanel {
       v === "browser" ||
       v === "git" ||
       v === "undo" ||
-      v === "jobs"
+      v === "jobs" ||
+      v === "schedules"
     )
       return v;
   } catch {

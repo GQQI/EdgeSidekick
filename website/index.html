@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="EdgeSidekick — 本地多智能体 AI 工作台。开源、本地优先、AgentFrame 蓝白风格。">
+<title>EdgeSidekick · 本地多智能体 AI 工作台</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav" id="nav">
+  <div class="nav-in">
+    <a class="logo" href="#top">
+      <span class="logo-mark"><img src="assets/favicon.svg" alt=""></span>
+      EdgeSidekick
+    </a>
+    <div class="nav-links">
+      <a href="#features" data-i18n="nav_features">功能特性</a>
+      <a href="#how" data-i18n="nav_how">如何工作</a>
+      <a href="#shots" data-i18n="nav_shots">界面预览</a>
+      <a href="#demo" data-i18n="nav_demo">演示</a>
+      <a href="#download" data-i18n="nav_download">下载</a>
+      <a href="docs/user-guide.zh.html" data-i18n="nav_guide">使用手册</a>
+    </div>
+    <div class="nav-actions">
+      <div class="nav-switches" aria-label="Language and theme">
+        <button class="icon-btn" id="langToggle" type="button" title="Language">EN</button>
+        <button class="icon-btn" id="themeToggle" type="button" title="Theme">☾</button>
+      </div>
+      <a class="nav-cta" href="#download" data-i18n="nav_cta">立即开始</a>
+      <button class="nav-toggle" id="menuToggle" type="button" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</nav>
+<div class="mobile-menu" id="mobileMenu">
+  <a href="#features" data-i18n="nav_features">功能特性</a>
+  <a href="#how" data-i18n="nav_how">如何工作</a>
+  <a href="#shots" data-i18n="nav_shots">界面预览</a>
+  <a href="#demo" data-i18n="nav_demo">演示</a>
+  <a href="#download" data-i18n="nav_download">下载</a>
+  <a href="docs/user-guide.zh.html" data-i18n="nav_guide">使用手册</a>
+</div>
+
+<header class="hero" id="top">
+  <div class="hero-bg"></div>
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <div class="wrap hero-in">
+    <span class="hero-badge reveal"><i></i><span data-i18n="badge">开源 · 本地优先 · 多智能体</span></span>
+    <h1 class="reveal" style="--d:.08s"><span class="grad">EdgeSidekick</span><br><span data-i18n="hero_title_sub">本地多智能体 AI 工作台</span></h1>
+    <div class="typing-line reveal" style="--d:.16s"><span id="typed"></span><span class="caret"></span></div>
+    <div class="hero-cta reveal" style="--d:.24s">
+      <a class="btn btn-p" href="#download" data-i18n="hero_cta1">快速开始</a>
+      <a class="btn btn-g" href="#features" data-i18n="hero_cta2">查看功能</a>
+    </div>
+    <div class="hero-shot reveal" data-reveal="zoom" style="--d:.3s">
+      <div class="hero-glow"></div>
+      <div class="shot-frame">
+        <div class="shot-bar"><i></i><i></i><i></i><span>http://127.0.0.1:8787</span></div>
+        <img src="assets/gallery-workbench-light.png" alt="EdgeSidekick workbench light">
+      </div>
+    </div>
+    <div class="scroll-hint" aria-hidden="true"></div>
+  </div>
+</header>
+
+<div class="marquee" aria-hidden="true">
+  <div class="mq-track" id="mq"></div>
+</div>
+
+<section class="stats">
+  <div class="wrap stats-grid">
+    <div class="stat reveal"><div class="num" data-count="100" data-suffix="%">0</div><div class="lbl" data-i18n="stat1">本地运行</div></div>
+    <div class="stat reveal" style="--d:.08s"><div class="num">2</div><div class="lbl" data-i18n="stat2">中英界面</div></div>
+    <div class="stat reveal" style="--d:.16s"><div class="num">2</div><div class="lbl" data-i18n="stat3">浅/深主题</div></div>
+    <div class="stat reveal" style="--d:.24s"><div class="num">3+</div><div class="lbl" data-i18n="stat4">跨平台</div></div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-i18n="feat_eyebrow">Features</span>
+    <h2 class="sec-title reveal" data-i18n="feat_title">为真实工作流设计</h2>
+    <p class="sec-sub reveal" style="--d:.08s" data-i18n="feat_sub">对话、浏览器沙箱、Skills、桌面端、记忆与任务、浅色/深色——一块蓝白 AgentFrame 风格工作台全部齐备。</p>
+    <div class="feat-grid">
+      <article class="feat reveal"><span class="tag">CHAT</span><div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg></div><h3 data-i18n="f1t">多智能体对话</h3><p data-i18n="f1d">主智能体调度子智能体，SSE 流式输出，附件、停止、编辑重发与文件回滚一步到位。</p></article>
+      <article class="feat reveal" style="--d:.08s"><span class="tag">BROWSER</span><div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/></svg></div><h3 data-i18n="f2t">浏览器沙箱</h3><p data-i18n="f2d">桌面 Electron BrowserView / Web Playwright；Select Mode 点选 DOM，Agent 用 browser_* 工具操作页面。</p></article>
+      <article class="feat reveal" style="--d:.16s"><span class="tag">SKILLS</span><div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6 .9-4.5 4.4 1.1 6.2L12 16.8 6.4 19.5 7.5 13.3 3 8.9 9 8z"/></svg></div><h3 data-i18n="f3t">Skills 技能包</h3><p data-i18n="f3d">拖入 src/skills/，用 /skill 按需调用——工具按需加载，不把巨型 prompt 塞进每一轮。</p></article>
+      <article class="feat reveal"><span class="tag">DESKTOP</span><div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div><h3 data-i18n="f4t">桌面应用</h3><p data-i18n="f4d">Windows 安装包、麒麟/Linux deb/AppImage，或 start-desktop.bat 一键拉起 Electron 工作台。</p></article>
+      <article class="feat reveal" style="--d:.08s"><span class="tag">MCP</span><div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></div><h3 data-i18n="f5t">记忆 · 任务 · MCP</h3><p data-i18n="f5d">MEMORY.md 可追加/改写（需确认）；任务面板跟进进度；MCP 扩展把外部工具接到同一运行时。</p></article>
+      <article class="feat reveal" style="--d:.16s"><span class="tag">THEME</span><div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></div><h3 data-i18n="f6t">浅色 / 深色</h3><p data-i18n="f6d">AgentFrame 蓝白浅色主视觉，一键切换深色；中英双语，适合日夜长时间工作。</p></article>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="background:var(--bg2)">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-i18n="how_eyebrow">How it works</span>
+    <h2 class="sec-title reveal" data-i18n="how_title">四步上手</h2>
+    <p class="sec-sub reveal" style="--d:.08s" data-i18n="how_sub">从打开文件夹到多智能体协作，不到一分钟。</p>
+    <div class="steps">
+      <div class="step reveal"><div class="n">01</div><h3 data-i18n="s1t">打开工作区</h3><p data-i18n="s1d">选择本地文件夹，历史与 Memory 都落在你控制的磁盘上。</p></div>
+      <div class="step reveal" style="--d:.08s"><div class="n">02</div><h3 data-i18n="s2t">配置模型</h3><p data-i18n="s2d">主模型 / 子智能体 / 压缩模型可分开设置，自备 API Key 或接 Ollama。</p></div>
+      <div class="step reveal" style="--d:.16s"><div class="n">03</div><h3 data-i18n="s3t">对话与确认</h3><p data-i18n="s3d">写文件、Shell、记忆等变更动作先征求人类批准，再执行。</p></div>
+      <div class="step reveal" style="--d:.24s"><div class="n">04</div><h3 data-i18n="s4t">扩展能力</h3><p data-i18n="s4d">Skills、浏览器沙箱、MCP 工具按需挂载，fork 友好分层架构。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="shots">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-i18n="shots_eyebrow">Interface</span>
+    <h2 class="sec-title reveal" data-i18n="shots_title">浅色清爽 · 深色沉浸</h2>
+    <p class="sec-sub reveal" style="--d:.08s" data-i18n="shots_sub">同一工作台，两种氛围。浅色清爽适合日间专注；深色沉浸适合夜间长时工作。</p>
+    <div class="shots shots-two">
+      <figure class="shot-card reveal" data-reveal="left">
+        <img src="assets/gallery-workbench-light.png" alt="Light clean workbench">
+        <figcaption><b data-i18n="shot1">浅色清爽</b><span>LIGHT</span></figcaption>
+      </figure>
+      <figure class="shot-card reveal" data-reveal="right" style="--d:.08s">
+        <img src="assets/gallery-workbench-dark.png" alt="Dark immersive workbench">
+        <figcaption><b data-i18n="shot2">深色沉浸</b><span>DARK</span></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="demo" style="background:var(--bg2)">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-i18n="demo_eyebrow">Demo</span>
+    <h2 class="sec-title reveal" data-i18n="demo_title">产品演示</h2>
+    <p class="sec-sub reveal" style="--d:.08s" data-i18n="demo_sub">一分钟看清核心能力：工作台、会话版、多智能体对话、浏览器沙箱、Skills 与本地桌面。</p>
+    <div class="promo-embed reveal" style="--d:.12s">
+      <div class="bar">
+        <strong data-i18n="demo_bar">介绍片 · ~60s</strong>
+      </div>
+      <video id="promoVideo" controls preload="metadata" poster="assets/gallery-workbench-light.png">
+        <source src="assets/edgesidekick-intro.mp4" type="video/mp4">
+      </video>
+    </div>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-i18n="dl_eyebrow">Download</span>
+    <h2 class="sec-title reveal" data-i18n="dl_title">三种方式，立刻可用</h2>
+    <div class="deploy-grid">
+      <div class="deploy reveal"><span class="os">WINDOWS</span><h4 data-i18n="d1t">Windows 安装包</h4><p data-i18n="d1d">构建机一次打好，目标机双击安装，无需预装运行时。</p><span class="fmt">.exe / 便携 zip</span></div>
+      <div class="deploy reveal" style="--d:.08s"><span class="os">KYLIN · LINUX</span><h4 data-i18n="d2t">麒麟 / Linux</h4><p data-i18n="d2d">国产系统与通用 Linux 包，含 arm64 支持，dpkg 一行安装。</p><span class="fmt">.deb / AppImage</span></div>
+      <div class="deploy reveal" style="--d:.16s"><span class="os">SOURCE</span><h4 data-i18n="d3t">源码直跑</h4><p data-i18n="d3d">Python 3.10+ · Node 18+；或双击 start-desktop.bat 一键启动。</p><span class="fmt">python main.py</span></div>
+    </div>
+    <div class="start-box reveal" data-reveal="zoom">
+      <h3 data-i18n="start_title">60 秒快速上手</h3>
+      <p data-i18n="start_sub">选择工作区文件夹 → 配置模型与 API Key → 开始对话。</p>
+      <div class="start-cmd">
+<span class="cm"># Windows / macOS / Linux</span><br>
+<span class="p">$</span> python -m pip install -r requirements.txt<br>
+<span class="p">$</span> python main.py
+      </div>
+      <div class="start-url">→ http://127.0.0.1:8787</div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap">
+    <div class="cta-box reveal" data-reveal="zoom">
+      <h2 data-i18n="cta_title">把 EdgeSidekick 拉进你的工作流</h2>
+      <p data-i18n="cta_sub">开源 · 本地优先 · 数据不出境 —— 现在就把 EdgeSidekick 拉进你的工作流。</p>
+      <a class="btn btn-w" href="#download" data-i18n="cta_btn">立即开始</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+    <div class="foot-links">
+      <a href="docs/user-guide.zh.html" data-i18n="nav_guide">使用手册</a>
+      <a href="docs/user-guide.en.html">Guide (EN)</a>
+      <a href="../README.md">README</a>
+    </div>
+    <span class="mono">WINDOWS · MACOS · LINUX · KYLIN</span>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>

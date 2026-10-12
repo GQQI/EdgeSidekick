@@ -11,7 +11,7 @@ From [anthropics/skills](https://github.com/anthropics/skills)
 
 | Skill | Notes |
 |-------|--------|
-| `skill-creator` | Official skill authoring guide. Sidekick adapter: `skill_save` → `SKILLS_DIR`; Claude Code eval scripts omitted. |
+| `skill-creator` | Official skill authoring guide. EdgeSidekick adapter: `skill_save` → `SKILLS_DIR`; Claude Code eval scripts omitted. |
 | `frontend-design` | Distinctive UI direction. |
 | `canvas-design` | Static visual / poster direction. Fonts are OFL license texts, not binary font files. |
 | `internal-comms` | Internal writing templates (examples included). |
@@ -24,7 +24,7 @@ From [anthropics/skills](https://github.com/anthropics/skills)
 From [obra/superpowers](https://github.com/obra/superpowers)
 (copyright Jesse Vincent). Each folder ships its own `LICENSE.txt`.
 Descriptions and paths were narrowed so they trigger on coding work,
-not on Sidekick document/report tasks, and so they do not auto-commit.
+not on EdgeSidekick document/report tasks, and so they do not auto-commit.
 
 | Skill | Notes |
 |-------|--------|

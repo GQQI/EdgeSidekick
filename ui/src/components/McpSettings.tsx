@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   fetchMcp,
   saveMcp,
@@ -89,9 +89,18 @@ export function McpSettings({ onToast }: Props) {
     setSetup(data);
   };
 
+  // Load once on mount. `onToast` is an inline callback that changes identity
+  // on every parent render — keying the effect on it re-fetched MCP on each
+  // parent re-render (e.g. the shell-job poll), spinning the API forever.
+  const onToastRef = useRef(onToast);
+  onToastRef.current = onToast;
+
   useEffect(() => {
-    void reload().catch((e) => onToast?.(e instanceof Error ? e.message : String(e)));
-  }, [onToast]);
+    void reload().catch((e) =>
+      onToastRef.current?.(e instanceof Error ? e.message : String(e)),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!setup) {
     return <p className="hint">加载 MCP 配置…</p>;

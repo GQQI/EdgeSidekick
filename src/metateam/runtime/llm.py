@@ -17,6 +17,11 @@ from .text_tool_calls import (
     split_before_tool_markup,
 )
 from ..core.config import Settings
+from ..core.logutil import get_logger
+from .llm_extract import extract_content_text, extract_message_text, extract_reasoning_text
+from .llm_args import align_tool_chains, parse_tool_args
+
+_log = get_logger("metateam.llm")
 
 
 def _is_tool_choice_error(exc: BaseException) -> bool:
@@ -29,6 +34,13 @@ def _is_tool_choice_error(exc: BaseException) -> bool:
     )
 
 
+def _is_parallel_tool_calls_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    if "parallel_tool_calls" in msg or "parallel tool call" in msg:
+        return True
+    return "unexpected keyword" in msg and "parallel" in msg
+
+
 def _retry_kwargs_for_exc(kwargs: dict[str, Any], exc: BaseException) -> dict[str, Any] | None:
     msg = str(exc).lower()
     retry = dict(kwargs)
@@ -37,6 +49,11 @@ def _retry_kwargs_for_exc(kwargs: dict[str, Any], exc: BaseException) -> dict[st
         if "tools" in retry or "tool_choice" in retry:
             retry.pop("tools", None)
             retry.pop("tool_choice", None)
+            retry.pop("parallel_tool_calls", None)
+            changed = True
+    if _is_parallel_tool_calls_error(exc):
+        if "parallel_tool_calls" in retry:
+            retry.pop("parallel_tool_calls", None)
             changed = True
     if "thinking" in msg or "reasoning" in msg or "extra_body" in msg:
         if "extra_body" in retry or "reasoning_effort" in retry:
@@ -53,6 +70,13 @@ def _retry_kwargs_for_exc(kwargs: dict[str, Any], exc: BaseException) -> dict[st
 def _stream_timeouts(settings: Any) -> tuple[float, float]:
     idle = float(getattr(settings, "llm_idle_timeout", 0) or 0)
     total = float(getattr(settings, "llm_stream_timeout", 0) or 0)
+    # Reasoning / thinking models often emit nothing for a long time before the
+    # first token. Under concurrent social turns (group + DM) the provider can
+    # also queue, so a short idle watchdog falsely surfaces as 思考超时.
+    thinking = bool(getattr(settings, "thinking_enabled", False))
+    effort = getattr(settings, "reasoning_effort", None)
+    if idle > 0 and (thinking or effort):
+        idle = max(idle, 180.0)
     return max(0.0, idle), max(0.0, total)
 
 
@@ -113,6 +137,90 @@ class StreamWatchdog:
                 return
 
 
+def coerce_tool_arg_piece(value: Any) -> str:
+    """Normalize a streamed tool-argument fragment to text.
+
+    Some gateways send ``arguments`` as a dict (already parsed) instead of a
+    JSON string. ``str(dict)`` yields Python repr with single quotes, which is
+    not JSON and will 400 on the next request.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def merge_stream_fragment(prev: str, piece: str) -> str:
+    """Join one streamed tool name/arguments chunk.
+
+    OpenAI-style streams append *deltas*. MiniMax / some vLLM parsers instead
+    resend a growing *snapshot* of the whole JSON each chunk. Concatenating
+    snapshots produces ``{"path": ...{"path": ...`` which is not JSON — and
+    that illegal string is what the next chat.completions call POSTs back,
+    causing ``Unterminated string`` / 400.
+    """
+    if not piece:
+        return prev or ""
+    if not prev:
+        return piece
+    if piece == prev:
+        return prev
+    if piece.startswith(prev):
+        return piece
+    # A later, shorter snapshot repeats the opening of the accumulator.
+    # A one-character "{" delta is also a prefix of every JSON object, and
+    # CSS/JS bodies stream that token alone. Dropping it deletes the brace
+    # and leaves "*margin:0}" / ".shelldisplay:grid}".
+    if piece != "{" and prev.startswith(piece):
+        return prev
+    prev_obj = _try_json_object(prev)
+    piece_obj = _try_json_object(piece)
+    if isinstance(prev_obj, dict) and isinstance(piece_obj, dict):
+        # Two complete snapshots of the same call — keep the longer one.
+        return piece if len(piece) >= len(prev) else prev
+    return prev + piece
+
+
+def _try_json_object(text: str) -> dict[str, Any] | None:
+    try:
+        data = json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _tool_call_slot_index(
+    tc: Any,
+    tool_acc: dict[int, dict[str, str]],
+    id_to_idx: dict[str, int],
+) -> int:
+    raw_idx = getattr(tc, "index", None)
+    if raw_idx is not None and str(raw_idx) != "":
+        try:
+            idx = int(raw_idx)
+        except (TypeError, ValueError):
+            idx = None
+        else:
+            cid = getattr(tc, "id", None)
+            if cid:
+                id_to_idx[str(cid)] = idx
+            return idx
+    cid = str(getattr(tc, "id", None) or "")
+    if cid and cid in id_to_idx:
+        return id_to_idx[cid]
+    # Argument fragments often omit index and id. A new slot would keep the
+    # name on the previous call and drop the arguments (executed as {}).
+    if tool_acc and not cid:
+        return max(tool_acc)
+    idx = (max(tool_acc) + 1) if tool_acc else 0
+    if cid:
+        id_to_idx[cid] = idx
+    return idx
+
+
 class LLM:
     def __init__(
         self,
@@ -136,6 +244,7 @@ class LLM:
         self.client: OpenAI | None = None
         self._active_stream: Any = None
         self._disable_tools = False
+        self._disable_parallel_tool_calls = False
         if not self.demo:
             if not key.strip():
                 raise RuntimeError("API key empty — configure in UI or META_DEMO_MODE=1")
@@ -175,6 +284,8 @@ class LLM:
             kwargs["tools"] = tools
             # Do not send tool_choice="auto": vLLM 400s unless the server was
             # started with --enable-auto-tool-choice --tool-call-parser.
+            if not self._disable_parallel_tool_calls:
+                kwargs["parallel_tool_calls"] = True
 
         mt = int(getattr(self, "max_tokens", 0) or getattr(self.settings, "max_tokens", 0) or 0)
         if mt > 0:
@@ -207,6 +318,9 @@ class LLM:
                 pending.pop("reasoning_effort", None)
                 pending.pop("stream_options", None)
                 pending.pop("timeout", None)
+                if "parallel_tool_calls" in pending and _is_parallel_tool_calls_error(exc):
+                    pending.pop("parallel_tool_calls", None)
+                    self._disable_parallel_tool_calls = True
                 continue
             except Exception as exc:
                 last = exc
@@ -215,6 +329,8 @@ class LLM:
                     raise
                 if _is_tool_choice_error(exc):
                     self._disable_tools = True
+                if _is_parallel_tool_calls_error(exc):
+                    self._disable_parallel_tool_calls = True
                 pending = retry
         assert last is not None
         raise last
@@ -248,14 +364,17 @@ class LLM:
             out["reasoning"] = reasoning
         if msg.tool_calls:
             out["tool_calls"] = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {
-                        "name": tc.function.name,
-                        "arguments": tc.function.arguments or "{}",
-                    },
-                }
+                canonicalize_tool_call(
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": coerce_tool_arg_piece(tc.function.arguments)
+                            or "{}",
+                        },
+                    }
+                )
                 for tc in msg.tool_calls
             ]
         return merge_text_tool_calls(out)
@@ -287,8 +406,10 @@ class LLM:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         tool_acc: dict[int, dict[str, str]] = {}
+        id_to_idx: dict[str, int] = {}
         cancelled = False
         looped_text = False
+        repeat_cut = RepeatCut()
         xml_hold = ""
         xml_tools = XmlToolStream()
         # Stateful splitter for <think>…</think> embedded in content stream
@@ -307,15 +428,30 @@ class LLM:
                     break
                 if not chunk.choices:
                     continue
-                delta = chunk.choices[0].delta
-                if not delta:
-                    continue
+                choice = chunk.choices[0]
+                delta = getattr(choice, "delta", None)
 
-                # 1) Native reasoning_content / reasoning fields
+                # 1) Native reasoning_content / reasoning / thinking blocks.
+                # Some gateways put the increment on the choice, not the delta.
                 reasoning_piece = extract_reasoning_text(delta)
+                if not reasoning_piece:
+                    reasoning_piece = extract_reasoning_text(
+                        _choice_reasoning_extras(choice)
+                    )
                 if reasoning_piece:
                     reasoning_parts.append(reasoning_piece)
                     yield ("reasoning_delta", reasoning_piece)
+                    if repeat_cut.observe("".join(reasoning_parts)):
+                        looped_text = True
+                        try:
+                            self.close_active_stream()
+                        except Exception:
+                            pass
+
+                if not delta:
+                    if looped_text:
+                        break
+                    continue
 
                 # 2) Visible content, with <think> tags peeled into reasoning.
                 # If this delta already carried native reasoning, only emit
@@ -331,12 +467,19 @@ class LLM:
                                 continue
                             reasoning_parts.append(piece)
                             yield ("reasoning_delta", piece)
+                            if repeat_cut.observe("".join(reasoning_parts)):
+                                looped_text = True
+                                try:
+                                    self.close_active_stream()
+                                except Exception:
+                                    pass
+                                break
                         else:
                             visible, xml_hold = split_before_tool_markup(xml_hold + piece)
                             if visible:
                                 content_parts.append(visible)
                                 yield ("delta", visible)
-                                if streaming_text_looped("".join(content_parts)):
+                                if repeat_cut.observe("".join(content_parts)):
                                     looped_text = True
                                     try:
                                         self.close_active_stream()
@@ -353,21 +496,26 @@ class LLM:
                     break
 
                 for tc in getattr(delta, "tool_calls", None) or []:
-                    idx = int(getattr(tc, "index", 0) or 0)
+                    idx = _tool_call_slot_index(tc, tool_acc, id_to_idx)
                     slot = tool_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
                     changed = False
                     if getattr(tc, "id", None):
                         slot["id"] = tc.id
+                        id_to_idx[str(tc.id)] = idx
                         changed = True
                     fn = getattr(tc, "function", None)
                     arg_piece = ""
                     if fn is not None:
                         if getattr(fn, "name", None):
-                            slot["name"] = (slot["name"] or "") + str(fn.name)
+                            slot["name"] = merge_stream_fragment(
+                                slot["name"] or "", str(fn.name)
+                            )
                             changed = True
-                        if getattr(fn, "arguments", None):
-                            arg_piece = str(fn.arguments)
-                            slot["arguments"] = (slot["arguments"] or "") + arg_piece
+                        arg_piece = coerce_tool_arg_piece(getattr(fn, "arguments", None))
+                        if arg_piece:
+                            slot["arguments"] = merge_stream_fragment(
+                                slot["arguments"] or "", arg_piece
+                            )
                             changed = True
                     if changed:
                         yield (
@@ -381,7 +529,11 @@ class LLM:
                             },
                         )
         except Exception:
-            if not watch.reason and not cancelled and not (
+            # Closing our own stream after a long repeat raises inside the
+            # provider iterator. That is not a failed turn.
+            if looped_text:
+                pass
+            elif not watch.reason and not cancelled and not (
                 callable(cancel_check) and cancel_check()
             ):
                 watch.stop()
@@ -419,19 +571,30 @@ class LLM:
 
         content = "".join(content_parts) + xml_hold
         reasoning = "".join(reasoning_parts)
+        if looped_text:
+            # Keep a short prefix. The repeated tail must not re-enter history
+            # or the next turn copies it.
+            if len(reasoning) > 480:
+                reasoning = reasoning[:480].rstrip() + "…"
+            if streaming_text_looped(content):
+                content = content[:480].rstrip()
         out: dict[str, Any] = {"role": "assistant", "content": content}
+        if looped_text:
+            out["sidekick_looped"] = True
         if reasoning:
             out["reasoning"] = reasoning
-        if tool_acc and not cancelled:
+        if tool_acc and not cancelled and not looped_text:
             out["tool_calls"] = [
-                {
-                    "id": tool_acc[i].get("id") or f"call_{i}",
-                    "type": "function",
-                    "function": {
-                        "name": tool_acc[i].get("name") or "",
-                        "arguments": tool_acc[i].get("arguments") or "{}",
-                    },
-                }
+                canonicalize_tool_call(
+                    {
+                        "id": tool_acc[i].get("id") or f"call_{i}",
+                        "type": "function",
+                        "function": {
+                            "name": tool_acc[i].get("name") or "",
+                            "arguments": tool_acc[i].get("arguments") or "{}",
+                        },
+                    }
+                )
                 for i in sorted(tool_acc)
                 if tool_acc[i].get("name")
             ]
@@ -470,6 +633,32 @@ class LLM:
         return (msg.get("content") or "").strip()
 
 
+REPEAT_CUT_SEC = 20.0
+
+
+class RepeatCut:
+    """Cut a generation only after similar text has been repeating for a while.
+
+    A few repeated sentences are not a reason to end the task. The clock
+    starts when the text first looks stuck, and resets if new text arrives.
+    """
+
+    def __init__(self, *, seconds: float = REPEAT_CUT_SEC, now=time.monotonic) -> None:
+        self.seconds = float(seconds)
+        self._now = now
+        self._since: float | None = None
+
+    def observe(self, text: str) -> bool:
+        if not streaming_text_looped(text):
+            self._since = None
+            return False
+        now = float(self._now())
+        if self._since is None:
+            self._since = now
+            return False
+        return (now - self._since) >= self.seconds
+
+
 def streaming_text_looped(text: str) -> bool:
     """True when the model is stuck repeating the same sentence/paragraph."""
     blob = text or ""
@@ -478,6 +667,12 @@ def streaming_text_looped(text: str) -> bool:
     tail = blob[-96:]
     window = blob[-960:] if len(blob) > 960 else blob
     if tail.strip() and window.count(tail) >= 4:
+        return True
+    # A sentence glued end to end does not share a 96-char tail, so count()
+    # on that tail stays at 1. Compare the recent sentences themselves.
+    recent = blob[-1200:]
+    parts = [p.strip() for p in re.split(r"[。！？!?\n]+", recent) if len(p.strip()) >= 12]
+    if len(parts) >= 6 and sum(1 for p in parts[-8:] if p == parts[-1]) >= 4:
         return True
     lines = [ln.strip() for ln in blob.splitlines() if len(ln.strip()) >= 16]
     if len(lines) >= 5 and lines[-1] == lines[-2] == lines[-3] == lines[-4]:
@@ -488,342 +683,23 @@ def streaming_text_looped(text: str) -> bool:
     return False
 
 
-def extract_content_text(msg: Any) -> str:
-    """Visible assistant content only (never reasoning/thinking)."""
-    if msg is None:
-        return ""
-    content = getattr(msg, "content", None)
-    if isinstance(content, str) and content:
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for p in content:
-            if isinstance(p, str):
-                parts.append(p)
-            elif isinstance(p, dict):
-                # Skip explicit thinking parts in content arrays
-                ptype = str(p.get("type") or "")
-                if ptype in {"thinking", "reasoning", "reasoning_content"}:
-                    continue
-                if p.get("text"):
-                    parts.append(str(p["text"]))
-            else:
-                ptype = str(getattr(p, "type", "") or "")
-                if ptype in {"thinking", "reasoning", "reasoning_content"}:
-                    continue
-                t = getattr(p, "text", None)
-                if t:
-                    parts.append(str(t))
-        return "".join(parts)
-    return ""
 
 
-def extract_reasoning_text(msg: Any) -> str:
-    """Model thinking / reasoning stream pieces only.
 
-    Providers often expose the same chunk on multiple fields
-    (e.g. reasoning_content + model_extra['reasoning_content']).
-    Take the first non-empty source only — never concatenate duplicates.
-    """
-    if msg is None:
-        return ""
-
-    def _as_text(v: Any) -> str:
-        if isinstance(v, str) and v:
-            return v
-        return ""
-
-    for attr in ("reasoning_content", "reasoning", "thinking"):
-        text = _as_text(getattr(msg, attr, None))
-        if text:
-            return text
-
-    content = getattr(msg, "content", None)
-    if isinstance(content, list):
-        parts: list[str] = []
-        for p in content:
-            if isinstance(p, dict):
-                ptype = str(p.get("type") or "")
-                if ptype in {"thinking", "reasoning", "reasoning_content"} and p.get("text"):
-                    parts.append(str(p["text"]))
-            else:
-                ptype = str(getattr(p, "type", "") or "")
-                if ptype in {"thinking", "reasoning", "reasoning_content"}:
-                    t = getattr(p, "text", None)
-                    if t:
-                        parts.append(str(t))
-        if parts:
-            return "".join(parts)
-
-    extra = getattr(msg, "model_extra", None)
-    if isinstance(extra, dict):
-        for k in ("reasoning_content", "reasoning", "thinking"):
-            text = _as_text(extra.get(k))
-            if text:
-                return text
-    return ""
-
-
-def extract_message_text(msg: Any) -> str:
-    """Prefer visible content; do not fall back to reasoning (kept for compat)."""
-    content = extract_content_text(msg)
-    if content.strip():
-        visible, _ = split_think_tags(content)
-        return visible
-    return ""
-
-
-_PARTIAL_ARG_KEYS = (
-    "goal",
-    "task",
-    "context",
-    "role",
-    "topic",
-    "query",
-    "prompt",
-    "description",
-    "path",
-    "command",
-    "content",
-    "old_string",
-    "new_string",
-    "offset",
-    "limit",
-    "pattern",
+# Re-exports so existing "from metateam.runtime.llm import ..." keep working.
+from .llm_extract import (  # noqa: E402
+    _THINK_PART_TYPES,
+    _REASONING_TEXT_KEYS,
+    extract_content_text,
+    extract_message_text,
+    extract_reasoning_text,
 )
-
-
-def _unescape_json_fragment(text: str) -> str:
-    return (
-        (text or "")
-        .replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace('\\"', '"')
-        .replace("\\\\", "\\")
-    )
-
-
-def _loads_partial_object(raw: str) -> dict[str, Any] | None:
-    text = (raw or "").strip()
-    if not text:
-        return None
-    if not text.startswith("{"):
-        found = re.search(r"\{.*", text, re.DOTALL)
-        text = found.group(0) if found else text
-    for extra in ("", "}", '"}', '"]}', '"]} }', '"}]}'):
-        try:
-            data = json.loads(text + extra)
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            continue
-    return None
-
-
-def _salvage_tool_args(raw: str) -> dict[str, Any]:
-    repaired = _loads_partial_object(raw)
-    if repaired:
-        return repaired
-    out: dict[str, Any] = {}
-    for key in _PARTIAL_ARG_KEYS:
-        closed = re.search(
-            rf'"{key}"\s*:\s*"((?:\\.|[^"\\])*)"',
-            raw or "",
-        )
-        if closed:
-            out[key] = _unescape_json_fragment(closed.group(1))
-            continue
-        opened = re.search(rf'"{key}"\s*:\s*"(.*)$', raw or "", re.DOTALL)
-        if opened:
-            out[key] = _unescape_json_fragment(opened.group(1).rstrip('"'))
-    return out if out else {"_raw": raw}
-
-
-def parse_tool_args(raw: str) -> dict[str, Any]:
-    text = raw or ""
-    try:
-        data = json.loads(text.strip() or "{}")
-        return data if isinstance(data, dict) else {}
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try:
-            data = json.loads(match.group(0))
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            pass
-    salvaged = dict(_salvage_tool_args(text) or {})
-    salvaged["_incomplete"] = True
-    if not any(k != "_incomplete" for k in salvaged):
-        salvaged["_raw"] = text
-    return salvaged
-
-
-def _strip_for_api(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for m in messages:
-        item = {
-            k: v
-            for k, v in m.items()
-            if k in ("role", "content", "tool_calls", "tool_call_id", "name")
-        }
-        if item.get("role") == "assistant" and not item.get("content") and not item.get("tool_calls"):
-            item["content"] = ""
-        out.append(item)
-    return out
-
-
-def _demo_chat(
-    messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]]
-) -> dict[str, Any]:
-    last_user = ""
-    for m in reversed(messages):
-        if m.get("role") == "user":
-            last_user = str(m.get("content") or "")
-            break
-
-    if messages and messages[-1].get("role") == "tool":
-        content = str(messages[-1].get("content") or "")
-        if "Function skill:" in content or content.lstrip().startswith("# Function skill"):
-            return {
-                "role": "assistant",
-                "content": (
-                    "【Demo】当前是 Demo 模式，不会真正按 Skill 执行写文件/改代码。\n\n"
-                    "Skill 工具只返回了流程说明；请到「设置 → 模型」配置可用的 API Key，"
-                    "确认顶栏不是 Demo，然后新建会话再执行 `/skill`。"
-                ),
-            }
-        return {
-            "role": "assistant",
-            "content": (
-                "【Demo】工具结果已收到（Demo 模式不会继续真实执行）。\n\n"
-                f"{content[:280]}"
-            ),
-        }
-
-    tool_names = set()
-    if tools:
-        for t in tools:
-            fn = t.get("function") or {}
-            tool_names.add(fn.get("name"))
-
-    low = last_user.lower()
-
-    # Prefer skill_* function tools
-    skill_tools = [n for n in tool_names if n and str(n).startswith("skill_")]
-    skill_asked = (
-        "skill" in low
-        or "技能" in last_user
-        or "/skill" in low
-        or "【skill" in low
-        or any(str(n) in last_user for n in skill_tools)
-    )
-    if skill_asked and skill_tools:
-        # Match the requested skill_* name from the user text when possible.
-        name = next((n for n in skill_tools if n and str(n) in last_user), None)
-        if not name:
-            # /skill html-deck-editorial → skill_html_deck_editorial
-            m = re.search(r"/skill\s+([A-Za-z0-9._-]+)", last_user, re.I)
-            if m:
-                want = "skill_" + re.sub(r"[^a-z0-9]+", "_", m.group(1).lower()).strip("_")
-                name = next((n for n in skill_tools if n == want or want in str(n)), None)
-        if not name:
-            name = (
-                "skill_hello_workspace"
-                if "skill_hello_workspace" in skill_tools
-                else skill_tools[0]
-            )
-        # Keep task short — never pass the whole SKILL injection blob as task.
-        task = last_user.strip()
-        if "用户本次附加指令" in task:
-            m = re.search(r"用户本次附加指令：\s*\n(.+?)(?:\n\n请按该 Skill|\Z)", task, re.S)
-            task = (m.group(1).strip() if m else "") or "按该 Skill 的标准流程执行"
-        elif len(task) > 240:
-            task = task[:240]
-        return {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {
-                    "id": "demo_sk_1",
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": json.dumps({"task": task}, ensure_ascii=False),
-                    },
-                }
-            ],
-        }
-
-    if "并行" in last_user or "delegate" in low:
-        if "delegate_task" in tool_names:
-            return {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "demo_del_1",
-                        "type": "function",
-                        "function": {
-                            "name": "delegate_task",
-                            "arguments": json.dumps(
-                                {
-                                    "tasks": [
-                                        {"goal": "List workspace", "context": "list_dir ."},
-                                        {
-                                            "goal": "Use hello skill",
-                                            "context": "call skill_hello_workspace",
-                                        },
-                                    ]
-                                },
-                                ensure_ascii=False,
-                            ),
-                        },
-                    }
-                ],
-            }
-
-    if any(k in last_user for k in ("列出", "list", "目录", "workspace")) and "list_dir" in tool_names:
-        return {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {
-                    "id": "demo_ls_1",
-                    "type": "function",
-                    "function": {"name": "list_dir", "arguments": json.dumps({"path": "."})},
-                }
-            ],
-        }
-
-    if ("写" in last_user or "write" in low or "hello" in low) and "write_file" in tool_names:
-        return {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {
-                    "id": "demo_w_1",
-                    "type": "function",
-                    "function": {
-                        "name": "write_file",
-                        "arguments": json.dumps(
-                            {
-                                "path": "notes/demo.md",
-                                "content": "# Demo\n\nHello from Sidekick.\n",
-                            },
-                            ensure_ascii=False,
-                        ),
-                    },
-                }
-            ],
-        }
-
-    return {
-        "role": "assistant",
-        "content": (
-            "【Demo 模式】配置模型 API Key 后可使用真实推理。\n"
-            "可试：列出 workspace / 调用 hello skill / 并行委派。"
-        ),
-    }
+from .llm_args import (  # noqa: E402
+    align_tool_chains,
+    canonical_tool_arguments,
+    canonicalize_tool_call,
+    decode_tool_args_json,
+    parse_tool_args,
+    _strip_for_api,
+    _demo_chat,
+)

@@ -136,27 +136,40 @@ export function useSessionBootstrap(deps: SessionBootstrapDeps) {
     ],
   );
 
+  const listedScopeRef = useRef<{ path: string; id: string } | null>(null);
+  const historyCacheRef = useRef(new Map<string, SessionItem[]>());
+
+  const cachedSessions = useCallback((path?: string | null, id?: string | null) => {
+    const folderId = String(id || "");
+    if (folderId && historyCacheRef.current.has(`id:${folderId}`)) {
+      return historyCacheRef.current.get(`id:${folderId}`) || [];
+    }
+    const folder = String(path || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    if (folder && historyCacheRef.current.has(`path:${folder}`)) {
+      return historyCacheRef.current.get(`path:${folder}`) || [];
+    }
+    return null;
+  }, []);
+
   const refreshSessions = useCallback(
-    async (page?: number) => {
+    async (page?: number, scope?: { workspaceId?: string | null; workspace?: string | null }) => {
       try {
         const target = page ?? sessionsPage;
-        // Scope to the workspace on screen — switching workspace must switch
-        // which history shows, not just badge the current one among all of them.
-        const scopeId = activeWorkspaceIdRef.current;
-        const scopePath = activeWsPathRef.current;
+        const scopeId = String(scope?.workspaceId ?? activeWorkspaceIdRef.current ?? "");
+        const scopePath = String(scope?.workspace ?? activeWsPathRef.current ?? "");
+        const token = { path: scopePath, id: scopeId };
+        listedScopeRef.current = token;
         const res = await fetchSessions(target, HISTORY_PAGE_SIZE, {
           workspaceId: scopeId,
           workspace: scopePath,
         });
-        // A slower request for a workspace the user has since switched away
-        // from must never clobber the list with the wrong project's chats —
-        // that overlapping-poll race is what "flickers back and forth"
-        // between two workspaces after switching. Only apply the response
-        // if we're still looking at the same workspace that requested it.
-        if (activeWorkspaceIdRef.current !== scopeId || activeWsPathRef.current !== scopePath) {
-          return;
-        }
-        setSessions(res.items || []);
+        const live = listedScopeRef.current;
+        if (!live || live.path !== token.path || live.id !== token.id) return;
+        const items = res.items || [];
+        if (scopeId) historyCacheRef.current.set(`id:${scopeId}`, items);
+        const folder = scopePath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+        if (folder) historyCacheRef.current.set(`path:${folder}`, items);
+        setSessions(items);
         setSessionsPage(res.page || 1);
         setSessionsTotal(res.total || 0);
         setSessionsTotalPages(res.total_pages || 1);
@@ -250,6 +263,7 @@ export function useSessionBootstrap(deps: SessionBootstrapDeps) {
     boot,
     restoreOrCreateSession,
     refreshSessions,
+    cachedSessions,
     refreshWorkspaces,
     syncContextFromSession,
     resetContextUsage,

@@ -30,6 +30,9 @@ class ApprovalGate:
     ``outside_workspace``; shell commands that mention outside paths share
     ``shell_outside_workspace``; drive/home-root deletes share
     ``dangerous_shell``. A single 「本轮记住」covers later same-scope calls.
+
+    ``_allow_all`` is a user switch (not cleared each turn): when on, no
+    dialog is shown and every tool is treated as preapproved.
     """
 
     def __init__(self, timeout_sec: float = 300.0) -> None:
@@ -40,6 +43,7 @@ class ApprovalGate:
         self._decisions: dict[str, bool] = {}
         self._pending: dict[str, ApprovalRequest] = {}
         self._allowed_tools: set[str] = set()
+        self._allow_all = False
         self._early: dict[str, bool] = {}
         self._patches: dict[str, dict[str, Any]] = {}
 
@@ -51,9 +55,23 @@ class ApprovalGate:
         with self._lock:
             self._allowed_tools.clear()
 
+    def set_allow_all(self, enabled: bool) -> None:
+        pending_ids: list[str] = []
+        with self._lock:
+            self._allow_all = bool(enabled)
+            if enabled:
+                pending_ids = list(self._events.keys())
+        if enabled:
+            for approval_id in pending_ids:
+                self.decide(approval_id, True, remember_all=True)
+
+    def is_allow_all(self) -> bool:
+        with self._lock:
+            return self._allow_all
+
     def is_preapproved(self, tool: str) -> bool:
         with self._lock:
-            return tool in self._allowed_tools
+            return self._allow_all or tool in self._allowed_tools
 
     def remember_tool(self, tool: str) -> None:
         name = (tool or "").strip()
@@ -73,7 +91,7 @@ class ApprovalGate:
     ) -> bool:
         remember_key = (scope or tool or "").strip() or (tool or "")
         with self._lock:
-            if remember_key in self._allowed_tools:
+            if self._allow_all or remember_key in self._allowed_tools:
                 return True
             if approval_id in self._early:
                 return bool(self._early.pop(approval_id))
@@ -108,16 +126,19 @@ class ApprovalGate:
         approved: bool,
         *,
         remember: bool = False,
+        remember_all: bool = False,
         patch_args: dict[str, Any] | None = None,
     ) -> bool:
         with self._lock:
             if approved and patch_args:
                 self._patches[approval_id] = dict(patch_args)
+            if approved and remember_all:
+                self._allow_all = True
             ev = self._events.get(approval_id)
             if not ev:
                 self._early[approval_id] = bool(approved)
                 return True
-            if approved and remember:
+            if approved and remember and not remember_all:
                 req = self._pending.get(approval_id)
                 key = ((req.scope if req else "") or (req.tool if req else "")).strip()
                 if key:

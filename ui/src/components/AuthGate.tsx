@@ -20,7 +20,7 @@ export function AuthGate({ mode, busy, error, onSetup, onLogin }: Props) {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const registering = mode === "setup";
-  const title = mode === "setup" ? "创建管理员账号" : "登录Sidekick";
+  const title = mode === "setup" ? "创建管理员账号" : "登录 EdgeSidekick";
   const hint = mode === "setup"
     ? "用邮箱创建本机账号。每个账号的对话、模型、记忆和工作区互相隔离。"
     : "使用邮箱登录。数据仅保存在本机。新账号由已登录用户添加。";
@@ -66,7 +66,7 @@ export function AuthGate({ mode, busy, error, onSetup, onLogin }: Props) {
             <BrandMark size={52} />
           </span>
           <div className="welcome-brand-text">
-            <span className="welcome-brand-name">Sidekick</span>
+            <span className="welcome-brand-name">EdgeSidekick</span>
             <span className="welcome-brand-sub">AI AGENT SYSTEM</span>
           </div>
         </div>

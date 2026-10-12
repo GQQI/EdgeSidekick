@@ -1,7 +1,8 @@
 /** Incremental splitter for <think>…</think> / <thinking>…</thinking> in streamed content. */
 
-const OPEN_RE = /<(think|thinking)\s*>/i;
-const CLOSE_RE = /<\/(think|thinking)\s*>/i;
+const OPEN_RE = /<(think|thinking|thought)\b[^>]*>/i;
+const CLOSE_RE = /<\/(think|thinking|thought)\s*>/i;
+const OPEN_NAMES = ["think", "thinking", "thought"];
 const OPEN_PREFIXES = [
   "<",
   "<t",
@@ -9,8 +10,10 @@ const OPEN_PREFIXES = [
   "<thi",
   "<thin",
   "<think",
+  "<thought",
   "<thinking",
   "<think>",
+  "<thought>",
   "<thinking>",
 ];
 const CLOSE_PREFIXES = [
@@ -21,8 +24,10 @@ const CLOSE_PREFIXES = [
   "</thi",
   "</thin",
   "</think",
+  "</thought",
   "</thinking",
   "</think>",
+  "</thought>",
   "</thinking>",
 ];
 
@@ -36,6 +41,20 @@ function partialSuffixLen(buf: string, prefixes: string[]): number {
     if (prefixes.some((p) => p.startsWith(suffix))) maxKeep = i;
   }
   return maxKeep;
+}
+
+function incompleteOpenHold(buf: string): number {
+  if (!buf) return 0;
+  const low = buf.toLowerCase();
+  const idx = low.lastIndexOf("<");
+  if (idx < 0) return partialSuffixLen(buf, OPEN_PREFIXES);
+  const tail = low.slice(idx);
+  if (tail.includes(">")) return partialSuffixLen(buf, OPEN_PREFIXES);
+  const rest = tail.slice(1);
+  if (OPEN_NAMES.some((name) => name.startsWith(rest) || rest.startsWith(name))) {
+    return buf.length - idx;
+  }
+  return partialSuffixLen(buf, OPEN_PREFIXES);
 }
 
 export type ThinkPiece = { kind: "content" | "reasoning"; text: string };
@@ -52,7 +71,7 @@ export class ThinkTagSplitter {
       if (!this.inThink) {
         const m = OPEN_RE.exec(this.buf);
         if (!m) {
-          const keep = partialSuffixLen(this.buf, OPEN_PREFIXES);
+          const keep = incompleteOpenHold(this.buf);
           const emit = keep ? this.buf.slice(0, -keep) : this.buf;
           this.buf = keep ? this.buf.slice(-keep) : "";
           if (emit) out.push({ kind: "content", text: emit });

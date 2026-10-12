@@ -1,26 +1,18 @@
-import type { RefObject } from "react";
+import { memo, useEffect, useRef, useState, type RefObject } from "react";
 import { AgentCanvas } from "./AgentCanvas";
+import {
+  expandAssistantMessages,
+} from "../utils/assistantDisplay";
 import { AskDialog } from "./AskDialog";
-import { FileTypeIcon, fileCardMeta } from "./FileTypeIcon";
-import { IconCheck, IconCube, IconUser } from "./icons";
+import { ChatBubble, ToolChip } from "./ChatBubble";
 import { IconRobotCube } from "./IconRobotCube";
-import { MarkdownView } from "./MarkdownView";
-import { ThinkingBlock } from "./ThinkingBlock";
-import { readFileContent } from "../api";
-import type { AskPrompt, ChatMsg, DetailView } from "../types/chat";
+import type { AskPrompt, ChatMsg, DetailView, SubNode } from "../types/chat";
 import { ASK_CUSTOM_KEY } from "../types/chat";
 import {
   buildSuggestions,
-  fileToDetail,
-  formatTime,
   greetingKey,
-  isSkillInjectMessage,
-  writeFilePreview,
-  streamPhaseSuffix,
-  canvasRootsForStage,
-  stripToolCallMarkup,
+  groupCanvasRootsByStage,
 } from "../utils/chatHelpers";
-import { formatToolSummary } from "../utils/toolSummary";
 import type { MsgKey } from "../i18n";
 
 export type ChatThreadProps = {
@@ -43,7 +35,6 @@ export type ChatThreadProps = {
   copiedId: string | null;
   threadRef: RefObject<HTMLDivElement | null>;
   bottomRef: RefObject<HTMLDivElement | null>;
-  onThreadScroll: () => void;
   onSetDetail: (d: DetailView) => void;
   onSend: (text?: string) => void;
   onStopChat: () => void;
@@ -63,9 +54,26 @@ export type ChatThreadProps = {
   onAskOtherText?: (text: string) => void;
   runningJobs?: { job_id: string; command: string; elapsed_sec?: number }[];
   onOpenJobs?: (jobId?: string) => void;
+  /** Optional names for speaker-label inference only (not shown as a roster). */
+  knownSpeakers?: string[];
 };
 
-export function ChatThread({
+function useCanvasByStage(messages: ChatMsg[]) {
+  const cacheRef = useRef<{ nodes: SubNode[]; map: Map<number, SubNode[]> } | null>(null);
+  const nodes: SubNode[] = [];
+  for (const m of messages) {
+    if (m.role === "subagent" && m.subagent) nodes.push(m.subagent);
+  }
+  const prev = cacheRef.current;
+  if (prev && prev.nodes.length === nodes.length && prev.nodes.every((n, i) => n === nodes[i])) {
+    return prev.map;
+  }
+  const map = groupCanvasRootsByStage(messages);
+  cacheRef.current = { nodes, map };
+  return map;
+}
+
+export const ChatThread = memo(function ChatThread({
   t,
   messages,
   busy,
@@ -78,7 +86,6 @@ export function ChatThread({
   copiedId,
   threadRef,
   bottomRef,
-  onThreadScroll,
   onSetDetail,
   onSend,
   onStopChat,
@@ -98,10 +105,28 @@ export function ChatThread({
   onAskOtherText,
   runningJobs = [],
   onOpenJobs,
+  knownSpeakers = [],
 }: ChatThreadProps) {
+  const displayMessages = messages.flatMap((m) => expandAssistantMessages(m, knownSpeakers));
+  const canvasByStage = useCanvasByStage(messages);
+  const canvasShown = new Set<number>();
+  let hasStreaming = false;
+  const runningKey = runningJobs.map((job) => job.job_id).join("\n");
+  const announcedJobs = useRef(new Set<string>());
+  const [jobsBannerOn, setJobsBannerOn] = useState(false);
+  useEffect(() => {
+    const ids = runningKey.split("\n").filter(Boolean);
+    const fresh = ids.filter((id) => !announcedJobs.current.has(id));
+    if (!fresh.length) return;
+    for (const id of fresh) announcedJobs.current.add(id);
+    setJobsBannerOn(true);
+    const timer = window.setTimeout(() => setJobsBannerOn(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [runningKey]);
+
   return (
     <>
-      {runningJobs.length > 0 && (
+      {jobsBannerOn && runningJobs.length > 0 && (
         <button
           type="button"
           className="jobs-banner"
@@ -149,329 +174,119 @@ export function ChatThread({
           </div>
         </div>
       )}
-      <div className="thread" ref={threadRef} onScroll={onThreadScroll}>
-        {messages.length === 0 && !busy && (
-          <div className="empty">
-            <div className="empty-hero">
-              <span className="empty-hero-icon">
-                <IconRobotCube size={40} />
-              </span>
-              <h3>{t(greetingKey())}</h3>
-              <p>{t("tagline")}</p>
+            <div className="thread" ref={threadRef}>
+        <div className="thread-inner">
+{messages.length === 0 && !busy && (
+            <div className="empty">
+              <div className="empty-hero">
+                <span className="empty-hero-icon">
+                  <IconRobotCube size={40} />
+                </span>
+                <h3>{t(greetingKey())}</h3>
+                <p>{t("tagline")}</p>
+              </div>
+              <div className="suggestions">
+                {buildSuggestions(t).map((s) => (
+                  <button key={s.text} type="button" onClick={() => void onSend(s.text)}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="suggestions">
-              {buildSuggestions(t).map((s) => (
-                <button key={s.text} type="button" onClick={() => void onSend(s.text)}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {messages.map((m, idx) => {
-          if (m.role === "tool" && m.tool) {
-            const tool = m.tool;
-            const active = detail?.type === "tool" && detail.tool.callId === tool.callId;
-            const writePrev =
-              tool.name === "write_file" ? writeFilePreview(tool.args) : null;
-            const readPath =
-              tool.name === "read_file" &&
-              tool.args &&
-              typeof tool.args === "object" &&
-              typeof (tool.args as { path?: unknown }).path === "string"
-                ? String((tool.args as { path: string }).path)
-                : "";
-            const filePath = writePrev?.path || readPath;
-            if (
-              filePath &&
-              (tool.status === "done" || tool.status === "running" || tool.status === "streaming")
-            ) {
-              const meta = fileCardMeta(filePath);
+          )}
+          {displayMessages.map((m) => {
+            if (m.streaming) hasStreaming = true;
+            if (m.role === "tool" && m.tool) {
+              const active = detail?.type === "tool" && detail.tool.callId === m.tool.callId;
               return (
-                <button
+                <ToolChip
                   key={m.id}
-                  type="button"
-                  className={`file-ref-card${active ? " active" : ""}${tool.status !== "done" ? " pending" : ""}`}
-                  onClick={() => onSetDetail({ type: "tool", tool })}
-                  title={tool.summary || filePath}
-                >
-                  <FileTypeIcon name={meta.name} />
-                  <span className="file-ref-body">
-                    <strong>{meta.name}</strong>
-                    <span>
-                      {tool.name === "read_file"
-                        ? tool.summary || meta.dir || filePath
-                        : meta.dir || filePath}
-                    </span>
-                  </span>
-                  {tool.status === "done" ? (
-                    <span className="file-ref-status ok">
-                      <IconCheck size={14} />
-                    </span>
-                  ) : (
-                    <span className="file-ref-status">…</span>
-                  )}
-                </button>
+                  message={m}
+                  active={active}
+                  t={t}
+                  onSetDetail={onSetDetail}
+                />
               );
             }
-            const label =
-              tool.summary ||
-              formatToolSummary(tool.name || "", tool.args) ||
-              tool.name ||
-              "tool";
+            if (m.role === "subagent" && m.subagent) {
+              const stage = m.stage ?? 0;
+              if (canvasShown.has(stage)) return null;
+              canvasShown.add(stage);
+              const group = canvasByStage.get(stage) || [];
+              return (
+                <AgentCanvas
+                  key={`canvas-${stage}-${m.id}`}
+                  nodes={group}
+                  t={t}
+                  detail={detail}
+                  onSetDetail={onSetDetail}
+                />
+              );
+            }
             return (
-              <button
+              <ChatBubble
                 key={m.id}
-                type="button"
-                className={`tool-chip ${tool.status}${active ? " active" : ""}`}
-                onClick={() => onSetDetail({ type: "tool", tool })}
-                title={label}
-              >
-                <span className="tool-chip-mark">
-                  {tool.status === "pending"
-                    ? "?"
-                    : tool.status === "streaming"
-                      ? "…"
-                      : tool.status === "running"
-                        ? "…"
-                        : tool.status === "error"
-                      ? "!"
-                      : "✓"}
-                </span>
-                <span className="tool-chip-body">
-                  <span className="tool-chip-name">{tool.name || "tool"}</span>
-                  <span className="tool-chip-summary">{label}</span>
-                </span>
-                {tool.status === "pending" && <span className="tool-chip-hint">等待确认</span>}
-                {tool.status === "streaming" && <span className="tool-chip-hint">生成中</span>}
-              </button>
-            );
-          }
-          if (m.role === "subagent" && m.subagent) {
-            const stage = m.stage ?? 0;
-            const alreadyShown = messages.slice(0, idx).some(
-              (prev) =>
-                prev.role === "subagent" &&
-                prev.subagent &&
-                (prev.stage ?? 0) === stage,
-            );
-            if (alreadyShown) return null;
-            const group = canvasRootsForStage(messages, stage);
-            return (
-              <AgentCanvas
-                key={`canvas-${stage}-${m.id}`}
-                nodes={group}
+                message={m}
                 t={t}
-                detail={detail}
+                busy={busy}
+                editing={editingId === m.id}
+                editDraft={editingId === m.id ? editDraft : ""}
+                copied={copiedId === m.id}
                 onSetDetail={onSetDetail}
+                onCopyBubble={onCopyBubble}
+                onStartEditUser={onStartEditUser}
+                onEditDraftChange={onEditDraftChange}
+                onCancelEdit={onCancelEdit}
+                onRequestSubmitEdit={onRequestSubmitEdit}
+                onToast={onToast}
+                onCtrlClickUrl={onCtrlClickUrl}
               />
             );
-          }
-          return (
-            <article
-              key={m.id}
-              className={`bubble ${m.role}${m.streaming ? " streaming" : ""}${
-                editingId === m.id ? " editing" : ""
-              }${m.role === "user" && isSkillInjectMessage(m.content) ? " skill-inject" : ""}${
-                m.jobNotice ? " job-notice" : ""
-              }`}
-            >
-              <div className="bubble-head">
-                <div className="role">
-                  <span
-                    className={`role-avatar ${
-                      m.role === "user" && isSkillInjectMessage(m.content) ? "system" : m.role
-                    }`}
-                  >
-                    {m.role === "user" && isSkillInjectMessage(m.content) ? (
-                      <IconCube size={18} />
-                    ) : m.role === "user" ? (
-                      <IconUser size={18} />
-                    ) : m.role === "system" ? (
-                      <IconCube size={18} />
-                    ) : (
-                      <IconRobotCube size={22} />
-                    )}
-                  </span>
-                  <span className="role-label">
-                    {m.role === "user" && isSkillInjectMessage(m.content)
-                      ? t("skillInjected")
-                      : m.jobNotice
-                        ? t("navJobs")
-                        : m.role === "user"
-                          ? t("you")
-                          : m.role === "system"
-                            ? t("command")
-                            : t("assistant")}
-                    {m.streaming
-                      ? streamPhaseSuffix(true, {
-                          reasoningStreaming: m.reasoningStreaming,
-                          text: m.content,
-                          reasoning: m.reasoning,
-                        }, t)
-                      : ""}
-                  </span>
-                  {m.ts && !m.streaming ? (
-                    <span className="bubble-time" title={new Date(m.ts).toLocaleString()}>
-                      {formatTime(m.ts)}
-                    </span>
-                  ) : null}
-                </div>
-                {!m.streaming &&
-                  (m.role === "user" || m.role === "assistant" || m.role === "system") && (
-                    <div className="bubble-actions">
-                      <button
-                        type="button"
-                        className="bubble-action"
-                        title={t("copy")}
-                        onClick={() => void onCopyBubble(m.id, m.content)}
-                      >
-                        {copiedId === m.id ? t("copied") : t("copy")}
-                      </button>
-                      {m.role === "user" &&
-                        !isSkillInjectMessage(m.content) &&
-                        editingId !== m.id && (
-                          <button
-                            type="button"
-                            className="bubble-action"
-                            title={t("edit")}
-                            disabled={busy}
-                            onClick={() => onStartEditUser(m.id, m.content)}
-                          >
-                            {t("edit")}
-                          </button>
-                        )}
-                    </div>
-                  )}
-              </div>
-              {m.role === "assistant" && (m.reasoning || m.reasoningStreaming) && (
-                <ThinkingBlock
-                  content={m.reasoning || ""}
-                  streaming={Boolean(m.reasoningStreaming)}
-                />
-              )}
-              {editingId === m.id && m.role === "user" ? (
-                <div className="bubble-edit">
-                  <textarea
-                    value={editDraft}
-                    autoFocus
-                    rows={Math.min(12, Math.max(3, editDraft.split("\n").length + 1))}
-                    onChange={(e) => onEditDraftChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        onCancelEdit();
-                      }
-                      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                        e.preventDefault();
-                        onRequestSubmitEdit(m.id);
-                      }
-                    }}
-                  />
-                  <div className="bubble-edit-actions">
-                    <button type="button" className="bubble-edit-btn cancel" onClick={onCancelEdit}>
-                      {t("cancel")}
-                    </button>
-                    <button
-                      type="button"
-                      className="bubble-edit-btn primary"
-                      disabled={!editDraft.trim() || busy}
-                      onClick={() => onRequestSubmitEdit(m.id)}
-                    >
-                      {t("resend")}
-                    </button>
-                  </div>
-                  <p className="bubble-edit-hint">{t("editHint")}</p>
-                </div>
-              ) : m.role === "assistant" ||
-                m.role === "system" ||
-                (m.role === "user" && isSkillInjectMessage(m.content)) ? (
-                m.content ? (
-                  <MarkdownView
-                    content={m.role === "assistant" ? stripToolCallMarkup(m.content) : m.content}
-                    streaming={m.streaming && !m.reasoningStreaming}
-                    onCtrlClickUrl={onCtrlClickUrl}
-                  />
-                ) : m.streaming && !m.reasoningStreaming ? (
-                  <div className="plain muted">…</div>
-                ) : null
-              ) : (
-                <div className="user-bubble-body">
-                  {m.attachments && m.attachments.length > 0 && (
-                    <ul className="bubble-attach-list">
-                      {m.attachments.map((a) => (
-                        <li key={`${a.path}:${a.name}`}>
-                          <button
-                            type="button"
-                            className="bubble-attach-chip"
-                            title={a.path}
-                            onClick={() => {
-                              void readFileContent(a.path)
-                                .then((file) => onSetDetail(fileToDetail(file)))
-                                .catch((err) =>
-                                  onToast(err instanceof Error ? err.message : String(err)),
-                                );
-                            }}
-                          >
-                            <FileTypeIcon name={a.name} />
-                            <span className="attach-chip-text">
-                              <strong>{a.name}</strong>
-                              <em>{a.path}</em>
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {m.content ? <div className="plain">{m.content}</div> : null}
-                </div>
-              )}
-            </article>
-          );
-        })}
-        {askPrompt && onResolveAsk ? (
-          <div className="thread-ask">
-            <AskDialog
-              question={askPrompt.question}
-              options={askPrompt.options}
-              allowCustom={askPrompt.allowCustom}
-              customLabel={askPrompt.customLabel}
-              choice={askChoice}
-              otherText={askOtherText}
-              submitting={askSubmitting}
-              titleLabel={t("askNeeded")}
-              dialogLabel={t("askDialog")}
-              submitLabel={t("askSubmit")}
-              otherPlaceholder={t("askOtherPlaceholder")}
-              onPick={(key) => {
-                onAskChoice?.(key);
-                void onResolveAsk(key);
-              }}
-              onOtherChange={(text) => {
-                onAskChoice?.(ASK_CUSTOM_KEY);
-                onAskOtherText?.(text);
-              }}
-              onOtherFocus={() => onAskChoice?.(ASK_CUSTOM_KEY)}
-              onSubmitCustom={() => void onResolveAsk(ASK_CUSTOM_KEY, askOtherText)}
-            />
-          </div>
-        ) : null}
-        {busy && !messages.some((m) => m.streaming) && (
-          <div className="typing-row">
-            <span className="typing">
-              {stopping
-                ? t("stoppingNow")
-                : queuedCount
-                  ? t("busyWorkingQueued", String(queuedCount))
-                  : t("busyWorking")}
-            </span>
-            <button type="button" className="stop-btn" onClick={() => void onStopChat()}>
-              {t("stop")}
-            </button>
-          </div>
-        )}
-        <div ref={bottomRef} />
+          })}
+          {askPrompt && onResolveAsk ? (
+            <div className="thread-ask">
+              <AskDialog
+                question={askPrompt.question}
+                options={askPrompt.options}
+                allowCustom={askPrompt.allowCustom}
+                customLabel={askPrompt.customLabel}
+                choice={askChoice}
+                otherText={askOtherText}
+                submitting={askSubmitting}
+                titleLabel={t("askNeeded")}
+                dialogLabel={t("askDialog")}
+                submitLabel={t("askSubmit")}
+                otherPlaceholder={t("askOtherPlaceholder")}
+                onPick={(key) => {
+                  onAskChoice?.(key);
+                  void onResolveAsk(key);
+                }}
+                onOtherChange={(text) => {
+                  onAskChoice?.(ASK_CUSTOM_KEY);
+                  onAskOtherText?.(text);
+                }}
+                onOtherFocus={() => onAskChoice?.(ASK_CUSTOM_KEY)}
+                onSubmitCustom={() => void onResolveAsk(ASK_CUSTOM_KEY, askOtherText)}
+              />
+            </div>
+          ) : null}
+          {busy && !hasStreaming && (
+            <div className="typing-row">
+              <span className="typing">
+                {stopping
+                  ? t("stoppingNow")
+                  : queuedCount
+                    ? t("busyWorkingQueued", String(queuedCount))
+                    : t("busyWorking")}
+              </span>
+              <button type="button" className="stop-btn" onClick={() => void onStopChat()}>
+                {t("stop")}
+              </button>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
     </>
   );
-}
+});

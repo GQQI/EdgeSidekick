@@ -3,6 +3,7 @@ import {
   ensureApiToken,
   fetchAuthStatus,
   getStoredToken,
+  setApiToken,
   type Health,
 } from "../api";
 
@@ -34,6 +35,15 @@ export function useAuthBoot({
           setBootReady(true);
           return;
         }
+        // A saved login that the server no longer accepts (unused for 30 days)
+        // must not be treated as signed in.
+        if (status.multi_user && getStoredToken() && status.authenticated === false) {
+          setApiToken(null);
+          setAccountUser(null);
+          setAuthPhase("login");
+          setBootReady(true);
+          return;
+        }
         await ensureApiToken();
         if (status.multi_user && !getStoredToken()) {
           setAuthPhase("login");
@@ -42,7 +52,9 @@ export function useAuthBoot({
         }
         const again = await fetchAuthStatus();
         if (again.user) setAccountUser(again.user);
-        if (status.multi_user && !again.authenticated && !getStoredToken()) {
+        if (status.multi_user && !again.authenticated) {
+          setApiToken(null);
+          setAccountUser(null);
           setAuthPhase("login");
           setBootReady(true);
           return;

@@ -30,10 +30,14 @@ export function FileSearchPanel({
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const timer = useRef<number | null>(null);
+  // Bumped when the query/workspace changes; a slow response for an older
+  // query (or the previous workspace) must never overwrite newer results.
+  const epochRef = useRef(0);
 
   useEffect(() => {
     if (timer.current) window.clearTimeout(timer.current);
     const q = query.trim();
+    const epoch = ++epochRef.current;
     if (!q) {
       setHits([]);
       setLoading(false);
@@ -45,18 +49,23 @@ export function FileSearchPanel({
     timer.current = window.setTimeout(() => {
       void searchFiles(q, ".", workspace || undefined)
         .then((res) => {
+          if (epochRef.current !== epoch) return;
           setHits(res.hits || []);
           setError("");
           setExpanded({});
         })
         .catch((e) => {
+          if (epochRef.current !== epoch) return;
           setHits([]);
           setError(e instanceof Error ? e.message : String(e));
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          if (epochRef.current === epoch) setLoading(false);
+        });
     }, 280);
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
+      epochRef.current += 1;
     };
   }, [query, refreshKey, workspace]);
 

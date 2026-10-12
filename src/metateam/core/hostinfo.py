@@ -502,7 +502,8 @@ def host_prompt_block() -> str:
     lines.extend(
         [
             "- browser_navigate is for http(s) or a workspace-relative HTML file. "
-            "Never pass file://.",
+            "Never pass file://, javascript:, or a script. "
+            "Fill a form with browser_input, then browser_click the submit control.",
             "- Do NOT open Edge/Chrome via shell for local previews. Tell the user the URL.",
             "- If run_shell/verify_run returns shell-disabled, tell the user to set "
             "META_ALLOW_SHELL=1 and restart — do NOT invent OS-specific unavailability.",

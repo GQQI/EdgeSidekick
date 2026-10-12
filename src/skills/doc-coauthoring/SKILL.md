@@ -70,7 +70,7 @@ Advise them not to worry about organizing it - just get it all out. Offer multip
 
 **If integrations are available** (e.g., Slack, Teams, Google Drive, SharePoint, or other MCP servers), mention that these can be used to pull in context directly.
 
-**If no integrations are available (typical for Sidekick offline):** Ask the user to paste the relevant content, or use `read_file` on files already in the workspace. Do not suggest enabling Claude.ai connectors.
+**If no integrations are available (typical for EdgeSidekick offline):** Ask the user to paste the relevant content, or use `read_file` on files already in the workspace. Do not suggest enabling Claude.ai connectors.
 
 Inform them clarifying questions will be asked once they've done their initial dump.
 
@@ -288,7 +288,7 @@ Loop back to refinement for problematic sections.
 
 ---
 
-**If no access to sub-agents (typical for Sidekick offline):**
+**If no access to sub-agents (typical for EdgeSidekick offline):**
 
 Do the reader test in this conversation with a cold pass, or ask the user to open a new chat. Do not send anyone to claude.ai.
 

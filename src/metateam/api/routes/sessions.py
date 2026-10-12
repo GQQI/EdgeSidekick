@@ -9,7 +9,15 @@ from fastapi import APIRouter, HTTPException
 from ...runtime.context import context_budget_tokens, messages_tokens, schemas_tokens
 from ...services.store import STORE
 from ..http import require_session
-from ..schemas import ApprovalDecision, AskAnswer, PlanConfirm, ReplayBody, SessionCreate, TruncateBody
+from ..schemas import (
+    ApprovalDecision,
+    AskAnswer,
+    PlanConfirm,
+    ReplayBody,
+    SessionCreate,
+    TruncateBody,
+    WorkspaceSet,
+)
 
 router = APIRouter(tags=["sessions"])
 
@@ -50,6 +58,22 @@ def create_session(body: SessionCreate = SessionCreate()) -> dict[str, Any]:
     }
 
 
+@router.post("/api/sessions/{session_id}/workspace")
+def bind_session_workspace(session_id: str, body: WorkspaceSet) -> dict[str, Any]:
+    """Pin one chat to a folder. Other chats keep the folder they already have."""
+    sess = require_session(session_id)
+    target = (body.path or body.name or "").strip()
+    if not target:
+        raise HTTPException(400, "缺少项目路径")
+    try:
+        STORE.bind_workspace(sess, target)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    STORE.persist(sess.id)
+    ws = str(getattr(sess.agent.settings, "workspace", "") or "")
+    return {"id": sess.id, "workspace": _workspace_ref(ws)}
+
+
 @router.get("/api/sessions/{session_id}")
 def get_session(session_id: str) -> dict[str, Any]:
     sess = require_session(session_id)
@@ -80,6 +104,10 @@ def get_session(session_id: str) -> dict[str, Any]:
 def delete_session(session_id: str) -> dict[str, Any]:
     if not STORE.delete(session_id):
         raise HTTPException(404, "session not found")
+    from ...services.scheduler import SCHEDULES
+    from ...services.tenant_context import get_user_id
+
+    SCHEDULES.pause_for_session(get_user_id(), session_id)
     return {"status": "ok", "session_id": session_id}
 
 

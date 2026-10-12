@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0.."
 
 echo.
-echo  Sidekick 麒麟 / Linux packager
+echo  EdgeSidekick 麒麟 / Linux packager
 echo  ------------------------------------
 echo.
 

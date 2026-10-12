@@ -14,6 +14,8 @@ from ...services.workspace_store import (
     get_active_workspace,
     is_configured,
     list_workspaces,
+    remember_recent,
+    resolve_workspace_path,
     set_workspace,
 )
 from ..http import require_loopback
@@ -49,6 +51,20 @@ def api_workspaces_create(body: WorkspaceCreate) -> dict[str, Any]:
         "active": active,
         "items": list_workspaces(),
     }
+
+
+@router.post("/remember")
+def api_workspaces_remember(body: WorkspaceSet) -> dict[str, Any]:
+    """Pin a folder into the recent list without changing the active workspace."""
+    target = (body.path or body.name or "").strip()
+    if not target:
+        raise HTTPException(400, "path required")
+    try:
+        folder = resolve_workspace_path(target)
+        remember_recent(folder)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"status": "ok", "items": list_workspaces(), "active": get_active_workspace()}
 
 
 @router.put("/active")

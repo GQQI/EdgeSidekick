@@ -48,6 +48,47 @@ def _path_from_file_url(url: str) -> Optional[Path]:
     return Path(path) if path else None
 
 
+_WALK_SKIP = {
+    "node_modules",
+    ".git",
+    "dist",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "ms-playwright",
+    ".sidekick",
+}
+
+
+def is_workspace_page_ref(raw: str) -> bool:
+    """True for a relative or bare .html/.htm/.pdf path, not an http URL."""
+    text = (raw or "").strip().strip("'\"")
+    if not text or "://" in text.lower():
+        return False
+    return Path(text.replace("\\", "/")).suffix.lower() in _PREVIEW_SUFFIXES
+
+
+def _bare_page_name(raw: str) -> str:
+    text = (raw or "").strip().strip("'\"")
+    if not is_workspace_page_ref(text):
+        return ""
+    norm = text.replace("\\", "/")
+    if "/" in norm or (len(norm) >= 2 and norm[1] == ":"):
+        return ""
+    return Path(norm).name
+
+
+def _named_pages(workspace: Path, name: str) -> list[Path]:
+    matches: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(workspace):
+        dirnames[:] = [d for d in dirnames if d not in _WALK_SKIP and not d.startswith(".")]
+        if name in filenames:
+            matches.append(Path(dirpath) / name)
+            if len(matches) > 8:
+                break
+    return matches
+
+
 def resolve_local_html_file(raw: str, *, workspace: Optional[Path]) -> Optional[Path]:
     """Return an existing .html/.htm/.pdf path inside workspace, or None."""
     text = (raw or "").strip().strip("'\"")
@@ -63,19 +104,38 @@ def resolve_local_html_file(raw: str, *, workspace: Optional[Path]) -> Optional[
             cand = workspace / text
         else:
             cand = p
-    if cand is None:
+    if cand is not None:
+        try:
+            cand = resolve_path(cand)
+        except OSError:
+            cand = None
+    if (
+        cand is not None
+        and cand.suffix.lower() in _PREVIEW_SUFFIXES
+        and cand.is_file()
+        and (workspace is None or is_relative_to(cand, workspace))
+    ):
+        return cand
+    if workspace is None:
         return None
-    try:
-        cand = resolve_path(cand)
-    except OSError:
+    name = _bare_page_name(text)
+    if not name:
         return None
-    if cand.suffix.lower() not in _PREVIEW_SUFFIXES:
-        return None
-    if not cand.is_file():
-        return None
-    if workspace is not None and not is_relative_to(cand, workspace):
-        return None
-    return cand
+    matches = _named_pages(workspace, name)
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        shown: list[str] = []
+        for item in matches[:8]:
+            try:
+                shown.append(relative_to_posix(item, workspace))
+            except Exception:
+                shown.append(item.name)
+        raise ValueError(
+            f"{text!r} matches more than one workspace file: {', '.join(shown)}. "
+            "Pass one of those paths."
+        )
+    return None
 
 
 def ensure_preview_server(root: Path) -> int:

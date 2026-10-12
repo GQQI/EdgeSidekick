@@ -44,36 +44,41 @@ ARCH=arm64 bash scripts/build-kylin.sh
 
 产物在 `desktop/dist/`：
 
-- `Sidekick-<version>-kylin-<arch>.deb` — 麒麟 / Debian 安装包（推荐）
-- `Sidekick-<version>-kylin-<arch>.AppImage` — 免安装
-- `Sidekick-<version>-kylin-<arch>.tar.gz` — 解压即用
+- `EdgeSidekick-<version>-kylin-<arch>.deb` — 麒麟 / Debian 安装包（推荐）
+- `EdgeSidekick-<version>-kylin-<arch>.AppImage` — 免安装
+- `EdgeSidekick-<version>-kylin-<arch>.tar.gz` — 解压即用
 
 ## 在离线麒麟电脑上安装
 
 **deb（推荐）：**
 
 ```bash
-sudo dpkg -i Sidekick-*-kylin-*.deb
+sudo dpkg -i EdgeSidekick-*-kylin-*.deb
 sudo apt-get install -f -y
 ```
 
-开始菜单或命令 `sidekick` 启动。
+开始菜单或命令 `edgesidekick` 启动。安装脚本会刷新 hicolor 图标缓存；若菜单仍无图标，注销再登录，或执行：
+
+```bash
+sudo gtk-update-icon-cache -f /usr/share/icons/hicolor
+```
+
 
 **AppImage：**
 
 ```bash
-chmod +x Sidekick-*-kylin-*.AppImage
-./Sidekick-*-kylin-*.AppImage
+chmod +x EdgeSidekick-*-kylin-*.AppImage
+./EdgeSidekick-*-kylin-*.AppImage
 ```
 
 **便携 tar.gz：**
 
 ```bash
-tar -xzf Sidekick-*-kylin-*.tar.gz
-./Sidekick-*/sidekick
+tar -xzf EdgeSidekick-*-kylin-*.tar.gz
+./EdgeSidekick-*/edgesidekick
 ```
 
-配置与会话：`~/.config/Sidekick/`。日志：`~/.config/Sidekick/logs/backend.log`。
+配置与会话：`~/.config/EdgeSidekick/`。日志：`~/.config/EdgeSidekick/logs/backend.log`。
 
 ## 安装包里有什么
 

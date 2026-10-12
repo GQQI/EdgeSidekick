@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from ...services import fs_api, fs_undo
@@ -25,20 +25,44 @@ def api_files_search(q: str = "", path: str = ".", workspace: str | None = None)
 
 
 @router.post("/upload")
-async def api_files_upload(file: UploadFile = File(...)) -> dict[str, Any]:
+async def api_files_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    dest: str | None = Form(None),
+    workspace: str | None = Form(None),
+) -> dict[str, Any]:
+    """Save an uploaded browser file into the selected workspace.
+
+    `dest` may be a directory (`docs` / `.`) or a full relative file path (`docs/a.pdf`).
+    Empty / `.` dest writes into the workspace root.
+    `workspace` may arrive as multipart form and/or `?workspace=` query.
+    """
+    ws = (workspace or request.query_params.get("workspace") or "").strip() or None
     raw_name = (file.filename or "upload.bin").replace("\\", "/").split("/")[-1]
     safe = "".join(c if c.isalnum() or c in "._- " else "_" for c in raw_name).strip() or "upload.bin"
+    dest_raw = (dest or "").replace("\\", "/").strip().strip("/")
+    if dest_raw in ("", "."):
+        rel = safe
+    elif dest_raw.endswith("/") or ("." not in dest_raw.split("/")[-1]):
+        rel = f"{dest_raw}/{safe}"
+    else:
+        rel = dest_raw
+    # normalize ..
+    parts = [p for p in rel.split("/") if p and p != "."]
+    if any(p == ".." for p in parts):
+        raise HTTPException(400, "invalid dest")
+    rel = "/".join(parts)
     try:
         data = await file.read()
-        meta = fs_api.write_bytes(f"_uploads/{safe}", data)
-        try:
-            preview = fs_api.read_file(meta["path"])
-            return {**preview, "uploaded": True}
-        except Exception:
-            return {**meta, "uploaded": True, "kind": "unsupported"}
+        with workspace_override(ws):
+            meta = fs_api.write_bytes(rel, data)
+            try:
+                preview = fs_api.read_file(meta["path"])
+                return {**preview, "uploaded": True}
+            except Exception:
+                return {**meta, "uploaded": True, "kind": "unsupported"}
     except ValueError as exc:
         raise_fs_http(exc)
-
 
 @router.get("/content")
 def api_files_read(path: str, workspace: str | None = None) -> dict[str, Any]:
@@ -75,7 +99,13 @@ def api_files_create(body: FileCreate) -> dict[str, Any]:
 
 @router.delete("")
 def api_files_delete(path: str, recursive: bool = False, workspace: str | None = None) -> dict[str, Any]:
-    return call_fs(fs_api.delete_entry, path, recursive=recursive, workspace=workspace)
+    return call_fs(
+        fs_api.delete_entry,
+        path,
+        recursive=recursive,
+        workspace=workspace,
+        source="explorer",
+    )
 
 
 @router.post("/rename")

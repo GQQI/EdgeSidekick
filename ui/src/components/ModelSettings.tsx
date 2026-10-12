@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type {
   ModelSetup,
@@ -35,6 +35,7 @@ type Props = {
   onSave: (next?: ModelSetup, opts?: { restartChat?: boolean }) => void;
   saving?: boolean;
   t: (key: MsgKey, ...args: string[]) => string;
+  extra?: ReactNode;
 };
 
 type MarketKind = "custom";
@@ -232,7 +233,7 @@ function RfSelect({
 
 type EditTarget = { providerId: string; modelId: string };
 
-export function ModelSettings({ setup, locale, onChange, onSave, saving, t }: Props) {
+export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extra }: Props) {
   const templates = { ...DEFAULT_VENDOR_TEMPLATES, ...(setup.vendor_templates || {}) };
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -446,6 +447,8 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t }: Pr
           </button>
         </div>
       </div>
+
+      {extra}
 
       <div className="rf-layout">
         <div className="rf-main">

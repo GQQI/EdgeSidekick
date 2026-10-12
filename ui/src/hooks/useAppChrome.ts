@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   saveExplorerCollapsed,
   saveExplorerWidth,
@@ -94,26 +94,58 @@ export function useAppChrome(d: Deps) {
     }
   }, [d.contextLimit, d.hasSession]);
 
-  useEffect(() => {
-    if (!d.stickBottomRef.current) return;
+  const programmaticScrollRef = useRef(false);
+  const suppressPinRef = useRef(false);
+
+  const scrollThreadToBottom = () => {
     const el = d.threadRef.current;
-    if (el) {
-      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (dist >= 80) {
-        d.stickBottomRef.current = false;
-        return;
-      }
-      el.scrollTop = el.scrollHeight;
-    } else {
+    if (!el) {
       d.bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      return;
     }
-  }, [d.messages, d.busy, d.compressState?.active]);
+    programmaticScrollRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        programmaticScrollRef.current = false;
+      });
+    });
+  };
+
+  const followIfPinned = () => {
+    if (!d.stickBottomRef.current) return;
+    scrollThreadToBottom();
+  };
+
+  const lastMsgFingerprint = (() => {
+    const last = d.messages[d.messages.length - 1];
+    if (!last) return "";
+    return `${last.id}:${String((last as any).text || (last as any).content || "").length}:${d.busy ? 1 : 0}`;
+  })();
+
+  useLayoutEffect(() => {
+    followIfPinned();
+  }, [d.messages, d.busy, d.compressState?.active, lastMsgFingerprint]);
 
   useEffect(() => {
     const el = d.threadRef.current;
     if (!el) return;
+    const inner = el.querySelector(".thread-inner") || el.firstElementChild;
+    const ro = new ResizeObserver(() => followIfPinned());
+    ro.observe(el);
+    if (inner && inner !== el) ro.observe(inner);
+    return () => ro.disconnect();
+  }, [d.bootReady, d.messages.length]);
+
+  useEffect(() => {
+    const el = d.threadRef.current;
+    if (!el) return;
+    let pointerDown = false;
     const unpinIfUp = (deltaY: number) => {
-      if (deltaY < 0) d.stickBottomRef.current = false;
+      if (deltaY < 0) {
+        d.stickBottomRef.current = false;
+        suppressPinRef.current = true;
+      }
     };
     const onWheel = (e: WheelEvent) => unpinIfUp(e.deltaY);
     let touchY: number | null = null;
@@ -125,23 +157,55 @@ export function useAppChrome(d: Deps) {
       if (touchY != null && y != null) unpinIfUp(touchY - y);
       touchY = y ?? touchY;
     };
+    const onPointerDown = () => {
+      pointerDown = true;
+    };
+    const onPointerUp = () => {
+      pointerDown = false;
+    };
+    const onScroll = () => {
+      if (programmaticScrollRef.current) return;
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const atBottom = dist <= 72;
+      if (pointerDown && atBottom) {
+        suppressPinRef.current = false;
+        d.stickBottomRef.current = true;
+        return;
+      }
+      if (suppressPinRef.current) {
+        suppressPinRef.current = false;
+        d.stickBottomRef.current = false;
+        return;
+      }
+      d.stickBottomRef.current = atBottom;
+    };
     el.addEventListener("wheel", onWheel, { passive: true });
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("scroll", onScroll);
     };
-  }, [d.bootReady]);
+  }, [d.bootReady, d.hasSession, d.messages.length]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (d.resizingRef.current) {
         const maxW = Math.min(1200, Math.max(520, Math.floor(window.innerWidth * 0.72)));
-        const next = Math.min(maxW, Math.max(200, e.clientX - 64));
-        d.setExplorerWidth(next);
-        d.setExplorerCollapsed(false);
+        const next = e.clientX - 64;
+        if (next < 120) {
+          d.setExplorerCollapsed(true);
+        } else {
+          d.setExplorerWidth(Math.min(maxW, Math.max(200, next)));
+          d.setExplorerCollapsed(false);
+        }
       }
       if (d.resizingDetailRef.current) {
         const fromRight = window.innerWidth - e.clientX - 12;

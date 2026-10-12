@@ -65,19 +65,99 @@ def _sig(name: str, args: dict[str, Any] | None) -> str:
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 
+# Polling these in a fixed order is a stuck loop, not new work.
+_POLL_TOOLS = frozenset(
+    {
+        "browser_navigate",
+        "browser_console",
+        "browser_snapshot",
+        "browser_observe",
+        "browser_screenshot",
+        "browser_network",
+        "browser_diagnostics",
+        "shell_job_log",
+        "shell_job_list",
+        "shell_job_wait",
+    }
+)
+
+
+def repeating_tool_sequence(names: list[str]) -> bool:
+    """True when recent tool names are the same short cycle.
+
+    Three repeats of a 2–8 name pattern, or four identical polls in a row.
+    Writing different files does not match. Reopening a page, reading logs,
+    and restarting a server in a fixed order does.
+    """
+    cleaned = [str(name or "") for name in names if name]
+    if len(cleaned) >= 4 and len(set(cleaned[-4:])) == 1 and cleaned[-1] in _POLL_TOOLS:
+        return True
+    tail = cleaned[-24:]
+    for period in range(2, 9):
+        if len(tail) < period * 3:
+            continue
+        unit = tail[-period:]
+        # One name repeated is only a loop for poll tools, handled above.
+        # run_shell six times can be six different commands.
+        if len(set(unit)) < 2:
+            continue
+        if tail[-period * 2 : -period] == unit and tail[-period * 3 : -period * 2] == unit:
+            return True
+    return False
+
+
 def tool_call_signature(name: str, args: dict[str, Any] | None) -> str:
     """Stable id for a tool name + canonical args (used by execute / tests)."""
     return _sig(name, args)
 
 
+# A successful payload may mention errors (console level, page text). Those
+# keys mean the tool itself returned a result, not that the call failed.
+_RESULT_KEYS = frozenset(
+    {
+        "logs",
+        "observation",
+        "url",
+        "count",
+        "content",
+        "stdout",
+        "files",
+        "path",
+        "text",
+        "title",
+    }
+)
+
+
 def looks_failed(content: str) -> bool:
-    low = (content or "")[:400].lower()
-    return (
-        low.startswith("error")
-        or '"error"' in low
-        or "traceback" in low
-        or low.startswith("failed")
-    )
+    """True when the tool call itself failed.
+
+    Console and page JSON often contain the word "error" inside a successful
+    result. Only a failure prefix, a traceback, or a top-level error object
+    counts. Nested log text does not.
+    """
+    text = (content or "").lstrip()
+    if not text:
+        return False
+    head = text[:120].lower()
+    if head.startswith("error") or head.startswith("failed") or head.startswith("traceback"):
+        return True
+    if "traceback" in head:
+        return True
+    if not text.startswith("{"):
+        return False
+    try:
+        data = json.loads(text)
+    except Exception:
+        return bool(re.match(r'\{\s*"error"\s*:\s*"', text[:200]))
+    if not isinstance(data, dict):
+        return False
+    if data.get("ok") is False:
+        return True
+    err = data.get("error")
+    if isinstance(err, str) and err.strip() and not (_RESULT_KEYS & set(data.keys())):
+        return True
+    return False
 
 
 # Tools that only inspect state. Consecutive use without an action means the
@@ -95,25 +175,47 @@ _EXPLORE_TOOLS = frozenset(
     }
 )
 
-# Same args, same result — repeating them is a stuck loop, not progress.
-_IDEMPOTENT_TOOLS = frozenset(
+# Live page state. The same arguments are not the same result: the page,
+# console, and network change, and earlier payloads are dropped when context
+# is tight. These may be called again. A second copy that is still in flight
+# stays blocked so two navigations do not abort each other.
+_BROWSER_LIVE_TOOLS = frozenset(
     {
         "browser_navigate",
         "browser_screenshot",
         "browser_snapshot",
+        "browser_observe",
         "browser_get_page_content",
         "browser_console",
         "browser_find_elements",
+        "browser_network",
+        "browser_diagnostics",
         "browser_wait",
-        "web_search",
+        "browser_click",
+        "browser_input",
+        "browser_type",
+        "browser_scroll",
+        "browser_scroll_to_text",
+        "browser_send_keys",
+        "browser_press_key",
+        "browser_go_back",
+        "browser_go_forward",
+        "browser_switch_tab",
+        "browser_select",
     }
 )
+
+# Same args, same result — repeating them is a stuck loop, not progress.
+# Browser tools are listed so an in-flight duplicate is rejected, but a
+# finished call does not ban the next one.
+_IDEMPOTENT_TOOLS = _BROWSER_LIVE_TOOLS | frozenset({"web_search"})
 
 # Explore tools that may be called again with the same args (Claude: re-fetch
 # if you still need the bytes). Identical list_dir/search is still blocked.
 _REREAD_OK = frozenset({"read_file"})
 _RANGE_TOOLS = frozenset({"read_file"})
 _RANGE_META_RE = re.compile(r"lines (\d+)-(\d+) of (\d+)")
+_VISIBLE_LINE_RE = re.compile(r"(?m)^(\d+)\|")
 
 
 def _as_int(value: Any, default: int) -> int:
@@ -129,6 +231,25 @@ def _as_int(value: Any, default: int) -> int:
         return int(m.group(0))
     except ValueError:
         return default
+
+
+def _visible_read_span(text: str) -> tuple[int, int] | None:
+    """Contiguous numbered lines still present in a read_file result."""
+    raw = text or ""
+    if raw.startswith("[cleared tool result:") or raw.startswith("[already in context]"):
+        return None
+    if raw.lstrip().startswith("ERROR"):
+        return None
+    nums = sorted({int(n) for n in _VISIBLE_LINE_RE.findall(raw)})
+    if not nums:
+        return None
+    start = nums[0]
+    end = start
+    for n in nums[1:]:
+        if n > end + 1:
+            break
+        end = n
+    return start, end
 
 
 def _range_path_key(args: dict[str, Any] | None) -> str:
@@ -151,6 +272,11 @@ class Guardrails:
     max_explore_streak: int = 48
     fails: dict[str, int] = field(default_factory=dict)
     ok_counts: dict[str, int] = field(default_factory=dict)
+    # Signature → tool name, so a later write can drop stale file reads
+    # without forgetting that a browser URL was already opened.
+    ok_names: dict[str, str] = field(default_factory=dict)
+    # Short digest of last successful result per signature — for context nudges.
+    ok_digests: dict[str, str] = field(default_factory=dict)
     pending: set[str] = field(default_factory=set)
     blocked: set[str] = field(default_factory=set)
     explore_streak: int = 0
@@ -169,6 +295,8 @@ class Guardrails:
         with self._lock:
             self.explore_streak = 0
             self.ok_counts.clear()
+            self.ok_names.clear()
+            self.ok_digests.clear()
             self.pending.clear()
             self.explore_only = False
             self.read_ranges.clear()
@@ -223,35 +351,17 @@ class Guardrails:
             for start, end in ranges:
                 if start <= offset and req_end <= end:
                     key = (path, offset, req_end)
-                    n = self.stub_serves.get(key, 0) + 1
-                    self.stub_serves[key] = n
-                    if n >= 2:
-                        # Second identical fully-covered request: escalate to
-                        # ERROR so the fail-limit blocks a third one outright.
-                        return (
-                            f"ERROR: you requested lines {offset}-{req_end} of {path} "
-                            f"AGAIN ({n}x). That content is already in this conversation. "
-                            "Stop calling read_file on it. To FIND something in the file "
-                            "use search_text(query=..., path=...); to change it use "
-                            "str_replace; otherwise continue the task with what you have.",
-                            None,
-                        )
+                    self.stub_serves[key] = self.stub_serves.get(key, 0) + 1
                     total = self.read_totals.get(path)
                     if total and start <= 1 and end >= total:
                         return (
-                            f"[already in context] The ENTIRE file {path} ({total} lines) "
-                            "was returned earlier this turn. You have all of it — stop "
-                            "reading this file and continue the task using that content. "
-                            "To locate something inside it, use search_text instead.",
+                            f"[already in context] {path} ({total} lines) is already in this conversation.",
                             None,
                         )
                     of_total = f" of {total}" if total else ""
                     return (
                         f"[already in context] lines {offset}-{req_end}{of_total} of {path} "
-                        f"were returned earlier this turn (covered {start}-{end}). "
-                        "Scroll up and reuse that result. To FIND something in the file "
-                        "use search_text; if the file changed, it will be re-read "
-                        "automatically after any write.",
+                        f"were returned earlier (covered {start}-{end}).",
                         None,
                     )
             for start, end in ranges:
@@ -263,12 +373,78 @@ class Guardrails:
                     return None, new_args
         return None, None
 
+    def digest_for_signature(self, sig: str) -> str:
+        with self._lock:
+            return str(self.ok_digests.get(sig) or "")
+
     def reset_read_coverage(self) -> None:
         """Compaction removed messages from the window — earlier reads may be
         gone, so dedup must not claim they are still in context."""
         with self._lock:
             self.read_ranges.clear()
             self.read_totals.clear()
+            self.stub_serves.clear()
+
+    def reconcile_read_coverage(self, messages: list[dict[str, Any]]) -> None:
+        """Keep only read ranges whose numbered lines are still in the transcript.
+
+        Clearing or truncating a read_file result drops the bytes but used to
+        leave read_ranges unchanged, so the next read of that gap returned
+        "[already in context]" and the model could not recover the middle.
+        """
+        calls: dict[str, str] = {}
+        for msg in messages or []:
+            if msg.get("role") != "assistant":
+                continue
+            for tc in msg.get("tool_calls") or []:
+                if not isinstance(tc, dict):
+                    continue
+                fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+                if str((fn or {}).get("name") or "") != "read_file":
+                    continue
+                raw = (fn or {}).get("arguments") or {}
+                args: dict[str, Any] = raw if isinstance(raw, dict) else {}
+                if isinstance(raw, str):
+                    try:
+                        parsed = json.loads(raw)
+                    except Exception:
+                        parsed = None
+                    args = parsed if isinstance(parsed, dict) else {}
+                path = _range_path_key(args)
+                cid = str(tc.get("id") or "")
+                if path and cid:
+                    calls[cid] = path
+
+        ranges: dict[str, list[tuple[int, int]]] = {}
+        totals: dict[str, int] = {}
+        for msg in messages or []:
+            if msg.get("role") != "tool" or str(msg.get("name") or "") != "read_file":
+                continue
+            path = calls.get(str(msg.get("tool_call_id") or ""))
+            if not path:
+                continue
+            text = str(msg.get("content") or "")
+            span = _visible_read_span(text)
+            if span is None:
+                continue
+            ranges.setdefault(path, []).append(span)
+            meta = _RANGE_META_RE.search(text)
+            if meta and span[1] >= int(meta.group(2)):
+                totals[path] = int(meta.group(3))
+
+        with self._lock:
+            merged_all: dict[str, list[tuple[int, int]]] = {}
+            for path, items in ranges.items():
+                items.sort()
+                merged: list[tuple[int, int]] = []
+                for start, end in items:
+                    if merged and start <= merged[-1][1] + 1:
+                        merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+                    else:
+                        merged.append((start, end))
+                merged_all[path] = merged
+            self.read_ranges = merged_all
+            self.read_totals = {path: total for path, total in totals.items() if path in merged_all}
             self.stub_serves.clear()
 
     def read_coverage_lines(self) -> list[str]:
@@ -321,12 +497,21 @@ class Guardrails:
                     f"ERROR: `{name}` with these arguments is already running. "
                     "Wait for that result; do not fire the same call again."
                 )
-            if ok_n >= self.same_call_ok_limit and name not in _REREAD_OK:
-                return (
+            if (
+                ok_n >= self.same_call_ok_limit
+                and name not in _REREAD_OK
+                and name not in _BROWSER_LIVE_TOOLS
+            ):
+                digest = (self.ok_digests.get(sig) or "").strip()
+                tip = (
                     f"ERROR: `{name}` with these arguments already returned a result "
-                    "this turn (it is in the conversation). Use that result. "
-                    "Change the path or query if you still need something new."
+                    "this turn. Do NOT call it again with the same args — use the "
+                    "result below (or earlier in this conversation). Change path/"
+                    "query/offset only if you need something new."
                 )
+                if digest:
+                    tip += "\n\n[prior result digest]\n" + digest
+                return tip
 
             if (
                 name in _EXPLORE_TOOLS
@@ -353,12 +538,32 @@ class Guardrails:
                     self.blocked.add(sig)
             else:
                 self.fails.pop(sig, None)
-                if name in _EXPLORE_TOOLS or name in _IDEMPOTENT_TOOLS:
+                # Keep a compact digest so later "already returned" / repeat
+                # recovery can put the substance back in front of the model.
+                body = (content or "").strip()
+                if body and not looks_failed(body):
+                    clip = body[:1200]
+                    if len(body) > 1200:
+                        clip = clip.rstrip() + "\n…"
+                    self.ok_digests[sig] = clip
+                if name in _EXPLORE_TOOLS or (
+                    name in _IDEMPOTENT_TOOLS and name not in _BROWSER_LIVE_TOOLS
+                ):
                     if name not in _REREAD_OK:
                         self.ok_counts[sig] = self.ok_counts.get(sig, 0) + 1
-                else:
-                    # A successful action can invalidate prior reads/listings.
-                    self.ok_counts.clear()
+                        self.ok_names[sig] = name
+                elif name not in _BROWSER_LIVE_TOOLS:
+                    # A write invalidates file listings. Browser observations
+                    # are not counted here — the page can be read again.
+                    stale = [
+                        sig_key
+                        for sig_key, tool_name in self.ok_names.items()
+                        if tool_name not in _IDEMPOTENT_TOOLS
+                    ]
+                    for sig_key in stale:
+                        self.ok_counts.pop(sig_key, None)
+                        self.ok_names.pop(sig_key, None)
+                        self.ok_digests.pop(sig_key, None)
                     self.read_ranges.clear()
                     self.read_totals.clear()
                     self.stub_serves.clear()

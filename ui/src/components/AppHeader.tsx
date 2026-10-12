@@ -6,6 +6,8 @@ type Props = {
   t: (key: MsgKey, ...args: string[]) => string;
   theme: Theme;
   hasWorkspace: boolean;
+  /** Hide history / new-chat (social mode has its own chrome). */
+  hideSessionActions?: boolean;
   onOpenHistory: () => void;
   onNewChat: () => void;
   onToggleTheme: () => void;
@@ -15,6 +17,7 @@ export function AppHeader({
   t,
   theme,
   hasWorkspace,
+  hideSessionActions = false,
   onOpenHistory,
   onNewChat,
   onToggleTheme,
@@ -27,11 +30,11 @@ export function AppHeader({
             <BrandMark size={30} />
           </span>
           <div className="brand-text">
-            <strong>Sidekick</strong>
+            <strong>EdgeSidekick</strong>
             <span className="brand-sub">AI AGENT SYSTEM</span>
           </div>
         </div>
-        {hasWorkspace && (
+        {hasWorkspace && !hideSessionActions && (
           <>
             <button type="button" className="chip action iconed" onClick={onOpenHistory}>
               <IconClock size={15} />

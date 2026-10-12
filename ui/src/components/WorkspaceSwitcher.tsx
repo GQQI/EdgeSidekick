@@ -57,7 +57,7 @@ export function WorkspaceSwitcher({
               onBrowse();
             }}
           >
-            打开文件夹
+            文件夹
           </button>
           {items.length > 0 && (
             <>
@@ -88,7 +88,7 @@ export function WorkspaceSwitcher({
               onOpenSettings();
             }}
           >
-            打开目录设置…
+            目录设置
           </button>
         </div>
       )}

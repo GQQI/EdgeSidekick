@@ -21,6 +21,7 @@ class ToolContext:
     ask_user_fn: Optional[Callable[..., str]] = None
     end_party_session: Optional[Callable[[], None]] = None
     note_canvas_tasks: Optional[Callable[..., None]] = None
+    note_ask_edge: Optional[Callable[..., None]] = None
 
     def live_ws(self) -> Path:
         """Do not cache Path — the user may switch workspace mid-session."""

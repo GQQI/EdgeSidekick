@@ -21,7 +21,8 @@ import { declaredDelegateSlotCount, findSubNode, isEphemeralCanvasId, sameSubage
 import { canvasGoalsMatch } from "../../utils/canvasSlots";
 import type { MsgKey } from "../../i18n";
 import { upsertToolDelta, upsertToolEnd, upsertToolStart, type ToolUpsertCtx } from "./toolUpserts";
-import { applyCanvasTree, replaceStageSubagents } from "./canvasSync";
+import { applyCanvasTree, replaceStageSubagents } from "./canvasSync"
+import { setAskEdges, upsertAskEdge } from "../../state/askEdgesStore";
 
 function argsLookEmpty(args: unknown): boolean {
   if (args == null) return true;
@@ -54,7 +55,7 @@ export type RuntimeEventHandlerCtx = ToolUpsertCtx & {
   setActivePlan: React.Dispatch<React.SetStateAction<ActivePlan | null>>;
   planPendingRef: React.MutableRefObject<boolean>;
   executingPlanIdRef: React.MutableRefObject<string | null>;
-  patchSubagent: (childId: string, fn: (s: SubNode) => SubNode) => void;
+  patchSubagent: (childId: string, fn: (s: SubNode) => SubNode, immediate?: boolean) => void;
   sealSubassistant: (transcript: SubTranscriptItem[]) => SubTranscriptItem[];
   setLive: React.Dispatch<React.SetStateAction<LiveLine[]>>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -77,8 +78,8 @@ export type RuntimeEventHandlerCtx = ToolUpsertCtx & {
     name?: string;
     statuses?: ToolCard["status"][];
   }) => ChatMsg | undefined;
-  updateMsg: (id: string, patch: Partial<ChatMsg>) => void;
-  syncToolPanel: (tool: ToolCard, prevCallId?: string) => void;
+  updateMsg: (id: string, patch: Partial<ChatMsg>, immediate?: boolean) => void;
+  syncToolPanel: (tool: ToolCard, prevCallId?: string, immediate?: boolean) => void;
   setDetail: React.Dispatch<React.SetStateAction<DetailView>>;
   stripDuplicateAskBubble: (question: string) => void;
   askPendingRef: React.MutableRefObject<boolean>;
@@ -88,7 +89,7 @@ export type RuntimeEventHandlerCtx = ToolUpsertCtx & {
   setFsRefresh: React.Dispatch<React.SetStateAction<number>>;
   setSubs: React.Dispatch<React.SetStateAction<SubNode[]>>;
   appendMsg: (msg: ChatMsg) => void;
-  commit: (next: ChatMsg[]) => void;
+  commit: (next: ChatMsg[], immediate?: boolean) => void;
   bumpStage: () => void;
 };
 
@@ -306,9 +307,28 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
   const type = ev.type;
 
   if (type === "browser_open") {
-    const url = String(ev.data?.url || "");
+    const url = String(ev.data?.url || "").trim();
+    const revealOnly = Boolean(ev.data?.reveal_only) || !url;
+    const evSid = String(ev.data?.session_id || "");
+    const activeSid = String(ctx.sessionIdRef.current || ctx.sessionId || "");
+    // Ignore browser pops from a background session the user is not viewing.
+    if (evSid && activeSid && evSid !== activeSid) {
+      return;
+    }
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("sidekick-browser-open", { detail: { url } }));
+      // Empty / reveal_only: open the panel host only — never re-loadURL a
+      // stale homepage after the guest has already moved deeper.
+      window.dispatchEvent(
+        new CustomEvent("sidekick-browser-open", {
+          detail: { url: revealOnly ? "" : url, revealOnly },
+        }),
+      );
+    }
+  }
+
+  if (type === "schedule_trigger") {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("sidekick-schedule", { detail: ev.data || {} }));
     }
   }
 
@@ -661,18 +681,26 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
           transcript: tr,
           activity: ok ? `${name} 完成` : `${name} 失败`,
         };
-      });
+      }, true);
       if (FS_MUTATING_TOOLS.has(name)) {
         ctx.setFsRefresh((n) => n + 1);
       }
     }
     if (!childGateTypes.has(type)) {
-      const label =
-        (ev.data.message as string) ||
-        `${type}${ev.data.name ? " " + ev.data.name : ""}`;
-      ctx.setLive((prev) =>
-        [...prev, { id: uid(), text: `[子] ${label}`, kind: type }].slice(-120),
-      );
+      if (
+        type !== "assistant_delta" &&
+        type !== "assistant_reasoning_delta" &&
+        type !== "tool_call_delta" &&
+        type !== "context_usage" &&
+        type !== "llm_start"
+      ) {
+        const label =
+          (ev.data.message as string) ||
+          `${type}${ev.data.name ? " " + ev.data.name : ""}`;
+        ctx.setLive((prev) =>
+          [...prev, { id: uid(), text: `[子] ${label}`, kind: type }].slice(-120),
+        );
+      }
       return;
     }
   }
@@ -742,11 +770,13 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
     const discard = Boolean(ev.data.discard);
     const chunk = String(ev.data.chunk ?? ev.data.text ?? "");
     ctx.appendStreamChunk(chunk, reset, discard);
+    return;
   }
 
   if (type === "assistant_reasoning_delta") {
     const chunk = String(ev.data.chunk ?? ev.data.text ?? "");
-    ctx.appendReasoningChunk(chunk, false);
+    ctx.appendReasoningChunk(chunk, Boolean(ev.data.reset));
+    return;
   }
 
   if (type === "assistant_status" && ev.data.stalled) {
@@ -755,6 +785,7 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
 
   if (type === "tool_call_delta") {
     upsertToolDelta(ev, ctx);
+    return;
   }
 
   if (type === "approval_request") {
@@ -857,6 +888,14 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
     if (FS_MUTATING_TOOLS.has(toolName)) {
       ctx.setFsRefresh((n) => n + 1);
     }
+    if (
+      (toolName === "create_scheduled_task" || toolName === "cancel_scheduled_task") &&
+      ev.data?.ok !== false &&
+      !ev.data?.error &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new CustomEvent("sidekick-schedule", { detail: ev.data || {} }));
+    }
   }
 
   if (type === "subagent_start") {
@@ -868,7 +907,7 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
     const replayItems = Array.isArray(ev.data.transcript)
       ? (ev.data.transcript as Array<Record<string, unknown>>)
       : [];
-    const transcript: SubTranscriptItem[] = replayItems.flatMap((item) => {
+    const transcript: SubTranscriptItem[] = replayItems.flatMap((item): SubTranscriptItem[] => {
       if (!item || typeof item !== "object") return [];
       if (item.kind === "tool") {
         const name = String(item.name || "tool");
@@ -1000,6 +1039,84 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
   if (type === "canvas_sync") {
     const turn = Number(ev.data.turn);
     applyCanvasTree(ctx, ev.data.tree, Number.isFinite(turn) && turn > 0 ? turn : undefined);
+    const asks = (ev.data as { asks?: unknown }).asks;
+    if (Array.isArray(asks)) {
+      setAskEdges(
+        asks
+          .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+          .map((x) => ({
+            id: String(x.id || ""),
+            from_id: String(x.from_id || ""),
+            to_id: String(x.to_id || ""),
+            kind: String(x.kind || "consult"),
+            what: x.what ? String(x.what) : undefined,
+            how: x.how ? String(x.how) : undefined,
+            who: x.who ? String(x.who) : undefined,
+            when: x.when ? String(x.when) : undefined,
+            why: x.why ? String(x.why) : undefined,
+            need: x.need ? String(x.need) : undefined,
+            goal_slice: x.goal_slice ? String(x.goal_slice) : undefined,
+            visibility:
+              x.visibility && typeof x.visibility === "object"
+                ? (x.visibility as { share?: string[]; redact?: string[]; quote_policy?: string; relation?: string })
+                : undefined,
+            status: x.status ? String(x.status) : undefined,
+            summary: x.summary ? String(x.summary) : undefined,
+          }))
+          .filter((e) => e.id || e.need || e.to_id),
+      );
+    }
+    return;
+  }
+
+  if (type === "ask_edge") {
+    const edge = (ev.data as { edge?: Record<string, unknown> }).edge;
+    const asks = (ev.data as { asks?: unknown }).asks;
+    if (Array.isArray(asks)) {
+      setAskEdges(
+        asks
+          .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+          .map((x) => ({
+            id: String(x.id || ""),
+            from_id: String(x.from_id || ""),
+            to_id: String(x.to_id || ""),
+            kind: String(x.kind || "consult"),
+            what: x.what ? String(x.what) : undefined,
+            how: x.how ? String(x.how) : undefined,
+            who: x.who ? String(x.who) : undefined,
+            when: x.when ? String(x.when) : undefined,
+            why: x.why ? String(x.why) : undefined,
+            need: x.need ? String(x.need) : undefined,
+            goal_slice: x.goal_slice ? String(x.goal_slice) : undefined,
+            visibility:
+              x.visibility && typeof x.visibility === "object"
+                ? (x.visibility as { share?: string[]; redact?: string[]; quote_policy?: string; relation?: string })
+                : undefined,
+            status: x.status ? String(x.status) : undefined,
+            summary: x.summary ? String(x.summary) : undefined,
+          })),
+      );
+    } else if (edge && typeof edge === "object") {
+      upsertAskEdge({
+        id: String(edge.id || ""),
+        from_id: String(edge.from_id || ""),
+        to_id: String(edge.to_id || ""),
+        kind: String(edge.kind || "consult"),
+        what: edge.what ? String(edge.what) : undefined,
+        how: edge.how ? String(edge.how) : undefined,
+        who: edge.who ? String(edge.who) : undefined,
+        when: edge.when ? String(edge.when) : undefined,
+        why: edge.why ? String(edge.why) : undefined,
+        need: edge.need ? String(edge.need) : undefined,
+        goal_slice: edge.goal_slice ? String(edge.goal_slice) : undefined,
+        visibility:
+          edge.visibility && typeof edge.visibility === "object"
+            ? (edge.visibility as { share?: string[]; redact?: string[]; quote_policy?: string; relation?: string })
+            : undefined,
+        status: edge.status ? String(edge.status) : undefined,
+        summary: edge.summary ? String(edge.summary) : undefined,
+      });
+    }
     return;
   }
 
@@ -1014,7 +1131,17 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
       summary: cancelled ? summary || "（已停止）" : summary,
       activity: undefined,
       transcript: ctx.sealSubassistant(sealStreamingTools(s.transcript || [])),
-    }));
+    }), true);
+  }
+
+  if (
+    type === "assistant_delta" ||
+    type === "assistant_reasoning_delta" ||
+    type === "tool_call_delta" ||
+    type === "context_usage" ||
+    type === "llm_start"
+  ) {
+    return;
   }
 
   const label =

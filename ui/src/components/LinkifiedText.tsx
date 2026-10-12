@@ -20,16 +20,16 @@ export function LinkifiedText({ text, className, onCtrlClickUrl }: Props) {
         return (
           <a
             key={i}
-            href={p.value}
+            href={p.href}
             className="sandbox-hot-link"
             title={LINK_TITLE}
             target="_blank"
             rel="noreferrer"
             onClick={(e) => {
-              sandboxUrlGesture(p.value, e, onCtrlClickUrl, { mode: "click" });
+              sandboxUrlGesture(p.href, e, onCtrlClickUrl, { mode: "click" });
             }}
             onContextMenu={(e) => {
-              sandboxUrlGesture(p.value, e, onCtrlClickUrl, { mode: "contextmenu" });
+              sandboxUrlGesture(p.href, e, onCtrlClickUrl, { mode: "contextmenu" });
             }}
           >
             {p.value}

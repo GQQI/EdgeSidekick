@@ -212,15 +212,20 @@ def build_ask_options(labels: list[str]) -> list[dict[str, str]]:
 
 
 def _options_look_like_keypoints(labels: list[str]) -> bool:
-    """Long / markdown-heading items are 要点, not button labels."""
+    """Report prose and markdown headings are 要点, not button labels.
+
+    Length alone is not enough. A real fork often names the files or the
+    outcome of each choice, and those labels run well past a short button.
+    """
     if not labels:
         return False
     if any("**" in x or x.lstrip().startswith("#") for x in labels):
         return True
-    if any(len(x) > 72 for x in labels):
-        return True
-    avg = sum(len(x) for x in labels) / len(labels)
-    return avg > 42
+    prose = 0
+    for label in labels:
+        if len(label) > 180 or label.count("。") >= 2:
+            prose += 1
+    return prose >= 2
 
 
 def should_keep_as_markdown(question: str, labels: list[str] | None = None) -> bool:

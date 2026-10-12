@@ -1,6 +1,6 @@
-appId: com.sidekick.desktop
-productName: Sidekick
-copyright: Copyright © Sidekick
+appId: com.edgesidekick.desktop
+productName: EdgeSidekick
+copyright: Copyright © EdgeSidekick
 asar: true
 directories:
   output: dist
@@ -10,15 +10,17 @@ files:
   - preload.cjs
   - select-bootstrap.cjs
   - package.json
-extraResources:
-  - from: ../packaging/windows/payload
-    to: sidekick
-    filter:
-      - "**/*"
-      - "**/*.zip"
-      - "**/*._pth"
+  - build/icon.png
 win:
-  executableName: sidekick
+  icon: build/icon.png
+  executableName: EdgeSidekick
+  extraResources:
+    - from: ../packaging/windows/payload
+      to: sidekick
+      filter:
+        - "**/*"
+        - "**/*.zip"
+        - "**/*._pth"
   target:
     - target: nsis
       arch:
@@ -34,26 +36,29 @@ nsis:
   allowElevation: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Sidekick
-  uninstallDisplayName: Sidekick
+  shortcutName: EdgeSidekick
+  uninstallDisplayName: EdgeSidekick
   deleteAppDataOnUninstall: false
   installerLanguages:
     - zh_CN
     - en_US
   artifactName: ${productName}-Setup-${version}-win-${arch}.exe
 linux:
+  icon: build/icons
   category: Development
-  executableName: sidekick
-  synopsis: Local multi-agent AI workbench
-  description: Sidekick — local multi-agent workbench for Linux / Kylin.
+  executableName: edgesidekick
+  synopsis: 本机多智能体 AI 工作台
+  description: EdgeSidekick — 适配银河麒麟 / 通用 Linux 的本机多智能体工作台。
+  # electron-builder 26: only { entry?, desktopActions? } are valid here.
   desktop:
     entry:
-      Name: Sidekick
-      "Name[zh_CN]": Sidekick
-      Comment: Local multi-agent AI workbench
+      Name: EdgeSidekick
+      "Name[zh_CN]": EdgeSidekick
+      Comment: 本机多智能体 AI 工作台
       Categories: Development;Office;
       Type: Application
       Terminal: "false"
+      Icon: edgesidekick
   extraResources:
     - from: ../packaging/kylin/payload
       to: sidekick
@@ -74,8 +79,9 @@ linux:
         - arm64
   artifactName: ${productName}-${version}-kylin-${arch}.${ext}
 deb:
-  packageName: sidekick
-  maintainer: Sidekick
+  afterInstall: build/linux-after-install.sh
+  packageName: edgesidekick
+  maintainer: EdgeSidekick
   depends:
     - libgtk-3-0
     - libnotify4

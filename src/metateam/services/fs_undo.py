@@ -222,7 +222,16 @@ def push_before_create(rel: str, kind: str, workspace: Optional[Path] = None) ->
     )
 
 
-def push_before_delete(rel: str, abs_path: Path, workspace: Optional[Path] = None) -> None:
+def push_before_delete(
+    rel: str,
+    abs_path: Path,
+    workspace: Optional[Path] = None,
+    *,
+    source: str = "tool",
+) -> None:
+    extra = {}
+    if source == "explorer":
+        extra = {"source": "explorer", "actor": "user", "tool": "explorer"}
     if abs_path.is_dir():
         blob = _store_dir_blob(abs_path, workspace)
         push(
@@ -232,6 +241,7 @@ def push_before_delete(rel: str, abs_path: Path, workspace: Optional[Path] = Non
                 "kind": "dir",
                 "blob": blob,
                 "label": f"删除目录 {rel}",
+                **extra,
             },
             workspace,
         )
@@ -244,6 +254,7 @@ def push_before_delete(rel: str, abs_path: Path, workspace: Optional[Path] = Non
                 "kind": "file",
                 "blob": blob,
                 "label": f"删除 {rel}",
+                **extra,
             },
             workspace,
         )
@@ -897,7 +908,7 @@ def undo_to_turn(
     """Restore this session's files to the state before `before_user_turn`.
 
     Only records belonging to ``session_id`` are reversed; other conversations
-    keep their file ops.
+    keep their file ops. Files the user deleted in the explorer stay deleted.
     """
     with _lock:
         stack = _load_stack(workspace)
@@ -920,8 +931,10 @@ def undo_to_turn(
             rid = str(rec.get("id") or "")
             if rid:
                 n_ids.append(rid)
-        return _undo_ids(n_ids, workspace, partial=True)
-    return _undo_through_id(target_id, workspace, session_id=session_id)
+        return _undo_ids(n_ids, workspace, partial=True, keep_explorer_deletes=True)
+    return _undo_through_id(
+        target_id, workspace, session_id=session_id, keep_explorer_deletes=True
+    )
 
 
 def undo_latest_turn(
@@ -975,6 +988,7 @@ def _undo_through_id(
     *,
     session_id: Optional[str] = None,
     partial: bool = False,
+    keep_explorer_deletes: bool = False,
 ) -> dict[str, Any]:
     with _lock:
         stack = _load_stack(workspace)
@@ -988,7 +1002,9 @@ def _undo_through_id(
         raise ValueError("undo entry not found")
     ids = [str(r.get("id") or "") for r in recs[idx:] if r.get("id")]
     ids.reverse()
-    return _undo_ids(ids, workspace, partial=partial)
+    return _undo_ids(
+        ids, workspace, partial=partial, keep_explorer_deletes=keep_explorer_deletes
+    )
 
 
 def _take_record(entry_id: str, workspace: Optional[Path] = None) -> Optional[dict[str, Any]]:
@@ -1002,12 +1018,55 @@ def _take_record(entry_id: str, workspace: Optional[Path] = None) -> Optional[di
     return None
 
 
+def _path_under_tombstones(path: str, tombs: set[str]) -> bool:
+    p = str(path or "").replace("\\", "/").strip()
+    if not p or not tombs:
+        return False
+    if p in tombs:
+        return True
+    return any(p.startswith(t + "/") for t in tombs if t)
+
+
+def _explorer_deleted_paths(records: list[dict[str, Any]]) -> set[str]:
+    out: set[str] = set()
+    for rec in records:
+        if rec.get("op") != "delete":
+            continue
+        if str(rec.get("source") or "") != "explorer":
+            continue
+        path = str(rec.get("path") or "").replace("\\", "/").strip()
+        if path:
+            out.add(path)
+    return out
+
+
+def _undo_would_recreate(rec: dict[str, Any], tombs: set[str]) -> bool:
+    """True if applying this undo would put bytes back on a user-deleted path."""
+    if not tombs:
+        return False
+    op = rec.get("op")
+    if op == "delete":
+        return _path_under_tombstones(str(rec.get("path") or ""), tombs)
+    if op == "write" and rec.get("had_file"):
+        return _path_under_tombstones(str(rec.get("path") or ""), tombs)
+    if op in ("move", "rename"):
+        return _path_under_tombstones(str(rec.get("from") or ""), tombs)
+    return False
+
+
 def _undo_ids(
     ids_newest_first: list[str],
     workspace: Optional[Path] = None,
     *,
     partial: bool = False,
+    keep_explorer_deletes: bool = False,
 ) -> dict[str, Any]:
+    tombs: set[str] = set()
+    if keep_explorer_deletes:
+        idset = {str(i) for i in ids_newest_first if i}
+        with _lock:
+            stack = _load_stack(workspace)
+        tombs = _explorer_deleted_paths([r for r in stack if str(r.get("id") or "") in idset])
     undone: list[dict[str, Any]] = []
     errors: list[str] = []
     for eid in ids_newest_first:
@@ -1017,7 +1076,7 @@ def _undo_ids(
         if not rec:
             continue
         try:
-            _apply_undo_record(rec, workspace)
+            _apply_undo_record(rec, workspace, skip_restore_paths=tombs)
             undone.append({"id": rec.get("id"), "label": rec.get("label"), "op": rec.get("op")})
         except ValueError:
             break
@@ -1036,11 +1095,18 @@ def _undo_ids(
     }
 
 
-def _apply_undo_record(rec: dict[str, Any], workspace: Optional[Path] = None) -> None:
+def _apply_undo_record(
+    rec: dict[str, Any],
+    workspace: Optional[Path] = None,
+    *,
+    skip_restore_paths: Optional[set[str]] = None,
+) -> None:
     op = rec.get("op")
     blob = rec.get("blob")
     blob_path = (_undo_root(workspace) / "blobs" / str(blob)) if blob else None
     try:
+        if skip_restore_paths and _undo_would_recreate(rec, skip_restore_paths):
+            return
         if op == "checkpoint":
             pass
         elif op == "write":

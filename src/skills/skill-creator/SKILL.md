@@ -1,7 +1,7 @@
 ---
 name: skill-creator
 description: >
-  Create or improve Agent Skills (SKILL.md) for Sidekick, fully offline.
+  Create or improve Agent Skills (SKILL.md) for EdgeSidekick, fully offline.
   Use when the user wants a new skill, to edit an existing skill, to turn
   a repeated workflow into a reusable skill, or to optimize a skill's
   description so it triggers correctly. Do not use for general coding,
@@ -13,7 +13,7 @@ license: Complete terms in LICENSE.txt
 
 A skill for creating new skills and iteratively improving them.
 
-## Sidekick / 离线适配（必须遵守）
+## EdgeSidekick / 离线适配（必须遵守）
 
 本技能在离线环境运行。不要调用 `claude` CLI、不要打开 claude.ai、不要 `pip install` / `npm install`、不要拉取外网文档。
 
@@ -23,7 +23,7 @@ A skill for creating new skills and iteratively improving them.
 - 若已在磁盘上写好了技能包（`某目录/SKILL.md` + 可选 `scripts/`），再调用 `skill_save(from_path=该目录或SKILL.md)`。
 - 只把 SKILL.md 留在 workspace 不够。`write_file` 写了 `SKILL.md` 时运行时会尝试同步，但优先用 `skill_save`。
 
-**Sidekick校验：**
+**EdgeSidekick 校验：**
 - `name`：2–64 位字母、数字、连字符或下划线，与目录名一致
 - `description`：至少 8 字，写清「做什么 + 何时触发」
 - 正文：至少 20 字，含可执行步骤；建议用 `##` 分段

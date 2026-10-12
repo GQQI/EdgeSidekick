@@ -15,6 +15,7 @@ import {
   readFileContent,
   renameFsEntry,
   revealFsEntry,
+  uploadFile,
   type FsEntry,
 } from "../api";
 import { usePrefs } from "../prefs";
@@ -26,6 +27,7 @@ import {
   IconFile,
   IconFiles,
   IconFolder,
+  IconPaperclip,
   IconPlus,
   IconRefresh,
   IconTrash,
@@ -46,6 +48,8 @@ type Props = {
   activeFilePath?: string | null;
   /** Called after a path is deleted (file or folder). */
   onDeleted?: (path: string) => void;
+  /** Hide explorer title chrome (social embed). */
+  hideChrome?: boolean;
 };
 
 type DirState = {
@@ -85,6 +89,7 @@ export function FileExplorer({
   refreshKey = 0,
   activeFilePath = null,
   onDeleted,
+  hideChrome = false,
 }: Props) {
   const { t } = usePrefs();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ ".": true });
@@ -100,6 +105,8 @@ export function FileExplorer({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null);
   const [selectedDir, setSelectedDir] = useState(".");
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const [pickedFile, setPickedFile] = useState<string | null>(null);
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -131,15 +138,23 @@ export function FileExplorer({
     }
   }
 
+  // Bumped whenever the workspace changes; responses from loads of a previous
+  // workspace must never land in the new tree (they used to overwrite the
+  // freshly cleared "." dir and show another project's files).
+  const wsEpochRef = useRef(0);
+
   const loadDir = useCallback(async (path: string) => {
+    const epoch = wsEpochRef.current;
     setDirs((prev) => ({ ...prev, [path]: { ...prev[path], loading: true, error: undefined } }));
     try {
       const data = await listFiles(path, workspaceAbsPath || undefined);
+      if (wsEpochRef.current !== epoch) return;
       setDirs((prev) => ({
         ...prev,
         [path]: { loading: false, entries: data.entries },
       }));
     } catch (e) {
+      if (wsEpochRef.current !== epoch) return;
       setDirs((prev) => ({
         ...prev,
         [path]: {
@@ -152,6 +167,7 @@ export function FileExplorer({
   }, [workspaceAbsPath]);
 
   useEffect(() => {
+    wsEpochRef.current += 1;
     setDirs({});
     void loadDir(".");
     setExpanded({ ".": true });
@@ -343,19 +359,63 @@ export function FileExplorer({
   }
 
   function onDragOverDir(e: ReactDragEvent, destDir: string) {
-    if (!draggingPath) return;
-    if (isDescendantOrSelf(draggingPath, destDir)) return;
-    if (parentOf(draggingPath) === destDir) return;
+    const hasOsFiles = e.dataTransfer.types.includes("Files");
+    if (!draggingPath && !hasOsFiles) return;
+    if (draggingPath) {
+      if (isDescendantOrSelf(draggingPath, destDir)) return;
+      if (parentOf(draggingPath) === destDir) return;
+    }
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    e.dataTransfer.dropEffect = hasOsFiles && !draggingPath ? "copy" : "move";
     if (dropTarget !== destDir) setDropTarget(destDir);
+  }
+
+
+  async function uploadFilesToDir(fileList: FileList | File[] | null, destDir: string) {
+    if (!fileList || (fileList as FileList).length === 0) return;
+    const files = Array.from(fileList as FileList | File[]);
+    if (files.length === 0) return;
+    const ws = (workspaceAbsPath || "").trim();
+    if (!ws) {
+      setActionError("请先选择工作区，再上传文件");
+      return;
+    }
+    // Upload into the currently selected folder (workspace-relative), including root.
+    const dest = !destDir || destDir === "."
+      ? "."
+      : destDir.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    setUploadBusy(true);
+    setActionError("");
+    try {
+      for (const file of files) {
+        await uploadFile(file, {
+          dest: `${dest}/`,
+          workspace: ws,
+        });
+      }
+      const parent = dest === "." ? "." : dest;
+      await loadDir(parent);
+      if (parent !== ".") await loadDir(".");
+      setExpanded((prev) => ({ ...prev, [parent]: true, ".": true }));
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploadBusy(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
   }
 
   function onDropOnDir(e: ReactDragEvent, destDir: string) {
     e.preventDefault();
     e.stopPropagation();
-    const src = e.dataTransfer.getData("text/plain") || draggingPath;
     setDropTarget(null);
+    const osFiles = e.dataTransfer.files;
+    if (osFiles && osFiles.length > 0) {
+      setDraggingPath(null);
+      void uploadFilesToDir(osFiles, destDir);
+      return;
+    }
+    const src = e.dataTransfer.getData("text/plain") || draggingPath;
     setDraggingPath(null);
     if (src) void moveEntryTo(src, destDir);
   }
@@ -790,7 +850,8 @@ export function FileExplorer({
   }
 
   return (
-    <aside className="explorer" style={{ width }}>
+    <aside className="explorer" style={width && width > 0 ? { width } : { width: "100%", minWidth: 0, flex: 1 }}>
+      {!hideChrome && (
       <div className="fe-head">
         <button type="button" className="fe-title" onClick={onToggle} title={t("feCollapse")}>
           <IconFile size={15} />
@@ -798,6 +859,7 @@ export function FileExplorer({
           <IconChevronDown size={14} />
         </button>
       </div>
+      )}
       <div className="fe-actions">
         <button
           type="button"
@@ -823,6 +885,23 @@ export function FileExplorer({
           <IconFolder size={13} />
           <span>{t("feNewDir")}</span>
         </button>
+
+        <button
+          type="button"
+          title={t("feUpload")}
+          disabled={uploadBusy}
+          onClick={() => uploadInputRef.current?.click()}
+        >
+          <IconPaperclip size={13} />
+          <span>{uploadBusy ? t("feUploading") : t("feUpload")}</span>
+        </button>
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => void uploadFilesToDir(e.target.files, selectedDir || ".")}
+        />
         <button
           type="button"
           title={t("feRefresh")}
