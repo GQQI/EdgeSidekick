@@ -11,9 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="./website/index.html">官网（本地）</a> ·
   <a href="https://gqqi.github.io/EdgeSidekick/">GitHub Pages</a> ·
-  <a href="./website/docs/user-guide.zh.html">使用手册</a> ·
   <a href="./LICENSE">MIT 许可证</a>
 </p>
 
@@ -128,7 +126,7 @@ SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工�
 
 - **源码运行** — 见[快速开始](#快速开始)。
 - **桌面端** — start-desktop.bat 或 desktop/dist/ 下的安装包。
-- **官网与手册** — [website/index.html](./website/index.html)、[website/docs/user-guide.zh.html](./website/docs/user-guide.zh.html) / [user-guide.en.html](./website/docs/user-guide.en.html)。
+- **官网与手册** — [GitHub Pages](https://gqqi.github.io/EdgeSidekick/)、[使用手册](https://gqqi.github.io/EdgeSidekick/docs/user-guide.zh.html) / [User guide (EN)](https://gqqi.github.io/EdgeSidekick/docs/user-guide.en.html)。
 - **文档** — [docs/browser-sandbox.md](./docs/browser-sandbox.md)、[docs/book-to-skill.md](./docs/book-to-skill.md)。
 
 ## 架构（简）

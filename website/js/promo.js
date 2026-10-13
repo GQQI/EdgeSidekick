@@ -161,4 +161,11 @@
   if (btnPlay) btnPlay.addEventListener('click', function () { if (playing) pause(); else play(); });
   if (btnRestart) btnRestart.addEventListener('click', function () { restart(); });
   if (langBtn) langBtn.addEventListener('click', function () { applyLang(lang === 'zh' ? 'en' : 'zh'); });
+
+  // When embedded in the homepage iframe, keep navigation on the parent page.
+  if (window.parent && window.parent !== window) {
+    document.querySelectorAll('a[href="index.html"]').forEach(function (a) {
+      a.setAttribute('target', '_parent');
+    });
+  }
 })();

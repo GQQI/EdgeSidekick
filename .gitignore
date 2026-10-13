@@ -92,6 +92,7 @@ Thumbs.db
 /data/
 /ui/data/
 *.mp4
+!website/assets/edgesidekick-intro.mp4
 scripts/_*.py
 .venv/
 node_modules/

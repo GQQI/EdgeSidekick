@@ -11,9 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="./website/index.html">Website (local)</a> ·
   <a href="https://gqqi.github.io/EdgeSidekick/">GitHub Pages</a> ·
-  <a href="./website/docs/user-guide.en.html">User guide</a> ·
   <a href="./LICENSE">MIT License</a>
 </p>
 
@@ -128,7 +126,7 @@ History, Memory (MEMORY.md), workspaces, and configs stay on disk you control. B
 
 - **From source** — follow [Quick start](#quick-start).
 - **Desktop** — start-desktop.bat or packaged installers under desktop/dist/.
-- **Website & handbook** — [website/index.html](./website/index.html), [website/docs/user-guide.en.html](./website/docs/user-guide.en.html) / [user-guide.zh.html](./website/docs/user-guide.zh.html).
+- **Website & handbook** — [GitHub Pages](https://gqqi.github.io/EdgeSidekick/), [User guide (EN)](https://gqqi.github.io/EdgeSidekick/docs/user-guide.en.html) / [中文手册](https://gqqi.github.io/EdgeSidekick/docs/user-guide.zh.html).
 - **Docs** — [docs/browser-sandbox.md](./docs/browser-sandbox.md), [docs/book-to-skill.md](./docs/book-to-skill.md).
 
 ## Architecture (short)

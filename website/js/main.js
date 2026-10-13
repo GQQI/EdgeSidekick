@@ -47,7 +47,8 @@
       demo_eyebrow: 'Demo',
       demo_title: '产品演示',
       demo_sub: '一分钟看清核心能力：工作台、会话版、多智能体对话、浏览器沙箱、Skills 与本地桌面。',
-      demo_bar: '介绍片 · ~60s',
+      demo_bar: '介绍片 · ~46s',
+      demo_open: '全屏动画版',
       
       dl_eyebrow: 'Download',
       dl_title: '三种方式，立刻可用',
@@ -109,7 +110,8 @@
       demo_eyebrow: 'Demo',
       demo_title: 'Product demo',
       demo_sub: 'See the core capabilities in about a minute: workbench, social sessions, multi-agent chat, browser sandbox, Skills, and local desktop.',
-      demo_bar: 'Intro · ~60s',
+      demo_bar: 'Intro · ~46s',
+      demo_open: 'Fullscreen animation',
       
       dl_eyebrow: 'Download',
       dl_title: 'Three ways to run',

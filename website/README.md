@@ -40,7 +40,7 @@ website/
   README.md
 ```
 
-介绍视频（若已生成）：`../docs/promo/edgesidekick-intro.mp4`
+介绍片：`assets/edgesidekick-intro.mp4`（1080p，约 46s。工作台、会话版与 MCP 为真实界面截图，并介绍工具调用和本地架构。由 `scripts/make-intro-mp4.py` 生成）
 
 ## 说明
 

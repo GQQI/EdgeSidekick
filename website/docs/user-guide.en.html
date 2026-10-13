@@ -13,11 +13,14 @@
   .guide h2 { font-size: 22px; font-weight: 800; margin: 40px 0 14px; padding-top: 8px; border-top: 1px solid var(--line); }
   .guide h3 { font-size: 17px; font-weight: 700; margin: 22px 0 8px; }
   .guide p, .guide li { color: var(--text); line-height: 1.75; font-size: 15.5px; }
-  .guide ul { padding-left: 1.3em; margin: 8px 0 16px; }
+  .guide ul, .guide ol { padding-left: 1.3em; margin: 8px 0 16px; }
   .guide code, .guide pre { font-family: var(--mono); }
   .guide pre { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow: auto; font-size: 13.5px; margin: 12px 0 18px; }
   .guide .tip { background: rgba(47,111,237,.08); border: 1px solid rgba(47,111,237,.18); border-radius: 12px; padding: 12px 14px; margin: 14px 0; font-size: 14.5px; }
   .guide .toc a { display: inline-block; margin: 4px 10px 4px 0; color: var(--blue); text-decoration: none; font-weight: 600; }
+  .guide table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; font-size: 14.5px; }
+  .guide th, .guide td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .guide th { background: var(--bg2); font-weight: 700; }
   .guide-nav { display:flex; gap:12px; flex-wrap:wrap; margin-bottom: 24px; }
   .guide-nav a { color: var(--muted); text-decoration:none; font-size: 14px; }
   .guide-nav a:hover { color: var(--blue); }
@@ -42,9 +45,10 @@
     <a href="user-guide.zh.html">中文</a>
   </div>
   <h1>EdgeSidekick User Guide</h1>
-  <p class="lead">A local multi-agent AI workbench. This guide covers install/start, workbench vs social mode, chat, themes, Skills, and basic settings.</p>
+  <p class="lead">A local multi-agent AI workbench. This guide covers packaging the Windows desktop exe, configuring your model, then workbench modes, chat, themes, Skills, and basic settings.</p>
   <div class="toc">
-    <a href="#install">Install &amp; start</a>
+    <a href="#build">Package as exe</a>
+    <a href="#model">Configure model</a>
     <a href="#modes">Workbench vs Social</a>
     <a href="#chat">Chat</a>
     <a href="#themes">Themes</a>
@@ -52,56 +56,104 @@
     <a href="#settings">Settings</a>
   </div>
 
-  <h2 id="install">1. Install &amp; start</h2>
-  <h3>From source</h3>
-  <pre>python -m pip install -r requirements.txt
-python main.py</pre>
-  <p>Open <code>http://127.0.0.1:8787</code> in your browser.</p>
-  <h3>Desktop</h3>
-  <ul>
-    <li>Windows: run <code>start-desktop.bat</code>, or use the installer / portable zip.</li>
-    <li>Kylin / Linux: <code>.deb</code> / AppImage, or build the desktop app per README.</li>
-  </ul>
-  <div class="tip">On first launch, pick a <strong>workspace folder</strong>. History and Memory stay on your disk by default.</div>
+  <h2 id="build">1. Package as exe (Windows)</h2>
+  <p>Build once on an <strong>online</strong> Windows x64 machine. Copy the Setup installer to the target PC and install there — the target machine does <strong>not</strong> need Python or Node.js preinstalled.</p>
 
-  <h2 id="modes">2. Workbench vs Social</h2>
+  <h3>Requirements</h3>
+  <ul>
+    <li>Windows x64</li>
+    <li>Node.js <strong>18+</strong></li>
+    <li>A usable host Python (the script prepares an embeddable runtime; a project <code>.venv</code> works too)</li>
+    <li>Access to npm / pip mirrors (defaults: Huawei Cloud, npmmirror, Tsinghua PyPI)</li>
+  </ul>
+
+  <h3>Build command</h3>
+  <p>From the repository root in PowerShell or CMD:</p>
+  <pre>.\scripts\build-windows.bat</pre>
+  <p>Equivalent:</p>
+  <pre>powershell -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1</pre>
+
+  <h3>Optional flags</h3>
+  <table>
+    <thead>
+      <tr><th>Flag</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>-SkipRuntime</code></td><td>Reuse existing <code>packaging/windows/payload/python</code></td></tr>
+      <tr><td><code>-SkipUi</code></td><td>Reuse existing <code>ui/dist</code></td></tr>
+      <tr><td><code>-SkipPlaywright</code></td><td>Skip Chromium (smaller build; agent browser tools unavailable)</td></tr>
+      <tr><td><code>-Force</code></td><td>Force re-download of the Python runtime</td></tr>
+    </tbody>
+  </table>
+  <p>Example (skip Chromium, reuse UI):</p>
+  <pre>.\scripts\build-windows.bat -SkipPlaywright -SkipUi</pre>
+
+  <h3>Outputs &amp; install</h3>
+  <p>Artifacts land in <code>desktop/dist/</code>:</p>
+  <ul>
+    <li><code>EdgeSidekick-Setup-&lt;version&gt;-win-x64.exe</code> — NSIS installer (recommended)</li>
+    <li><code>EdgeSidekick-&lt;version&gt;-win-x64.zip</code> — portable zip</li>
+  </ul>
+  <ol>
+    <li>Run the Setup <code>.exe</code> (defaults to the current user directory; admin usually not required)</li>
+    <li>Launch <strong>EdgeSidekick</strong> from the Start menu or desktop shortcut</li>
+    <li>On first launch, pick a <strong>workspace folder</strong></li>
+  </ol>
+  <div class="tip">Config and sessions default to <code>%APPDATA%\EdgeSidekick\</code>. Unsigned builds may trigger SmartScreen — choose “More info” → “Run anyway”.</div>
+
+  <h3>Kylin / Linux (optional)</h3>
+  <p>On Linux you can build <code>.deb</code> / AppImage / tar.gz:</p>
+  <pre>bash scripts/build-kylin.sh</pre>
+  <p>See <code>packaging/kylin/README.md</code> in the repo.</p>
+
+  <h2 id="model">2. Configure the model</h2>
+  <p>After the app opens and you pick a workspace, configure a model before chatting:</p>
+  <ol>
+    <li>Open <strong>Settings → Model</strong></li>
+    <li>Set the <strong>API Base URL</strong> (OpenAI-compatible endpoint, or local Ollama, etc.)</li>
+    <li>Enter your <strong>API Key</strong> (for local Ollama, leave blank or use a placeholder per your provider)</li>
+    <li>Choose / enter model names; optionally configure separate <strong>main</strong>, <strong>sub-agent</strong>, and <strong>compress</strong> models to save tokens</li>
+    <li>Save, return to chat, and send a test message</li>
+  </ol>
+  <div class="tip">API keys stay on this machine (installed app: <code>%APPDATA%\EdgeSidekick\</code>). History and Memory stay local by default; chat still needs reachability to your model API (public, private network, or localhost).</div>
+
+  <h2 id="modes">3. Workbench vs Social</h2>
   <h3>Workbench</h3>
   <p>Built for engineering tasks: main/sub-agents, file edits, shell, browser sandbox, task panel. Best for coding, docs, and commands.</p>
   <h3>Social / Session</h3>
   <p>Conversation-first UI with session lists and DM-style chat, still backed by the same agents. Best for ongoing Q&amp;A and topic threads.</p>
   <p>Both share the same local runtime and model config.</p>
 
-  <h2 id="chat">3. Multi-agent chat</h2>
+  <h2 id="chat">4. Multi-agent chat</h2>
   <ul>
     <li>Send a message; replies stream over SSE.</li>
     <li>The main agent can orchestrate sub-agents. Writes, shell, and Memory changes usually need <strong>human approval</strong>.</li>
     <li>Attachments, stop, edit &amp; resend, and optional file restore are supported.</li>
   </ul>
 
-  <h2 id="themes">4. Themes &amp; language</h2>
+  <h2 id="themes">5. Themes &amp; language</h2>
   <ul>
     <li><strong>Light clean</strong> for daytime focus.</li>
     <li><strong>Dark immersive</strong> for long night sessions.</li>
     <li>Chinese / English UI; preferences can persist separately for the site and the app.</li>
   </ul>
 
-  <h2 id="skills">5. Skills</h2>
+  <h2 id="skills">6. Skills</h2>
   <ul>
     <li>Drop packs under <code>src/skills/</code> (or the tenant skills directory).</li>
     <li>Invoke with <code>/skill</code> so tools load on demand.</li>
     <li>Bundled examples cover writing, debugging, decks, and more.</li>
   </ul>
 
-  <h2 id="settings">6. Basic settings</h2>
+  <h2 id="settings">7. Basic settings</h2>
   <ul>
-    <li><strong>Models</strong>: separate main / sub / compress models; bring your API key or use Ollama.</li>
     <li><strong>Workspace</strong>: Settings → pick a local folder; switch among recent workspaces.</li>
     <li><strong>Browser sandbox</strong>: desktop BrowserView / Web Playwright; Select Mode + <code>browser_*</code> tools.</li>
     <li><strong>Memory / Tasks / MCP</strong>: append or rewrite MEMORY.md (with approval); track tasks; hook external tools via MCP.</li>
   </ul>
-  <div class="tip">API keys and tokens stay on this machine. Clear personal tokens under <code>src/data</code> before shipping a demo tree.</div>
+  <div class="tip">Slash commands: <code>/help</code> · <code>/new</code> · <code>/clear</code> · <code>/skills</code> · <code>/skill &lt;name&gt;</code> · <code>/memory</code> · <code>/history</code> · <code>/browser</code> · <code>/stop</code></div>
 
-  <p style="margin-top:48px;color:var(--muted)">See root <code>README.md</code> for deeper technical notes.</p>
+  <p style="margin-top:48px;color:var(--muted)">See root <code>README.md</code> and <code>packaging/windows/README.md</code> for deeper technical notes.</p>
 </main>
 <script>
 (function(){
