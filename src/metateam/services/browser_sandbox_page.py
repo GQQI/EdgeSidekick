@@ -1,8 +1,15 @@
 """BrowserSandbox observe / index / extract methods."""
 from __future__ import annotations
 
+import json
+import re
+import time
 from pathlib import Path
 from typing import Any, Optional
+
+from . import browser_observe as _bobs
+from .browser_sandbox_worker import _WORKER
+from .browser_sandbox_util import _LIST_ELEMENTS_JS
 
 
 class BrowserSandboxPageMixin:

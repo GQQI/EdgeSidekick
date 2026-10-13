@@ -1,7 +1,21 @@
 """BrowserSandbox action methods (click/fill/type/nav helpers)."""
 from __future__ import annotations
 
-from typing import Any, Optional
+import asyncio
+import time
+from typing import Any, Awaitable, Callable, Optional
+from urllib.parse import urlparse
+
+from . import browser_observe as _bobs
+from .browser_sandbox_dialogs import BrowserSandboxDialogsMixin
+from .browser_sandbox_worker import _WORKER
+from .browser_sandbox_util import (
+    _USER_WAIT_TIMEOUT,
+    challenge_js_source,
+    dialog_interrupted,
+    is_shallow_site_rewind,
+    urls_match,
+)
 
 
 class BrowserSandboxActionsMixin:
@@ -995,7 +1009,7 @@ class BrowserSandboxActionsMixin:
         cur = sess.get("page")
         context = getattr(cur, "context", None)
         pages = list(getattr(context, "pages", []) or []) if context else []
-        return [p for p in pages if BrowserSandbox._page_alive(p)]
+        return [p for p in pages if BrowserSandboxDialogsMixin._page_alive(p)]
 
     def list_tabs(self, *, user_id: Optional[str] = None) -> dict[str, Any]:
         uid = self._lane_uid(user_id)

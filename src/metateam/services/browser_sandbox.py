@@ -35,6 +35,7 @@ from .browser_sandbox_page import BrowserSandboxPageMixin
 from .browser_sandbox_nav import BrowserSandboxNavMixin
 from .browser_sandbox_dialogs import BrowserSandboxDialogsMixin
 from .browser_sandbox_util import (
+    HOST_KIND,
     _URL_EXTRACT_RE,
     sanitize_browser_url,
     _workspace_root,
@@ -73,7 +74,6 @@ from .browser_sandbox_util import (
     _SNAPSHOT_JS,
 )
 
-HOST_KIND = "cdp_playwright"
 
 # True inside 会话版 (social) chat turns. The agent's browser there is
 # headless and auto-closed at turn end; the workbench keeps the classic

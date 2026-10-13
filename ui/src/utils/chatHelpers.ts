@@ -17,20 +17,13 @@ export {
   limitCanvasRoots,
 } from "./canvasSlots";
 
-export type GreetingKey =
-  | "greetingLateNight"
-  | "greetingMorning"
-  | "greetingNoon"
-  | "greetingAfternoon"
-  | "greetingEvening";
+export type GreetingKey = "greetingMorning" | "greetingAfternoon" | "greetingEvening";
 
 /** Local browser time (not UTC / server). */
 export function greetingKey(now = new Date()): GreetingKey {
   const h = now.getHours();
-  if (h < 5) return "greetingLateNight";
-  if (h < 11) return "greetingMorning";
-  if (h < 14) return "greetingNoon";
-  if (h < 18) return "greetingAfternoon";
+  if (h >= 5 && h < 12) return "greetingMorning";
+  if (h >= 12 && h < 18) return "greetingAfternoon";
   return "greetingEvening";
 }
 

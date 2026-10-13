@@ -65,4 +65,16 @@ def build_registry(
 
             log_exception(get_logger("metateam.tools"), "MCP tool registration failed", exc)
 
+    register_plugins_safely(reg)
     return reg
+
+
+def register_plugins_safely(reg: ToolRegistry) -> None:
+    try:
+        from ...plugins.tools import register_plugin_tools
+
+        register_plugin_tools(reg, Tool=Tool)
+    except Exception as exc:  # noqa: BLE001
+        from ...core.logutil import get_logger, log_exception
+
+        log_exception(get_logger("metateam.tools"), "Plugin tool registration failed", exc)

@@ -88,13 +88,12 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
     visibleReplyAfterJudge,
     yieldToForegroundDm,
   } = ctx;
+  const turnState = ctx.turnState;
+  const currentHarness = () => turnState.harnessPlan ?? ctx.harnessPlan;
+  const currentPeerDiscuss = () => turnState.peerDiscuss ?? ctx.peerDiscuss ?? [];
   let committedMsgs = ctx.committedMsgs;
-  let freeReply = ctx.freeReply;
-  let harnessPlan = ctx.harnessPlan;
   let key = ctx.key;
   let liveBoard = ctx.liveBoard;
-  let peerDiscuss = ctx.peerDiscuss;
-  let turnPaused = ctx.turnPaused;
 
   return async (slot: Slot, wave: 1 | 2, opts?: { synthesis?: boolean }) => {
 
@@ -108,13 +107,19 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
       // output for routing and claims, but never render it midway.
       (slot as any)._suppressDecisionBubble =
         view.kind === "group" && wave === 1 && !(slot as { _clearedToSpeak?: boolean })._clearedToSpeak;
-      if (freeReply) {
+      // Parallel members each carry their own brief on the slot; the shared
+      // turnState value would be overwritten by whoever started last.
+      const slotFree = (slot as any)._freeReply ?? turnState.freeReply;
+      (slot as any)._error = "";
+      if (slotFree) {
         noteAgentActivity(
           slot.agent,
           "execute",
-          freeReply.step
-            ? `流水线第 ${freeReply.step.index}/${freeReply.step.total} 步：${freeReply.step.task}`
-            : `决定回复 ${freeReply.latest.author} 的消息，正在写`,
+          slotFree.collab
+            ? `正在处理：${String(slotFree.collab.task || "").slice(0, 80)}`
+            : slotFree.step
+              ? `流水线第 ${slotFree.step.index}/${slotFree.step.total} 步：${slotFree.step.task}`
+              : `决定回复 ${slotFree.latest.author} 的消息，正在写`,
         );
       } else if (view.kind === "group") {
         const assigned = (((slot as any)._tasks as string[]) || []).filter(Boolean);
@@ -171,7 +176,7 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
             ? { groupId: view.groupId, includeGroupContext: true }
             : undefined,
       );
-      const freeTurn = freeReply;
+      const freeTurn = slotFree;
       const backendMsg = freeTurn
         ? buildSocialBackendMessage({
             userText: text,
@@ -193,7 +198,9 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
               brief: freeTurn.brief,
               everyone: freeTurn.everyone,
               mustAnswer: freeTurn.mustAnswer,
+              collab: freeTurn.collab,
             },
+            boardText,
           })
         : buildSocialBackendMessage({
         userText: text,
@@ -234,8 +241,8 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
         boardText,
         boardWave: view.kind === "group" ? wave : undefined,
         peerDiscussText:
-          view.kind === "group" && peerDiscuss.length
-            ? formatPeerDiscuss(peerDiscuss.map((r) => ({ agentName: r.agentName, text: r.text })))
+          view.kind === "group" && currentPeerDiscuss().length
+            ? formatPeerDiscuss(currentPeerDiscuss().map((r) => ({ agentName: r.agentName, text: r.text })))
             : undefined,
         privateMemory: formatAgentMemoryForPrompt(
           store,
@@ -253,13 +260,13 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
         addressedNames,
         peerHandoff,
         rewardNotes: rewardNotesFor(text),
-        harnessContract: harnessPlan
-          ? formatHarnessContract(harnessPlan, slot.agent.id, {
+        harnessContract: currentHarness()
+          ? formatHarnessContract(currentHarness(), slot.agent.id, {
               repair: harnessRepair,
               synthesizing: Boolean(opts?.synthesis),
             })
           : undefined,
-        omitPeerRoster: Boolean(harnessPlan),
+        omitPeerRoster: Boolean(currentHarness()),
       });
       let buf = "";
       let lastGoodBuf = "";
@@ -324,7 +331,7 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
           streamSessionId,
           {
             onEvent: (ev) => {
-              if (turnPaused || ac.signal.aborted || isStaleSend()) return;
+              if (turnState.turnPaused || ac.signal.aborted || isStaleSend()) return;
               const anyEv = ev as any;
               if (anyEv?.type === "goal_settled") {
                 (slot as { _goalKnown?: boolean })._goalKnown = true;
@@ -791,7 +798,8 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
             },
             onError: (err) => {
               const msg = String(err || "error");
-              onToast(msg);
+              (slot as any)._error = msg;
+              if (!freeTurn?.collab) onToast(msg);
               slot.stage = "error";
               setAgentLive((prev) => ({
                 ...prev,
@@ -813,7 +821,7 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
             onAbort: () => {
               slot.streaming = false;
               slot.stage = "done";
-              if (turnPaused) {
+              if (turnState.turnPaused) {
                 slot.silent = true;
                 slot.text = "";
                 slot.decided = true;
@@ -850,10 +858,11 @@ export function createSocialRunOne(ctx: createSocialRunOneCtx) {
           !linkedDm,
           freeTurn
             ? true
-            : Boolean(harnessPlan && harnessPlan.phase === "work" && wave === 2 && !opts?.synthesis),
+            : Boolean(currentHarness() && currentHarness().phase === "work" && wave === 2 && !opts?.synthesis),
         );
       } catch (e: any) {
         if (ac.signal.aborted) return;
+        (slot as any)._error = String(e?.message || e);
         slot.text = t("socialSendFail") + ": " + String(e?.message || e);
         slot.streaming = false;
         slot.decided = true;

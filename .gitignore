@@ -114,7 +114,9 @@ docs/CLEANUP-final.md
 /package.json
 /pytest.ini
 scripts/screenshot-logo-style.mjs
-/tests/
+/tests/*
+!/tests/conftest.py
+!/tests/test_plugins.py
 /landing.html
 *.bak
 scripts/verify_group_chat/

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .think_tags import split_think_tags
+
 _REASONING_FIELD_KEYS = (
     "reasoning_content",
     "reasoning",

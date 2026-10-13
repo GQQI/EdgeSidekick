@@ -105,6 +105,7 @@ export type SettingsTab =
   | "safety"
   | "model"
   | "mcp"
+  | "plugins"
   | "skills"
   | "runtime"
   | "appearance"

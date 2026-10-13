@@ -101,6 +101,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
     view,
     visibleReplyAfterJudge,
   } = ctx;
+  const turnState = ctx.turnState;
   let committedMsgs = ctx.committedMsgs;
   let harnessNotices = ctx.harnessNotices;
   let harnessPlan = ctx.harnessPlan;
@@ -110,12 +111,11 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
   let liveBoard = ctx.liveBoard;
   let peerDiscuss = ctx.peerDiscuss;
   let slots = ctx.slots;
-  let turnPaused = ctx.turnPaused;
 
       // Wave 1 DISCUSS (open floor): tools off — agents talk / hand off / claim TASKs.
       // Multi-round sequential discuss: first full pass, then follow-ups for
       // @确认 / nominees until someone accepts or we hit the round cap.
-      ctx.peerDiscuss = peerDiscuss = [];
+      ctx.peerDiscuss = turnState.peerDiscuss = peerDiscuss = [];
       const discussRoster = rosterForPrompt.map((a) => ({ id: a.id, name: a.name }));
       const judgeWhetherToSpeak = async (s: (typeof slots)[number]) => {
         const prior = peerDiscuss
@@ -223,7 +223,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
         s.stage = execute ? "executing" : "deciding";
         paint();
         await runOne(s, execute ? 2 : 1);
-        if (turnPaused || ac.signal.aborted) return confirmationText(s.agent.id, cleanDisplayText(String(s.text || "")));
+        if (turnState.turnPaused || ac.signal.aborted) return confirmationText(s.agent.id, cleanDisplayText(String(s.text || "")));
         if ((s as { _clearedToSpeak?: boolean })._clearedToSpeak && !visibleReplyAfterJudge(String(s.text || ""))) {
           (s as { _sentenceOnly?: boolean })._sentenceOnly = true;
           s.silent = false;
@@ -300,7 +300,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
 
       // The harness picks who works before anyone speaks. Open-floor discussion
       // stays for chat, questions, and groups that are not on a real task.
-      ctx.harnessPlan = harnessPlan =
+      ctx.harnessPlan = turnState.harnessPlan = harnessPlan =
         view.kind === "group" &&
         shouldUseHarness({
           text: raw || text,
@@ -365,7 +365,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
         }
         announceHarness();
         for (const assignment of harnessPlan.assignments) {
-          if (ac.signal.aborted || turnPaused) break;
+          if (ac.signal.aborted || turnState.turnPaused) break;
           const speaker = slots.find((s) => s.agent.id === assignment.agentId);
           if (!speaker) continue;
           const spoken = await runDiscussTurn(speaker);
@@ -398,7 +398,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
       if (reactionFloor && isGroupGreeting(raw || text)) {
         // 你好 / 大家好: every member answers once. Do not ask a judge that can silence the group.
         for (const s of slots) {
-          if (ac.signal.aborted || turnPaused) break;
+          if (ac.signal.aborted || turnState.turnPaused) break;
           (s as { _forceSpeak?: boolean })._forceSpeak = true;
           await runDiscussTurn(s, false);
           (s as { _forceSpeak?: boolean })._forceSpeak = false;
@@ -431,14 +431,14 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
         const reactionCap = maxReactionTurns(slots.length);
         let reactions = 0;
         paint();
-        while (!ac.signal.aborted && !turnPaused && reactions < reactionCap) {
+        while (!ac.signal.aborted && !turnState.turnPaused && reactions < reactionCap) {
           const order = planReactionOrder(
             slots.map((slot) => ({ id: slot.agent.id })),
             { latestAuthorId, addressedIds: mentionedIds },
           );
           let spoke = false;
           for (const id of order) {
-            if (ac.signal.aborted || turnPaused) break;
+            if (ac.signal.aborted || turnState.turnPaused) break;
             const speaker = slots.find((slot) => slot.agent.id === id);
             if (!speaker) continue;
             const spoken = await runDiscussTurn(speaker, false);
@@ -449,7 +449,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
             reactions += 1;
             break;
           }
-          if (!spoke || turnPaused) break;
+          if (!spoke || turnState.turnPaused) break;
         }
       } else {
       if (!multiVoice && !turn?.everyone && operatorId && mentionedIds.size <= 1) {
@@ -490,7 +490,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
             // A locked operation stays with one person. Do not open a second speaker.
       let lastPendingKey = "";
       let discussStall = 0;
-      while (!reactionFloor && !namedTurn && !operatorId && !ac.signal.aborted && !turnPaused) {
+      while (!reactionFloor && !namedTurn && !operatorId && !ac.signal.aborted && !turnState.turnPaused) {
         if (discussHasOwner(peerDiscuss, slots)) {
           const pendingEarly = findPendingDiscussIds(peerDiscuss, discussRoster);
           if (!pendingEarly.length) break;
@@ -530,7 +530,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
       }
       }
       }
-      if (optionalReply && !turnExclusive && !ac.signal.aborted && !turnPaused) {
+      if (optionalReply && !turnExclusive && !ac.signal.aborted && !turnState.turnPaused) {
         commitBoardFromSlots(slots);
         flushSlotsToCommitted();
 
@@ -655,7 +655,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
           }
           paint();
           const executeSlot = async (s: Slot) => {
-            if (ac.signal.aborted || turnPaused) return;
+            if (ac.signal.aborted || turnState.turnPaused) return;
             s.silent = false;
             s.decided = false;
             s.replyConfirmed = true;
@@ -935,7 +935,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
             }
             paint();
             for (const s of contSlots) {
-              if (ac.signal.aborted || turnPaused) break;
+              if (ac.signal.aborted || turnState.turnPaused) break;
               s.replyConfirmed = true;
               (s as { _clearedToSpeak?: boolean })._clearedToSpeak = true;
               await runOne(s, 2);
@@ -1067,7 +1067,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
             }
             paint();
             for (const s of contSlots) {
-              if (ac.signal.aborted || turnPaused) break;
+              if (ac.signal.aborted || turnState.turnPaused) break;
               if (!(((s as any)._tasks as string[]) || []).length) continue;
               s.replyConfirmed = true;
               (s as { _clearedToSpeak?: boolean })._clearedToSpeak = true;
@@ -1117,7 +1117,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
               handoffStall = 0;
             }
           }
-          if (harnessPlan?.phase === "work" && harnessPlan.topology !== "solo" && !ac.signal.aborted && !turnPaused) {
+          if (harnessPlan?.phase === "work" && harnessPlan.topology !== "solo" && !ac.signal.aborted && !turnState.turnPaused) {
             const before = currentHarnessDiagnosis();
             const repair = before?.innerRepair;
             if (before && repair) {

@@ -182,8 +182,7 @@ export const ChatThread = memo(function ChatThread({
                 <span className="empty-hero-icon">
                   <IconRobotCube size={40} />
                 </span>
-                <h3>{t(greetingKey())}</h3>
-                <p>{t("tagline")}</p>
+                <h3 className="empty-greeting">{t(greetingKey())}</h3>
               </div>
               <div className="suggestions">
                 {buildSuggestions(t).map((s) => (

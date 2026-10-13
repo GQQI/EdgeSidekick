@@ -8,7 +8,7 @@ _log = get_logger("metateam.llm")
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 from .llm_extract import extract_content_text, extract_message_text, extract_reasoning_text, _PARTIAL_ARG_KEYS
 

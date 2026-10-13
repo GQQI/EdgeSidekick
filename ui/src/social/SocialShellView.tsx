@@ -12,6 +12,7 @@ import { IconChat, IconCheck, IconFiles, IconX, IconPaperclip, IconSearch, IconS
 import { buildSocialBackendMessage, extractOwnReply, stripAgentTags } from "./buildPrompt";
 import { AgentAvatar, GroupAvatar } from "./avatars";
 import { ConversationList } from "./ConversationList";
+import { CollabPlanCard } from "./CollabPlanCard";
 import { BrowserGlyph, SocialBrowserCard } from "./SocialBrowserCard";
 import {
   buildGroupBrief,
@@ -725,8 +726,26 @@ export function SocialShellView(p: SocialShellViewProps) {
           )}
 
           <div key={`${threadKey || "none"}:${clearTick}`} ref={threadScrollerRef} className="social-thread" onMouseUp={onChatSelect}>
-            {messages.map((m) => {
+            {messages.map((m, i) => {
+              if (m.role === "system" && m.readingStatus && /已看到消息/.test(String(m.text || ""))) {
+                const prior = messages.slice(0, i);
+                let start = 0;
+                for (let j = prior.length - 1; j >= 0; j -= 1) {
+                  if (prior[j].role === "user") {
+                    start = j + 1;
+                    break;
+                  }
+                }
+                if (prior.slice(start).some((row) => row.role === "agent" && String(row.text || "").trim())) return null;
+              }
               if (m.role === "system") {
+                if (m.planCard) {
+                  return (
+                    <div key={m.id} className="social-msg system social-plan-row">
+                      <CollabPlanCard card={m.planCard} />
+                    </div>
+                  );
+                }
                 return (
                   <div
                     key={m.id}

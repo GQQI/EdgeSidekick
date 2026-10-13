@@ -65,6 +65,22 @@ from .tools import ToolRegistry, build_registry
 from .tools.support import _skill_as_tool
 from .agent_execute import drop_unready_tool_calls, file_tool_results_blocked
 
+_STALL_NUDGE = (
+    "Your previous generation stalled (no progress). "
+    "Continue the task now: call a tool or give a concise answer. "
+    "Do not restart a long silent thinking pass."
+)
+_FILE_RETRY_NUDGE = (
+    "The previous file tool returned ERROR or WARNING. "
+    "Do not treat that result as success. "
+    "If a write or replace was cut off or missing required fields, retry that "
+    "same tool with the exact filename and the complete arguments. "
+    "If the path does not exist, look it up or report it — do not invent a "
+    "file body, and do not repeat the same missing path. "
+    "If the error is about decoding, retry with encoding= set to another codec."
+)
+
+
 class AgentLoopMixin:
     def _reject_early_stop(
         self,
@@ -145,7 +161,7 @@ class AgentLoopMixin:
                 # 会话版 decision pass still grounds its statements with
                 # observation-only tools (read/search/browse), while every
                 # mutating / shell / delegate / ask tool stays excluded.
-                schemas = filter_readonly_schemas(self.registry.schemas())
+                schemas = filter_readonly_schemas(self.registry.schemas(), self.registry.readonly_names())
             else:
                 schemas = tools if tools is not None else self.registry.schemas()
             if getattr(self, "_block_delegate", False):
@@ -894,6 +910,7 @@ class AgentLoopMixin:
                     "cancelled": was_cancelled,
                 },
             )
+            from .agent import AgentResult  # agent.py imports this mixin
             return AgentResult(
                 text=final,
                 messages=self.messages,

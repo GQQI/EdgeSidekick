@@ -1,0 +1,206 @@
+"""Plugin marketplace, installed plugins, credentials and OAuth."""
+
+from __future__ import annotations
+
+import html
+from typing import Any, Optional
+
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
+
+from ...plugins import marketplace, oauth
+from ...plugins.manifest import icon_data_uri, readme_text
+from ...plugins.store import (
+    InstalledPlugin,
+    PluginError,
+    credential_status,
+    current_user,
+    download_package,
+    get_installed,
+    install_from_zip,
+    invoke_tool,
+    list_installed,
+    set_credentials,
+    set_enabled,
+    uninstall,
+    verify_credentials,
+)
+
+router = APIRouter(prefix="/api/plugins", tags=["plugins"])
+
+OAUTH_CALLBACK_PATH = "/api/plugins/oauth/callback"
+
+
+class InstallBody(BaseModel):
+    id: str = ""
+    url: str = ""
+
+
+class EnabledBody(BaseModel):
+    enabled: bool
+
+
+class CredentialsBody(BaseModel):
+    values: dict[str, Optional[str]] = Field(default_factory=dict)
+    clear: list[str] = Field(default_factory=list)
+    verify: bool = True
+
+
+class SourcesBody(BaseModel):
+    sources: list[str] = Field(default_factory=list)
+
+
+class InvokeBody(BaseModel):
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+def _fail(exc: PluginError) -> HTTPException:
+    return HTTPException(exc.status, str(exc))
+
+
+def _public(plugin: InstalledPlugin, *, detail: bool = False) -> dict[str, Any]:
+    out = {
+        **plugin.manifest.public(),
+        "enabled": plugin.enabled,
+        "source": plugin.state.get("source", ""),
+        "origin": plugin.state.get("origin", ""),
+        "installed_at": plugin.state.get("installed_at"),
+        "updated_at": plugin.state.get("updated_at"),
+        "icon": icon_data_uri(plugin.path, plugin.manifest),
+        "credential_status": credential_status(plugin),
+        "agent_tools": [plugin.manifest.tool_name(t.name) for t in plugin.manifest.tools],
+    }
+    if detail:
+        out["readme"] = readme_text(plugin.path)
+    return out
+
+
+@router.get("")
+def api_plugins() -> list[dict[str, Any]]:
+    return [_public(p) for p in list_installed()]
+
+
+@router.get("/marketplace")
+def api_marketplace(refresh: bool = False) -> dict[str, Any]:
+    return marketplace.catalog(refresh=refresh)
+
+
+@router.put("/marketplace/sources")
+def api_marketplace_sources(body: SourcesBody) -> dict[str, Any]:
+    try:
+        marketplace.set_sources(body.sources)
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    return marketplace.catalog(refresh=True)
+
+
+@router.post("/install")
+def api_install(body: InstallBody) -> dict[str, Any]:
+    try:
+        if body.id.strip():
+            plugin = marketplace.install_from_marketplace(body.id.strip())
+        elif body.url.strip():
+            raw = download_package(body.url.strip())
+            plugin = install_from_zip(raw, source="url", origin=body.url.strip())
+        else:
+            raise PluginError("需要提供市场里的插件 id 或插件包下载地址")
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    return _public(plugin, detail=True)
+
+
+@router.post("/upload")
+async def api_upload(file: UploadFile = File(...)) -> dict[str, Any]:
+    raw = await file.read()
+    try:
+        plugin = install_from_zip(raw, source="upload", origin=file.filename or "")
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    return _public(plugin, detail=True)
+
+
+@router.get("/oauth/callback", response_class=HTMLResponse)
+def api_oauth_callback(state: str = "", code: str = "", error: str = "") -> HTMLResponse:
+    ok = False
+    try:
+        if error:
+            raise PluginError(f"授权未完成：{error}")
+        result = oauth.complete(state, code)
+        ok = True
+        message = f"「{result['name']}」授权成功，可以关闭这个窗口回到 EdgeSidekick。"
+    except PluginError as exc:
+        message = str(exc)
+    color = "#16a34a" if ok else "#dc2626"
+    body = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>插件授权</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f8fafc;color:#0f172a">
+<div style="max-width:420px;padding:28px 32px;border-radius:16px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.08);text-align:center">
+<div style="font-size:40px;color:{color}">{'✓' if ok else '!'}</div>
+<p style="font-size:15px;line-height:1.6">{html.escape(message)}</p></div>
+<script>try{{window.opener&&window.opener.postMessage({{type:"sidekick-plugin-oauth",ok:{str(ok).lower()}}},"*")}}catch(e){{}}{'setTimeout(function(){window.close()},1500)' if ok else ''}</script>
+</body></html>"""
+    return HTMLResponse(body, status_code=200 if ok else 400)
+
+
+@router.get("/{plugin_id}")
+def api_plugin(plugin_id: str) -> dict[str, Any]:
+    try:
+        return _public(get_installed(plugin_id), detail=True)
+    except PluginError as exc:
+        raise _fail(exc) from exc
+
+
+@router.patch("/{plugin_id}")
+def api_plugin_enable(plugin_id: str, body: EnabledBody) -> dict[str, Any]:
+    try:
+        return _public(set_enabled(plugin_id, body.enabled))
+    except PluginError as exc:
+        raise _fail(exc) from exc
+
+
+@router.delete("/{plugin_id}")
+def api_plugin_delete(plugin_id: str) -> dict[str, Any]:
+    try:
+        uninstall(plugin_id)
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    return {"status": "ok"}
+
+
+@router.put("/{plugin_id}/credentials")
+def api_plugin_credentials(plugin_id: str, body: CredentialsBody) -> dict[str, Any]:
+    try:
+        plugin = set_credentials(plugin_id, dict(body.values), clear=list(body.clear))
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    out = _public(plugin)
+    if body.verify and out["credential_status"]["configured"]:
+        out["verify"] = verify_credentials(plugin_id)
+    return out
+
+
+@router.post("/{plugin_id}/verify")
+def api_plugin_verify(plugin_id: str) -> dict[str, Any]:
+    try:
+        return verify_credentials(plugin_id)
+    except PluginError as exc:
+        raise _fail(exc) from exc
+
+
+@router.post("/{plugin_id}/oauth/start")
+def api_plugin_oauth_start(plugin_id: str, request: Request) -> dict[str, str]:
+    redirect_uri = str(request.base_url).rstrip("/") + OAUTH_CALLBACK_PATH
+    try:
+        return oauth.start(plugin_id, redirect_uri, current_user())
+    except PluginError as exc:
+        raise _fail(exc) from exc
+
+
+@router.post("/{plugin_id}/tools/{tool}/invoke")
+def api_plugin_invoke(plugin_id: str, tool: str, body: InvokeBody) -> dict[str, Any]:
+    """Run one tool from the settings page, outside any chat."""
+    try:
+        return invoke_tool(plugin_id, tool, body.params)
+    except PluginError as exc:
+        raise _fail(exc) from exc

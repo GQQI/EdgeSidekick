@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Optional
 
+from ..runtime.browser_protocol import DomComponentHint, DomElementPayload, DomRect
 from .browser_sandbox_worker import _WORKER
 from .browser_sandbox_util import (
+    HOST_KIND,
     is_shallow_site_rewind,
     urls_match,
     _USER_WAIT_TIMEOUT,

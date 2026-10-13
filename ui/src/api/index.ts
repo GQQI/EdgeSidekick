@@ -4,3 +4,4 @@ export * from "./resources";
 export * from "./fsBrowser";
 export * from "./stream";
 export * from "./gitShell";
+export * from "./plugins";

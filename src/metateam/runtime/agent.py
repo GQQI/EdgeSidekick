@@ -71,6 +71,7 @@ from .review import run_review
 from ..services.skills import Skill, invalidate_skills_cache, load_skills
 from .tool_registry import drop_delegate_schemas, filter_readonly_schemas, skill_tool_name
 from .tools import ToolRegistry, build_registry
+from .tools.build import register_plugins_safely
 from .tools.support import _skill_as_tool
 
 PrintFn = Callable[[str], None]
@@ -87,20 +88,6 @@ class AgentResult:
     cancelled: bool = False
 
 
-_STALL_NUDGE = (
-    "Your previous generation stalled (no progress). "
-    "Continue the task now: call a tool or give a concise answer. "
-    "Do not restart a long silent thinking pass."
-)
-_FILE_RETRY_NUDGE = (
-    "The previous file tool returned ERROR or WARNING. "
-    "Do not treat that result as success. "
-    "If a write or replace was cut off or missing required fields, retry that "
-    "same tool with the exact filename and the complete arguments. "
-    "If the path does not exist, look it up or report it — do not invent a "
-    "file body, and do not repeat the same missing path. "
-    "If the error is about decoding, retry with encoding= set to another codec."
-)
 class Agent(
     AgentHistoryMixin,
     AgentExecuteMixin,
@@ -265,6 +252,8 @@ class Agent(
         self.registry.drop_skill_tools()
         for sk in self.skills:
             self.registry.register(_skill_as_tool(sk))
+        # Plugins installed or configured after this session started.
+        register_plugins_safely(self.registry)
 
     def _requested_skill_tool(self, text: str) -> str:
         raw = (text or "").strip()

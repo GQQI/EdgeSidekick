@@ -61,6 +61,8 @@ def _is_public_path(method: str, path: str) -> bool:
         "/api/auth/login",
         "/api/auth/register",
         "/api/auth/logout",
+        # Browser redirect from the OAuth provider; bound to the user by its one-time state.
+        "/api/plugins/oauth/callback",
     }:
         return True
     return False

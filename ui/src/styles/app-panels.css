@@ -337,6 +337,10 @@
   color: var(--ink);
 }
 
+.empty-greeting {
+  letter-spacing: 0.06em;
+}
+
 .empty-brand-sub {
   margin: 0;
   font-family: var(--sans);

@@ -1,6 +1,6 @@
 // @ts-nocheck — extracted send pipeline; deps typed loosely to preserve behavior.
 /** SocialShell send pipeline (group/DM turns). Factory keeps closures explicit. */
-import { browserAct, streamChat } from "../api";
+import { browserAct, fetchPlugins, streamChat } from "../api";
 import { loadLocale } from "../i18n";
 import { isWorkbenchLinkedAgent } from "./workbenchBridge";
 import {
@@ -135,6 +135,7 @@ import type { SocialSendDeps } from "./socialSendTypes";
 export type { SocialSendDeps } from "./socialSendTypes";
 import { createSocialRunOne } from "./socialSendRunOne";
 import { createSocialGroupLoop } from "./socialSendGroupLoop";
+import { connectedPluginDigest } from "./pluginDigest";
 import { runSocialSendWaves } from "./socialSendWaves";
 export function createSocialSend(deps: SocialSendDeps) {
   const {
@@ -414,10 +415,17 @@ export function createSocialSend(deps: SocialSendDeps) {
     abortByThreadRef.current[key] = ac;
     /** Set when we pause for the human — late stream deltas must not revive「思考中」. */
     let turnPaused = false;
+    // Shared by reference with the runner factories; a plain `let` would be
+    // captured by value when they are created.
+    const turnState: { turnPaused: boolean; freeReply: any; harnessPlan?: any; peerDiscuss?: any[]; status?: string; ended?: boolean } = {
+      turnPaused: false,
+      freeReply: null,
+    };
     const pauseForUserInput = (agentName: string, text: string, force = false): boolean => {
       if (ac.signal.aborted || turnPaused) return true;
       if (!force && !agentAsksForUserInput(text)) return false;
       turnPaused = true;
+      turnState.turnPaused = true;
       try {
         ac.abort();
       } catch {}
@@ -512,7 +520,7 @@ export function createSocialSend(deps: SocialSendDeps) {
     // Group messages always use the free-form reply loop (groupLoop.ts). No
     // router, no default pipeline; a pipeline runs only when the user asks.
     const freeGroupMode: boolean = view.kind === "group";
-    let freeStatus = freeGroupMode ? `${targets.length} 位成员已看到消息，正在各自判断要不要回复…` : "";
+    let freeStatus = freeGroupMode ? `${targets.length} 位成员已看到消息…` : "";
     /** Set while one member writes its reply inside the free-form loop. */
     let freeReply: null | {
       history: SocialChatMsg[];
@@ -658,13 +666,18 @@ export function createSocialSend(deps: SocialSendDeps) {
       // The status row is driven by lifecycle state, not a fixed member count.
       // It exposes both the current member and the members waiting to read the
       // same turn, while keeping actual answer bubbles independent.
-      const freeSpeaker = freeGroupMode ? slots.find((s) => s.streaming && s.stage === "executing") : undefined;
+      const freeSpeakers = freeGroupMode ? slots.filter((s) => s.streaming && s.stage === "executing") : [];
+      const freeSpeaker = freeSpeakers[0];
       const freeActivity = freeSpeaker ? String((freeSpeaker as { activityText?: string }).activityText || "").trim() : "";
-      const statusLabel = freeGroupMode
-        ? freeSpeaker
-          ? `${freeSpeaker.agent.name}${freeActivity ? `：${freeActivity}` : " 正在回复…"}`
-          : freeStatus
-        : groupTurnStatusLabel(
+      const replied = committedMsgs.some((m) => String(m.text || "").trim());
+      // "N 位成员已看到消息" is only the wait before the first reply. Once a
+      // bubble is on screen and nobody is still writing, the loader must go.
+      let statusLabel = "";
+      if (freeGroupMode && !turnState.ended) {
+        if (freeSpeakers.length > 1) statusLabel = `${freeSpeakers.map((s) => s.agent.name).join("、")} 正在同时处理…`;
+        else if (freeSpeaker) statusLabel = `${freeSpeaker.agent.name}${freeActivity ? `：${freeActivity}` : " 正在回复…"}`;
+        else if (!replied) statusLabel = turnState.status || freeStatus;
+      } else if (!freeGroupMode) statusLabel = groupTurnStatusLabel(
         slots.map((s) => ({
           name: s.agent.name,
           stage: s.stage,
@@ -741,7 +754,7 @@ export function createSocialSend(deps: SocialSendDeps) {
       }
     };
 
-    const runOne = createSocialRunOne({ ac, activeGroup, addressedNames, appendAgentMemory, applyAgentOutcome, applyStandingRules, browserHoldRef, browserUserClosedRef, buildGroupBrief, buildSocialBackendMessage, bumpWorkingEntry, chatWorkspacePath, cleanDisplayText, collectiveGreeting, commitSharedFileMessage, committedMsgs, coordinationAsksInText, currentWorkSite, directAnswerAgentId, directAnswerTurn, dmMemoryContext, doneTasksForExecution, extractOwnReply, formatAgentMemoryForPrompt, formatBoardForPrompt, formatHarnessContract, formatPeerDiscuss, freeReply, getDmActiveSession, getDmStreamNonce, groupId, groups, harnessPlan, harnessRepair, isNearDuplicateBubble, isStaleSend, isWorkbenchLinkedAgent, key, lightweightSocialTurn, liveBoard, mentionedIds, mergeExecutionTasks, messages, noteAgentActivity, onOpenBrowserUrl, onSessionId, onToast, optionalReply, paint, parseAgentDecision, parseStandingRules, patchStore, pauseForUserInput, peerDiscuss, raw, rememberWork, rewardNotesFor, rosterForPrompt, scheduleRequest, sessionId, setAgentLive, setBrowserCard, setCtx, setCtxByAgent, setGroupBoard, sharedFileFromToolEvent, soloSpeakerId, store, streamChat, stripAgentTags, summarizeReply, t, targets, text, threadKey, threadKeyRef, turn, turnPaused, uid, view, visibleReplyAfterJudge, yieldToForegroundDm });
+    const runOne = createSocialRunOne({ ac, activeGroup, addressedNames, appendAgentMemory, applyAgentOutcome, applyStandingRules, browserHoldRef, browserUserClosedRef, buildGroupBrief, buildSocialBackendMessage, bumpWorkingEntry, chatWorkspacePath, cleanDisplayText, collectiveGreeting, commitSharedFileMessage, committedMsgs, coordinationAsksInText, currentWorkSite, directAnswerAgentId, directAnswerTurn, dmMemoryContext, doneTasksForExecution, extractOwnReply, formatAgentMemoryForPrompt, formatBoardForPrompt, formatHarnessContract, formatPeerDiscuss, freeReply, getDmActiveSession, getDmStreamNonce, groupId, groups, harnessPlan, harnessRepair, isNearDuplicateBubble, isStaleSend, isWorkbenchLinkedAgent, key, lightweightSocialTurn, liveBoard, mentionedIds, mergeExecutionTasks, messages, noteAgentActivity, onOpenBrowserUrl, onSessionId, onToast, optionalReply, paint, parseAgentDecision, parseStandingRules, patchStore, pauseForUserInput, peerDiscuss, raw, rememberWork, rewardNotesFor, rosterForPrompt, scheduleRequest, sessionId, setAgentLive, setBrowserCard, setCtx, setCtxByAgent, setGroupBoard, sharedFileFromToolEvent, soloSpeakerId, store, streamChat, stripAgentTags, summarizeReply, t, targets, text, threadKey, threadKeyRef, turn, turnPaused, turnState, uid, view, visibleReplyAfterJudge, yieldToForegroundDm });
 
     const commitBoardFromSlots = (waveSlots: Slot[]) => {
       if (!groupId || !liveBoard) return;
@@ -792,7 +805,7 @@ export function createSocialSend(deps: SocialSendDeps) {
      * member decides reply / silent with the full history → one reply at a
      * time → repeat until a message gets no volunteer, a cap, or an abort.
      */
-    const runFreeGroupLoop = createSocialGroupLoop({ ac, attachments, buildReplyDecisionPrompt, chatWorkspacePath, cleanDisplayText, commitGroupMessage, commitRound, committedMsgs, confirmationText, currentWorkSite, defaultMaxAgentMessages, formatPipelineNotice, freeReply, freeStatus, groupId, harnessNotices, hist, input, isActiveAgentPhase, isStaleSend, liveBoard, loadLocale, messages, noteAgentActivity, paint, parseReplyDecision, patchStore, pauseForUserInput, raw, rosterForPrompt, runGroupConversation, runOne, setAgentLive, setGroupBoard, slots, streamChat, t, text, turn, turnPaused, uid, userMsg, visibleReplyAfterJudge });
+    const runFreeGroupLoop = createSocialGroupLoop({ pluginDigest: () => connectedPluginDigest(fetchPlugins), ac, attachments, buildReplyDecisionPrompt, chatWorkspacePath, cleanDisplayText, commitGroupMessage, commitRound, committedMsgs, confirmationText, currentWorkSite, getGroupBoard, defaultMaxAgentMessages, formatPipelineNotice, freeReply, freeStatus, groupId, harnessNotices, hist, input, isActiveAgentPhase, isStaleSend, liveBoard, loadLocale, messages, noteAgentActivity, paint, parseReplyDecision, patchStore, pauseForUserInput, raw, rosterForPrompt, runGroupConversation, runOne, setAgentLive, setGroupBoard, slots, streamChat, t, text, turn, turnPaused, turnState, uid, userMsg, visibleReplyAfterJudge });
 
     const currentHarnessDiagnosis = () => {
       if (!harnessPlan) return null;
@@ -819,9 +832,13 @@ export function createSocialSend(deps: SocialSendDeps) {
 
     try {
       if (freeGroupMode) {
-        await runFreeGroupLoop();
+        try {
+          await runFreeGroupLoop();
+        } finally {
+          turnState.ended = true;
+        }
       } else {
-        await runSocialSendWaves({ abortByThreadRef, abstractWorkflow, ac, activeGroup, agentAsksForUserInput, agents, agentsConfirmedUserTaskDone, appendRlTransition, applyHarnessOutcome, applyOutcome, browserHoldRef, buildSpeakJudgePrompt, canRunTasksInParallel, chatWorkspacePath, classifySituation, cleanDisplayText, collectiveGreeting, commitBoardFromSlots, commitGroupMessage, committedMsgs, confirmationText, currentHarnessDiagnosis, currentWorkSite, directAnswerTurn, discussHasOwner, dutyScore, ensureStrategy, executionRequested, extractNominees, findHandoffAgentIds, findPendingDiscussIds, flushSlotsToCommitted, formatGroupDiscussionMessage, formatHarnessNotice, greetingFallback, groupId, groups, harnessNotices, harnessPlan, harnessPrior, harnessRepair, harnessRepaired, hasUnfinishedActionCommitment, isActiveAgentPhase, isAuthorCallback, isCapabilityQuestion, isDiscussionRequest, isGroupGreeting, isLightweightSocialTurn, isNearDuplicateBubble, isStaleSend, isSuperseded, key, lightweightSocialTurn, liveBoard, loadLocale, maxReactionTurns, mentionedIds, messages, msgFingerprint, multiVoice, noteAgentActivity, optionalReply, paint, parseSpeakVerdict, patchStore, pauseForUserInput, peerDiscuss, planCollaboration, planReactionOrder, reactionFloor, resolveExecSlots, rosterForPrompt, runOne, scheduleRequest, setAgentLive, setBrowserCard, setBrowserFull, setBrowserMini, setBrowserOpen, setBusyThreads, shouldUseHarness, slots, soloSpeakerId, store, streamChat, t, targets, tasksClaimedInText, text, threadKey, threadKeyRef, turn, turnExclusive, turnPaused, uid, view, visibleReplyAfterJudge });
+        await runSocialSendWaves({ abortByThreadRef, abstractWorkflow, ac, activeGroup, agentAsksForUserInput, agents, agentsConfirmedUserTaskDone, appendRlTransition, applyHarnessOutcome, applyOutcome, browserHoldRef, buildSpeakJudgePrompt, canRunTasksInParallel, chatWorkspacePath, classifySituation, cleanDisplayText, collectiveGreeting, commitBoardFromSlots, commitGroupMessage, committedMsgs, confirmationText, currentHarnessDiagnosis, currentWorkSite, directAnswerTurn, discussHasOwner, dutyScore, ensureStrategy, executionRequested, extractNominees, findHandoffAgentIds, findPendingDiscussIds, flushSlotsToCommitted, formatGroupDiscussionMessage, formatHarnessNotice, greetingFallback, groupId, groups, harnessNotices, harnessPlan, harnessPrior, harnessRepair, harnessRepaired, hasUnfinishedActionCommitment, isActiveAgentPhase, isAuthorCallback, isCapabilityQuestion, isDiscussionRequest, isGroupGreeting, isLightweightSocialTurn, isNearDuplicateBubble, isStaleSend, isSuperseded, key, lightweightSocialTurn, liveBoard, loadLocale, maxReactionTurns, mentionedIds, messages, msgFingerprint, multiVoice, noteAgentActivity, optionalReply, paint, parseSpeakVerdict, patchStore, pauseForUserInput, peerDiscuss, planCollaboration, planReactionOrder, reactionFloor, resolveExecSlots, rosterForPrompt, runOne, scheduleRequest, setAgentLive, setBrowserCard, setBrowserFull, setBrowserMini, setBrowserOpen, setBusyThreads, shouldUseHarness, slots, soloSpeakerId, store, streamChat, t, targets, tasksClaimedInText, text, threadKey, threadKeyRef, turn, turnExclusive, turnPaused, turnState, uid, view, visibleReplyAfterJudge });
       }
       // Members who were never called must not stay on "reading" after the turn ends.
       for (const s of slots) {
@@ -855,14 +872,38 @@ export function createSocialSend(deps: SocialSendDeps) {
           ]);
         }
       } catch {}
+    } catch (err) {
+      console.error(err);
+      if (freeGroupMode && !isStaleSend()) {
+        harnessNotices.push({
+          id: uid("sys"),
+          role: "system",
+          text: `这一轮出错了（${String((err as Error)?.message || err).slice(0, 200)}），请重试。`,
+          at: Date.now(),
+          collaboration: true,
+        });
+        try {
+          paint();
+        } catch {}
+      }
+    } finally {
+      if (!isStaleSend()) {
+        turnState.ended = true;
+        setStore((prev) => {
+          const rows = prev.threads[key] || [];
+          if (!rows.some((row) => row.readingStatus)) return prev;
+          const next = structuredClone(prev);
+          next.threads[key] = rows.filter((row) => !row.readingStatus);
+          saveSocialStore(next);
+          return next;
+        });
+      }
       setBusyThreads((prev) => {
         const n = { ...prev };
         delete n[key];
         return n;
       });
       if (abortByThreadRef.current[key] === ac) delete abortByThreadRef.current[key];
-    } catch (err) {
-      console.error(err);
     }
   };
 }

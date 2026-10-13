@@ -19,6 +19,8 @@ from ..runtime.browser_protocol import (
     DomRect,
 )
 
+HOST_KIND = "cdp_playwright"
+
 _URL_EXTRACT_RE = re.compile(
     r"https?://[A-Za-z0-9][-A-Za-z0-9._~:/?#\[\]@!$&'()+,;=%]*",
     re.IGNORECASE,

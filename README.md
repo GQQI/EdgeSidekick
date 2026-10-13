@@ -66,6 +66,28 @@ python3 main.py
 
 Open **http://127.0.0.1:8787** → pick a workspace folder → Settings → Model → API key.
 
+### Offline demo without an API key
+
+`scripts/mock_llm.py` is an OpenAI-compatible offline demo model that understands the Social-mode planner and member prompts, so you can try the full group collaboration flow without a key (for real use, configure your own model in Settings → Model):
+
+```bash
+python scripts/mock_llm.py --port 18931
+SIDEKICK_DATA_DIR=/tmp/sidekick-demo META_PORT=18787 \
+OPENAI_API_KEY=mock OPENAI_BASE_URL=http://127.0.0.1:18931/v1 OPENAI_MODEL=mock-team \
+python main.py
+```
+
+Then open http://127.0.0.1:18787. After changing the UI, rebuild it with `cd ui && npm install && npm run build`.
+
+If you save a model in Settings → Model, that account uses it instead of the environment variables. Leaving its API key empty switches to Demo mode, where every member only replies "【Demo 模式】…"; when pointing at the mock model, any key (e.g. `mock`) works.
+
+### Tests
+
+```bash
+python -m pytest tests -q                 # plugin system
+cd ui && npm test && npm run typecheck    # Social-mode orchestration and other UI logic
+```
+
 ### Desktop app
 
 ```powershell
@@ -97,8 +119,8 @@ Installed app data defaults to %APPDATA%\EdgeSidekick\ (Windows) or ~/.config/Ed
 **1. Workbench**  
 Streaming chat (SSE), attachments, stop / edit-resend, content search, and a detail panel tied to your workspace files.
 
-**2. Social mode**  
-Session-oriented chat UI alongside the classic workbench — same local runtime, different layout for conversation-first use.
+**2. Social mode with multi-agent collaboration**  
+Every group message is first planned by your main model: one member answers, members split work in parallel, hand off in a pipeline, or discuss from different angles — each with a concrete task and deliverable, plus review and a final synthesis when useful. A plan card shows who does what; failures are reassigned and explained so someone always answers. See [docs/multi-agent-collaboration.md](./docs/multi-agent-collaboration.md) (Chinese).
 
 **3. Browser sandbox**  
 Desktop: live Electron BrowserView. Web: Playwright-backed preview. Select Mode sends DOM picks to the agent; agents can use browser_* tools.
@@ -112,10 +134,13 @@ One-click Electron app with embedded preview, packaging for Windows and Kylin/Li
 **6. MCP**  
 Discover and connect Model Context Protocol servers from Settings → MCP (META_MCP_ENABLED=1).
 
-**7. Light / dark + bilingual UI**  
+**7. Plugin marketplace (GitHub / GitLab / Gmail …)**  
+Install third-party plugin packages from Settings → Plugins (built-in marketplace, zip upload, URL, or your own marketplace index). Plugins run in a separate process, credentials are encrypted at rest, and write actions ask for confirmation. Package format: [docs/plugins.md](./docs/plugins.md) (Chinese).
+
+**8. Light / dark + bilingual UI**  
 Chinese / English interface and light / dark themes (local preference keys).
 
-**8. Local-first**  
+**9. Local-first**  
 History, Memory (MEMORY.md), workspaces, and configs stay on disk you control. Bring your own model API (OpenAI-compatible, DeepSeek, Ollama, etc.).
 
 ### Slash commands
@@ -127,7 +152,7 @@ History, Memory (MEMORY.md), workspaces, and configs stay on disk you control. B
 - **From source** — follow [Quick start](#quick-start).
 - **Desktop** — start-desktop.bat or packaged installers under desktop/dist/.
 - **Website & handbook** — [GitHub Pages](https://gqqi.github.io/EdgeSidekick/), [User guide (EN)](https://gqqi.github.io/EdgeSidekick/docs/user-guide.en.html) / [中文手册](https://gqqi.github.io/EdgeSidekick/docs/user-guide.zh.html).
-- **Docs** — [docs/browser-sandbox.md](./docs/browser-sandbox.md), [docs/book-to-skill.md](./docs/book-to-skill.md).
+- **Docs** — [docs/multi-agent-collaboration.md](./docs/multi-agent-collaboration.md), [docs/plugins.md](./docs/plugins.md), [docs/browser-sandbox.md](./docs/browser-sandbox.md), [docs/book-to-skill.md](./docs/book-to-skill.md).
 
 ## Architecture (short)
 

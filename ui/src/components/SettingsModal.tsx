@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { McpSettings } from "./McpSettings";
+import { PluginSettings } from "./PluginSettings";
 import { SkillSettings } from "./SkillSettings";
 import { ModelSettings } from "./ModelSettings";
 import { IconMoon, IconSun } from "./icons";
@@ -132,6 +133,7 @@ export function SettingsModal({
               ["safety", t("tabSafety")],
               ["model", t("tabModel")],
               ["skills", t("tabSkills")],
+              ["plugins", "插件"],
               ["mcp", "MCP"],
               ["appearance", t("tabAppearance")],
               ["runtime", t("tabRuntime")],
@@ -317,6 +319,7 @@ export function SettingsModal({
             <SkillSettings t={t} onToast={onToast} onChanged={onSkillsChanged} />
           )}
 
+          {settingsTab === "plugins" && <PluginSettings onToast={onToast} />}
           {settingsTab === "mcp" && <McpSettings onToast={onToast} />}
 
           {settingsTab === "account" && (

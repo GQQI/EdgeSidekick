@@ -717,3 +717,88 @@ html[data-theme="dark"] .social-memory-list li { background: #1a212b; border-col
   gap: 8px;
 }
 
+
+/* Orchestrator plan card */
+.social-msg.system.social-plan-row {
+  align-self: stretch;
+  max-width: min(640px, 100%);
+  margin: 6px auto;
+  width: 100%;
+  text-align: left;
+}
+.collab-plan-card {
+  border: 1px solid color-mix(in srgb, var(--social-accent, #2563eb) 22%, var(--line, #e2e8f0));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--social-accent, #2563eb) 5%, var(--panel, #fff));
+  color: var(--text, #0f172a);
+  font-size: 12.5px;
+  overflow: hidden;
+}
+.collab-plan-head {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.collab-plan-head:focus-visible { outline: 2px solid var(--social-accent, #2563eb); outline-offset: -2px; }
+.collab-plan-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--social-accent, #2563eb);
+  background: color-mix(in srgb, var(--social-accent, #2563eb) 12%, transparent);
+}
+.collab-plan-goal {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.collab-plan-toggle { flex: none; color: var(--muted, #64748b); font-size: 11.5px; }
+.collab-plan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 8px;
+  display: grid;
+  gap: 6px;
+}
+.collab-plan-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  border: 1px solid color-mix(in srgb, var(--line, #e2e8f0) 80%, transparent);
+}
+.collab-plan-arrow { color: var(--social-accent, #2563eb); font-weight: 700; }
+.collab-plan-who { font-weight: 600; }
+.collab-plan-task { flex: 1; min-width: 12em; }
+.collab-plan-expected { width: 100%; color: var(--muted, #64748b); font-size: 11.5px; }
+.collab-plan-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 12px 8px;
+  color: var(--muted, #64748b);
+}
+.collab-plan-reason {
+  padding: 6px 12px 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--line, #e2e8f0) 90%, transparent);
+  color: var(--muted, #64748b);
+  font-size: 11.5px;
+}
+@media (max-width: 640px) {
+  .collab-plan-goal { white-space: normal; }
+  .collab-plan-task { min-width: 0; }
+}

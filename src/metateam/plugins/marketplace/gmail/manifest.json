@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "id": "gmail",
+  "name": "Gmail",
+  "version": "1.0.0",
+  "author": "EdgeSidekick",
+  "description": "按 Gmail 搜索语法查找邮件、阅读邮件与会话、查看标签，并能起草或发送邮件（发送前会请你确认）。",
+  "category": "办公沟通",
+  "tags": ["email", "google", "邮件"],
+  "homepage": "https://developers.google.com/gmail/api",
+  "icon": "icon.svg",
+  "entry": "main.py",
+  "timeout": 40,
+  "network": ["gmail.googleapis.com", "oauth2.googleapis.com"],
+  "credentials": [
+    {
+      "name": "client_id",
+      "label": "OAuth Client ID",
+      "type": "text",
+      "required": true,
+      "placeholder": "xxxx.apps.googleusercontent.com",
+      "help": "Google Cloud 控制台 → API 和服务 → 凭据 → 创建 OAuth 客户端 ID，应用类型选「桌面应用」，并启用 Gmail API。",
+      "url": "https://console.cloud.google.com/apis/credentials"
+    },
+    {
+      "name": "client_secret",
+      "label": "OAuth Client Secret",
+      "type": "secret",
+      "required": true
+    },
+    {
+      "name": "refresh_token",
+      "label": "Refresh token",
+      "type": "secret",
+      "required": true,
+      "help": "填好 Client ID/Secret 后点「用 Google 授权」自动获取；也可以从 OAuth Playground 手动粘贴。"
+    }
+  ],
+  "oauth": {
+    "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+    "token_url": "https://oauth2.googleapis.com/token",
+    "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
+    "client_id_field": "client_id",
+    "client_secret_field": "client_secret",
+    "token_field": "refresh_token",
+    "extra_params": {"access_type": "offline", "prompt": "consent"},
+    "label": "用 Google 授权"
+  },
+  "tools": [
+    {
+      "name": "search_messages",
+      "label": "搜索邮件",
+      "readonly": true,
+      "description": "Search the mailbox with Gmail search syntax, e.g. 'is:unread newer_than:2d', 'from:alice@example.com has:attachment', 'subject:invoice after:2026/01/01'. Returns id, thread id, from, to, subject, date and snippet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Gmail search query (empty = latest inbox mail)"},
+          "limit": {"type": "integer", "description": "Max results, 1-25 (default 10)"}
+        }
+      }
+    },
+    {
+      "name": "read_message",
+      "label": "阅读邮件",
+      "readonly": true,
+      "description": "Read one message: headers, plain-text body (HTML converted to text) and attachment names.",
+      "parameters": {
+        "type": "object",
+        "properties": {"id": {"type": "string", "description": "Message id from search_messages"}},
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "read_thread",
+      "label": "阅读会话",
+      "readonly": true,
+      "description": "Read a whole conversation thread in order, with each message's sender, date and body.",
+      "parameters": {
+        "type": "object",
+        "properties": {"thread_id": {"type": "string"}},
+        "required": ["thread_id"]
+      }
+    },
+    {
+      "name": "list_labels",
+      "label": "标签列表",
+      "readonly": true,
+      "description": "List mailbox labels with unread counts.",
+      "parameters": {"type": "object", "properties": {}}
+    },
+    {
+      "name": "create_draft",
+      "label": "起草邮件",
+      "readonly": false,
+      "description": "Create a draft (not sent). Pass reply_to_id to draft a reply in that message's thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {"type": "string", "description": "Comma-separated recipients"},
+          "subject": {"type": "string"},
+          "body": {"type": "string", "description": "Plain-text body"},
+          "cc": {"type": "string"},
+          "reply_to_id": {"type": "string", "description": "Message id being replied to"}
+        },
+        "required": ["to", "body"]
+      }
+    },
+    {
+      "name": "send_message",
+      "label": "发送邮件",
+      "readonly": false,
+      "description": "Send an email immediately. Only call after the user explicitly confirmed recipients, subject and body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {"type": "string", "description": "Comma-separated recipients"},
+          "subject": {"type": "string"},
+          "body": {"type": "string", "description": "Plain-text body"},
+          "cc": {"type": "string"},
+          "reply_to_id": {"type": "string", "description": "Message id being replied to"}
+        },
+        "required": ["to", "body"]
+      }
+    }
+  ]
+}

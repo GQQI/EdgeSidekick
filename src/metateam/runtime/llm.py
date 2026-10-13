@@ -18,7 +18,12 @@ from .text_tool_calls import (
 )
 from ..core.config import Settings
 from ..core.logutil import get_logger
-from .llm_extract import extract_content_text, extract_message_text, extract_reasoning_text
+from .llm_extract import (
+    _choice_reasoning_extras,
+    extract_content_text,
+    extract_message_text,
+    extract_reasoning_text,
+)
 from .llm_args import align_tool_chains, parse_tool_args
 
 _log = get_logger("metateam.llm")

@@ -1,0 +1,171 @@
+{
+  "schema": 1,
+  "id": "github",
+  "name": "GitHub",
+  "version": "1.0.0",
+  "author": "EdgeSidekick",
+  "description": "搜索仓库与 Issue、阅读 PR 与代码文件、查看提交记录，并能创建 Issue 和发表评论。支持 GitHub Enterprise。",
+  "category": "开发协作",
+  "tags": ["git", "issue", "pull request", "code review"],
+  "homepage": "https://docs.github.com/rest",
+  "icon": "icon.svg",
+  "entry": "main.py",
+  "timeout": 30,
+  "network": ["api.github.com"],
+  "credentials": [
+    {
+      "name": "token",
+      "label": "Personal access token",
+      "type": "secret",
+      "required": true,
+      "placeholder": "github_pat_… 或 ghp_…",
+      "help": "建议使用 Fine-grained token，只授予需要的仓库；读 Issue/PR 需 Issues、Pull requests、Contents 的只读权限，创建 Issue/评论需对应写权限。",
+      "url": "https://github.com/settings/personal-access-tokens/new"
+    },
+    {
+      "name": "api_base",
+      "label": "API 地址",
+      "type": "text",
+      "required": false,
+      "default": "https://api.github.com",
+      "help": "GitHub Enterprise 填 https://你的域名/api/v3"
+    }
+  ],
+  "tools": [
+    {
+      "name": "search_repositories",
+      "label": "搜索仓库",
+      "readonly": true,
+      "description": "Search GitHub repositories with GitHub search syntax (e.g. 'fastapi language:python stars:>1000', 'org:my-org topic:cli'). Returns name, description, stars, default branch and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "GitHub repository search query"},
+          "limit": {"type": "integer", "description": "Max results, 1-30 (default 10)"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "search_issues",
+      "label": "搜索 Issue / PR",
+      "readonly": true,
+      "description": "Search issues and pull requests with GitHub search syntax, e.g. 'repo:owner/name is:open is:issue label:bug', 'is:pr author:@me is:open'. Returns number, title, state, author, labels and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "GitHub issue search query"},
+          "limit": {"type": "integer", "description": "Max results, 1-30 (default 10)"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "get_issue",
+      "label": "读取 Issue",
+      "readonly": true,
+      "description": "Read one issue or pull request conversation: body plus the latest comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string", "description": "owner/name"},
+          "number": {"type": "integer", "description": "Issue or PR number"},
+          "comments": {"type": "integer", "description": "How many latest comments to include (default 10, max 30)"}
+        },
+        "required": ["repo", "number"]
+      }
+    },
+    {
+      "name": "list_pull_requests",
+      "label": "列出 PR",
+      "readonly": true,
+      "description": "List pull requests of a repository.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string", "description": "owner/name"},
+          "state": {"type": "string", "enum": ["open", "closed", "all"], "description": "default open"},
+          "limit": {"type": "integer", "description": "Max results, 1-30 (default 10)"}
+        },
+        "required": ["repo"]
+      }
+    },
+    {
+      "name": "get_pull_request",
+      "label": "读取 PR 改动",
+      "readonly": true,
+      "description": "Read a pull request: description, branches, review state and changed files with patches (truncated). Use for code review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string", "description": "owner/name"},
+          "number": {"type": "integer", "description": "PR number"},
+          "include_patch": {"type": "boolean", "description": "Include per-file diff hunks (default true)"}
+        },
+        "required": ["repo", "number"]
+      }
+    },
+    {
+      "name": "get_file",
+      "label": "读取文件",
+      "readonly": true,
+      "description": "Read a file (or list a directory) from a repository at a branch, tag or commit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string", "description": "owner/name"},
+          "path": {"type": "string", "description": "Path inside the repo; empty for the root directory"},
+          "ref": {"type": "string", "description": "Branch, tag or commit SHA (default: the default branch)"}
+        },
+        "required": ["repo"]
+      }
+    },
+    {
+      "name": "list_commits",
+      "label": "提交记录",
+      "readonly": true,
+      "description": "List recent commits of a repository, optionally for a branch or a path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string", "description": "owner/name"},
+          "ref": {"type": "string", "description": "Branch or SHA"},
+          "path": {"type": "string", "description": "Only commits touching this path"},
+          "limit": {"type": "integer", "description": "Max results, 1-30 (default 10)"}
+        },
+        "required": ["repo"]
+      }
+    },
+    {
+      "name": "create_issue",
+      "label": "创建 Issue",
+      "readonly": false,
+      "description": "Create an issue in a repository. Confirm title and body with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string", "description": "owner/name"},
+          "title": {"type": "string"},
+          "body": {"type": "string", "description": "Markdown body"},
+          "labels": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["repo", "title"]
+      }
+    },
+    {
+      "name": "comment_issue",
+      "label": "发表评论",
+      "readonly": false,
+      "description": "Add a comment to an issue or pull request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string", "description": "owner/name"},
+          "number": {"type": "integer"},
+          "body": {"type": "string", "description": "Markdown comment"}
+        },
+        "required": ["repo", "number", "body"]
+      }
+    }
+  ]
+}

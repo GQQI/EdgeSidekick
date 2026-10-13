@@ -1,0 +1,158 @@
+{
+  "schema": 1,
+  "id": "gitlab",
+  "name": "GitLab",
+  "version": "1.0.0",
+  "author": "EdgeSidekick",
+  "description": "查询项目、Issue 和合并请求（MR），阅读 MR 改动与仓库文件，并能创建 Issue、发表评论。支持 gitlab.com 与自建 GitLab。",
+  "category": "开发协作",
+  "tags": ["git", "issue", "merge request", "code review", "self-hosted"],
+  "homepage": "https://docs.gitlab.com/ee/api/rest/",
+  "icon": "icon.svg",
+  "entry": "main.py",
+  "timeout": 30,
+  "network": ["gitlab.com"],
+  "credentials": [
+    {
+      "name": "token",
+      "label": "Access token",
+      "type": "secret",
+      "required": true,
+      "placeholder": "glpat-…",
+      "help": "个人或项目访问令牌。只读用 read_api；创建 Issue/评论需要 api 权限。",
+      "url": "https://gitlab.com/-/user_settings/personal_access_tokens"
+    },
+    {
+      "name": "base_url",
+      "label": "GitLab 地址",
+      "type": "text",
+      "required": false,
+      "default": "https://gitlab.com",
+      "help": "自建 GitLab 填实例根地址，例如 https://git.example.com"
+    }
+  ],
+  "tools": [
+    {
+      "name": "search_projects",
+      "label": "搜索项目",
+      "readonly": true,
+      "description": "Search GitLab projects you can access by name/path. Returns path_with_namespace (use it as 'project' in other tools), description, default branch and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Text to match in project name or path"},
+          "limit": {"type": "integer", "description": "Max results, 1-30 (default 10)"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "list_issues",
+      "label": "列出 Issue",
+      "readonly": true,
+      "description": "List issues of a project, or across all your projects when project is omitted. Filter by state, labels, search text or assignee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string", "description": "group/project path or numeric id; omit for all accessible projects"},
+          "state": {"type": "string", "enum": ["opened", "closed", "all"], "description": "default opened"},
+          "labels": {"type": "string", "description": "Comma-separated label names"},
+          "search": {"type": "string", "description": "Search in title and description"},
+          "assigned_to_me": {"type": "boolean"},
+          "limit": {"type": "integer", "description": "Max results, 1-30 (default 10)"}
+        }
+      }
+    },
+    {
+      "name": "get_issue",
+      "label": "读取 Issue",
+      "readonly": true,
+      "description": "Read one issue with its description and latest notes (comments).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string", "description": "group/project path or numeric id"},
+          "iid": {"type": "integer", "description": "Issue IID (the number shown in the project)"}
+        },
+        "required": ["project", "iid"]
+      }
+    },
+    {
+      "name": "list_merge_requests",
+      "label": "列出 MR",
+      "readonly": true,
+      "description": "List merge requests of a project, or ones assigned to / created by you when project is omitted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string", "description": "group/project path or numeric id"},
+          "state": {"type": "string", "enum": ["opened", "closed", "merged", "all"], "description": "default opened"},
+          "scope": {"type": "string", "enum": ["created_by_me", "assigned_to_me", "all"], "description": "Used when project is omitted (default assigned_to_me)"},
+          "limit": {"type": "integer", "description": "Max results, 1-30 (default 10)"}
+        }
+      }
+    },
+    {
+      "name": "get_merge_request",
+      "label": "读取 MR 改动",
+      "readonly": true,
+      "description": "Read a merge request: description, branches, pipeline status and changed files with diff hunks (truncated). Use for code review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string", "description": "group/project path or numeric id"},
+          "iid": {"type": "integer", "description": "MR IID"},
+          "include_diff": {"type": "boolean", "description": "Include per-file diffs (default true)"}
+        },
+        "required": ["project", "iid"]
+      }
+    },
+    {
+      "name": "get_file",
+      "label": "读取文件",
+      "readonly": true,
+      "description": "Read a file from a project repository at a branch, tag or commit; or list a directory when path is a folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string", "description": "group/project path or numeric id"},
+          "path": {"type": "string", "description": "File or directory path; empty for root"},
+          "ref": {"type": "string", "description": "Branch, tag or SHA (default: the default branch)"}
+        },
+        "required": ["project"]
+      }
+    },
+    {
+      "name": "create_issue",
+      "label": "创建 Issue",
+      "readonly": false,
+      "description": "Create an issue in a project. Confirm title and description with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string", "description": "group/project path or numeric id"},
+          "title": {"type": "string"},
+          "description": {"type": "string", "description": "Markdown"},
+          "labels": {"type": "string", "description": "Comma-separated label names"}
+        },
+        "required": ["project", "title"]
+      }
+    },
+    {
+      "name": "add_comment",
+      "label": "发表评论",
+      "readonly": false,
+      "description": "Add a note (comment) to an issue or merge request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string", "description": "group/project path or numeric id"},
+          "target": {"type": "string", "enum": ["issue", "merge_request"]},
+          "iid": {"type": "integer"},
+          "body": {"type": "string", "description": "Markdown comment"}
+        },
+        "required": ["project", "target", "iid", "body"]
+      }
+    }
+  ]
+}

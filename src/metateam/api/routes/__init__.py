@@ -9,6 +9,7 @@ from . import (
     chat,
     files,
     git,
+    plugins,
     schedules,
     sessions,
     shell_jobs,
@@ -31,3 +32,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(browser.router)
     app.include_router(shell_jobs.router)
     app.include_router(schedules.router)
+    app.include_router(plugins.router)

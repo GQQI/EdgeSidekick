@@ -16,6 +16,8 @@ class Tool:
     handler: Callable[..., str]
     parallel_safe: bool = False
     requires_approval: bool = False
+    # Observation-only tool outside the builtin READONLY_TOOLS list (e.g. a plugin read).
+    readonly: bool = False
 
     def openai_schema(self) -> dict[str, Any]:
         return {
@@ -40,6 +42,11 @@ class ToolRegistry:
             if name.startswith("skill_") and name != "skill_save":
                 self._tools.pop(name, None)
 
+    def drop_prefix(self, prefix: str) -> None:
+        for name in list(self._tools):
+            if name.startswith(prefix):
+                self._tools.pop(name, None)
+
     def get(self, name: str) -> Optional[Tool]:
         return self._tools.get(name)
 
@@ -55,6 +62,10 @@ class ToolRegistry:
 
     def names(self) -> list[str]:
         return sorted(self._tools.keys())
+
+    def readonly_names(self) -> frozenset[str]:
+        extra = {t.name for t in self._tools.values() if t.readonly}
+        return READONLY_TOOLS | extra if extra else READONLY_TOOLS
 
 
 # Observation-only tools kept when a turn runs with disable_tools (e.g. the
@@ -107,12 +118,16 @@ def drop_delegate_schemas(schemas: list[dict[str, Any]]) -> list[dict[str, Any]]
     return out
 
 
-def filter_readonly_schemas(schemas: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep only READONLY_TOOLS entries from OpenAI-style tool schemas."""
+def filter_readonly_schemas(
+    schemas: list[dict[str, Any]],
+    allowed: Optional[frozenset[str]] = None,
+) -> list[dict[str, Any]]:
+    """Keep only read-only entries (READONLY_TOOLS unless ``allowed`` is given)."""
+    keep = allowed if allowed is not None else READONLY_TOOLS
     out: list[dict[str, Any]] = []
     for schema in schemas or []:
         name = str(((schema or {}).get("function") or {}).get("name") or "")
-        if name in READONLY_TOOLS:
+        if name in keep:
             out.append(schema)
     return out
 

@@ -627,8 +627,9 @@ const SILENCE_ONLY =
 
 /** After the judge already said speak, a later silence token is not a reply. */
 export function visibleReplyAfterJudge(raw: string): string {
-  const text = cleanDisplayText(raw).replace(/\s+/g, " ").trim();
-  if (!text || SILENCE_ONLY.test(text)) return "";
+  const text = cleanDisplayText(raw).trim();
+  const flat = text.replace(/\s+/g, " ").replace(/[。.!！]+$/, "").trim();
+  if (!flat || SILENCE_ONLY.test(flat)) return "";
   return text;
 }
 

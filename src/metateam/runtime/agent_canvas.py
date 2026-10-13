@@ -140,6 +140,7 @@ class AgentCanvasMixin:
                     f"ERROR: subagent timed out after {int(timeout)}s "
                     "(stuck thinking). Parent should continue with other results."
                 )
+                from .agent import AgentResult  # agent.py imports this mixin
                 return AgentResult(
                     text=text,
                     messages=result.messages,
@@ -149,6 +150,7 @@ class AgentCanvasMixin:
                 )
             except FuturesTimeout:
                 child._abandoned = True
+                from .agent import AgentResult  # agent.py imports this mixin
                 return AgentResult(
                     text=(
                         f"ERROR: subagent timed out after {int(timeout)}s "

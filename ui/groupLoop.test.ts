@@ -410,16 +410,25 @@ test("reply prompt for free chat says no fixed order / no pipeline and carries t
   assert.match(step, /下一步由「审码」/);
 });
 
-test("SocialShell routes every group message through the free-form loop", () => {
-  const src = readFileSync(new URL("./src/social/SocialShell.tsx", import.meta.url), "utf8");
-  assert.match(src, /const freeGroupMode: boolean = view\.kind === "group";/);
-  assert.match(src, /if \(freeGroupMode\) \{\s*await runFreeGroupLoop\(\);/);
-  // The only collaboration notice the group loop can add is the explicit pipeline one (or the cap note).
-  const loop = src.slice(src.indexOf("const runFreeGroupLoop"), src.indexOf("const currentHarnessDiagnosis"));
-  assert.ok(loop.length > 0);
-  assert.doesNotMatch(loop, /formatHarnessNotice|planCollaboration/);
-  assert.match(loop, /if \(event\.intent\.pipeline\) \{[\s\S]{0,120}harnessNotices\.push/);
-  assert.match(loop, /analyzeTurn/);
+test("group messages are driven by the collaboration orchestrator", () => {
+  const send = readFileSync(new URL("./src/social/socialSend.ts", import.meta.url), "utf8");
+  assert.match(send, /const freeGroupMode: boolean = view\.kind === "group";/);
+  assert.match(send, /if \(freeGroupMode\) \{\s*try \{\s*await runFreeGroupLoop\(\);/);
+  const loop = readFileSync(new URL("./src/social/socialSendGroupLoop.ts", import.meta.url), "utf8");
+  assert.match(loop, /runCollaboration\(/);
+  assert.doesNotMatch(loop, /runGroupConversation\(/);
+  // Each member gets its own brief on the slot, not a shared captured variable.
+  assert.match(loop, /s\._freeReply = \{/);
+});
+
+test("a finished or failed group turn clears the status pill and the busy flag", () => {
+  const send = readFileSync(new URL("./src/social/socialSend.ts", import.meta.url), "utf8");
+  // "N 位成员已看到消息" must not come back after a reply is already on screen.
+  assert.match(send, /else if \(!replied\) statusLabel = turnState\.status \|\| freeStatus/);
+  assert.match(send, /if \(!rows\.some\(\(row\) => row\.readingStatus\)\) return prev/);
+  assert.match(send, /\} finally \{\s*if \(!isStaleSend\(\)\) \{\s*turnState\.ended = true;/);
+  const loop = readFileSync(new URL("./src/social/socialSendGroupLoop.ts", import.meta.url), "utf8");
+  assert.match(loop, /turnState\.ended = true;\s*turnState\.status = "";/);
 });
 
 test("audience=everyone (from the analyzer): each member answers once even if the judge stays silent", async () => {

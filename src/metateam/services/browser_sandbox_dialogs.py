@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from .browser_sandbox_worker import _WORKER
 from .browser_sandbox_util import (
+    HOST_KIND,
     _HUMAN_CONFIRM_S,
     _DIALOG_HOOK_JS,
     dialog_result_note,

@@ -66,6 +66,28 @@ python3 main.py
 
 打开 **http://127.0.0.1:8787** → 选择工作区文件夹 → 设置 → 模型 → API Key。
 
+### 无 API Key 的离线演示
+
+`scripts/mock_llm.py` 是一个 OpenAI 兼容的离线演示模型，能识别会话版的编排和成员提示词，方便在没有 Key 时体验和验证完整的群聊协作流程（真实使用请在「设置 → 模型」配置你自己的模型）：
+
+```bash
+python scripts/mock_llm.py --port 18931
+SIDEKICK_DATA_DIR=/tmp/sidekick-demo META_PORT=18787 \
+OPENAI_API_KEY=mock OPENAI_BASE_URL=http://127.0.0.1:18931/v1 OPENAI_MODEL=mock-team \
+python main.py
+```
+
+打开 http://127.0.0.1:18787 。修改 UI 后需要先 `cd ui && npm install && npm run build`。
+
+如果你在「设置 → 模型」里另存了模型配置，账号会改用那份配置；API Key 留空会进入 Demo 模式，所有成员只会回复「【Demo 模式】…」。指向 mock 模型时随便填一个 Key（如 `mock`）即可。
+
+### 测试
+
+```bash
+python -m pytest tests -q          # 插件系统
+cd ui && npm test && npm run typecheck   # 会话版协作编排等前端逻辑
+```
+
 ### 桌面应用
 
 ```powershell
@@ -97,8 +119,8 @@ python3 main.py
 **1. 工作台（Workbench）**  
 SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工作区文件联动的详情面板。
 
-**2. 会话版（Social mode）**  
-面向会话的聊天布局，与经典工作台共用同一本地运行时。
+**2. 会话版（Social mode）多智能体协作**  
+群聊里的每条消息先由主模型编排：判断是单人回答、并行分工、接力流水线还是多视角讨论，给每位成员明确的任务和交付物，必要时安排复核和汇总。群里会显示协作计划卡，失败时自动转交并说明原因，保证有人回答。详见 [docs/multi-agent-collaboration.md](./docs/multi-agent-collaboration.md)。
 
 **3. 浏览器沙盒**  
 桌面端：Electron BrowserView 实况预览。Web：Playwright 预览。Select Mode 可将 DOM 点选发给 Agent；Agent 可使用 browser_* 工具。
@@ -112,10 +134,13 @@ SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工�
 **6. MCP**  
 在「设置 → MCP」发现并连接 Model Context Protocol 服务器（META_MCP_ENABLED=1）。
 
-**7. 浅色 / 深色 + 中英界面**  
+**7. 插件市场（GitHub / GitLab / Gmail …）**  
+在「设置 → 插件」从市场一键安装第三方插件包，或上传 zip / 填 URL 安装，也可以添加自建市场源。插件在独立子进程里运行，凭据加密保存，写操作执行前需要确认。插件格式和开发说明见 [docs/plugins.md](./docs/plugins.md)。
+
+**8. 浅色 / 深色 + 中英界面**  
 中 / 英界面与浅 / 深色主题（偏好保存在本机）。
 
-**8. 本地优先（Local-first）**  
+**9. 本地优先（Local-first）**  
 历史、Memory（MEMORY.md）、工作区与配置均在你控制的磁盘上。自备模型 API（OpenAI 兼容、DeepSeek、Ollama 等）。
 
 ### 斜杠命令
@@ -127,7 +152,7 @@ SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工�
 - **源码运行** — 见[快速开始](#快速开始)。
 - **桌面端** — start-desktop.bat 或 desktop/dist/ 下的安装包。
 - **官网与手册** — [GitHub Pages](https://gqqi.github.io/EdgeSidekick/)、[使用手册](https://gqqi.github.io/EdgeSidekick/docs/user-guide.zh.html) / [User guide (EN)](https://gqqi.github.io/EdgeSidekick/docs/user-guide.en.html)。
-- **文档** — [docs/browser-sandbox.md](./docs/browser-sandbox.md)、[docs/book-to-skill.md](./docs/book-to-skill.md)。
+- **文档** — [docs/multi-agent-collaboration.md](./docs/multi-agent-collaboration.md)、[docs/plugins.md](./docs/plugins.md)、[docs/browser-sandbox.md](./docs/browser-sandbox.md)、[docs/book-to-skill.md](./docs/book-to-skill.md)。
 
 ## 架构（简）
 
