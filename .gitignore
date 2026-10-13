@@ -117,6 +117,7 @@ scripts/screenshot-logo-style.mjs
 /tests/*
 !/tests/conftest.py
 !/tests/test_plugins.py
+!/tests/test_auth_register.py
 /landing.html
 *.bak
 scripts/verify_group_chat/

@@ -6,24 +6,26 @@ type Props = {
   busy?: boolean;
   error?: string | null;
   onSetup: (payload: { username: string; email: string; password: string }) => Promise<void>;
+  onRegister: (payload: { username: string; email: string; password: string }) => Promise<void>;
   onLogin: (payload: { email: string; password: string }) => Promise<void>;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** First-run admin setup, or login. Additional accounts are created while signed in. */
-export function AuthGate({ mode, busy, error, onSetup, onLogin }: Props) {
+/** First-run setup, or login with open self-registration. */
+export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Props) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [wantRegister, setWantRegister] = useState(false);
 
-  const registering = mode === "setup";
-  const title = mode === "setup" ? "创建管理员账号" : "登录 EdgeSidekick";
-  const hint = mode === "setup"
-    ? "用邮箱创建本机账号。每个账号的对话、模型、记忆和工作区互相隔离。"
-    : "使用邮箱登录。数据仅保存在本机。新账号由已登录用户添加。";
+  const registering = mode === "setup" || wantRegister;
+  const title = mode === "setup" ? "创建管理员账号" : registering ? "注册" : "登录 EdgeSidekick";
+  const hint = registering
+    ? "用邮箱注册。每个账号的对话、模型、记忆和工作区互相隔离。"
+    : "使用邮箱登录。数据仅保存在本机。";
 
   const submit = async () => {
     setLocalError(null);
@@ -50,6 +52,8 @@ export function AuthGate({ mode, busy, error, onSetup, onLogin }: Props) {
     try {
       if (mode === "setup") {
         await onSetup({ username: username.trim(), email: mail, password });
+      } else if (wantRegister) {
+        await onRegister({ username: username.trim(), email: mail, password });
       } else {
         await onLogin({ email: mail, password });
       }
@@ -135,9 +139,25 @@ export function AuthGate({ mode, busy, error, onSetup, onLogin }: Props) {
           )}
           <button type="submit" className="welcome-cta" disabled={busy}>
             <span>
-              {busy ? "请稍候…" : mode === "setup" ? "完成设置" : "登录"}
+              {busy ? "请稍候…" : mode === "setup" ? "完成设置" : registering ? "注册" : "登录"}
             </span>
           </button>
+          {mode === "login" && (
+            <p className="auth-switch">
+              {wantRegister ? "已有账号？" : "没有账号？"}
+              <button
+                type="button"
+                className="auth-switch-btn"
+                disabled={busy}
+                onClick={() => {
+                  setLocalError(null);
+                  setWantRegister((v) => !v);
+                }}
+              >
+                {wantRegister ? "去登录" : "注册"}
+              </button>
+            </p>
+          )}
         </form>
       </div>
     </section>

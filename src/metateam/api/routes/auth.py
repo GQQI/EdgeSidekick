@@ -14,7 +14,7 @@ from ...services.user_auth import (
     list_users,
     login as user_login,
     multi_user_enabled,
-    needs_setup,
+    register_account,
     revoke_token,
     setup_admin,
 )
@@ -52,16 +52,23 @@ def api_auth_setup(body: AuthSetupBody, request: Request) -> dict[str, Any]:
     }
 
 
+_REGISTER_MSG = {
+    "username too short": "显示名至少 2 个字符",
+    "password must be at least 6 characters": "密码至少 6 位",
+    "username taken": "这个显示名已被使用",
+    "email already registered": "这个邮箱已经注册",
+    "invalid email": "请输入有效邮箱",
+}
+
+
 @router.post("/register")
 def api_auth_register(body: AuthSetupBody, request: Request) -> dict[str, Any]:
-    """Create the first admin if none exist yet. Closed after setup."""
+    """Open registration. No existing login is required."""
     require_loopback(request)
-    if not needs_setup():
-        raise HTTPException(403, "registration closed; ask an existing user to add accounts")
     try:
-        user, token = setup_admin(body.username, body.password, email=body.email)
+        user, token = register_account(body.username, body.password, email=body.email)
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, _REGISTER_MSG.get(str(exc), str(exc))) from exc
     STORE.refresh_settings(rebind_llm=True, rebind_workspace=True)
     return {
         "status": "ok",

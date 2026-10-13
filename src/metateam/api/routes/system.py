@@ -22,7 +22,7 @@ from ...services.model_config import load_model_config, select_model_role, updat
 from ...services.app_prefs import auto_approve_tools, load_app_prefs, save_app_prefs
 from ...services.local_auth import get_token
 from ...services.store import STORE
-from ...services.user_auth import auth_status, needs_setup
+from ...services.user_auth import auth_status
 from ...services.workspace_store import get_active_workspace
 from ..http import require_loopback
 from ..schemas import (
@@ -97,7 +97,7 @@ def health() -> dict[str, Any]:
         "shell_sandbox": bool(getattr(s, "shell_sandbox", True)),
         "mcp_enabled": bool(getattr(s, "mcp_enabled", True)),
         "auto_approve_tools": auto_approve_tools(),
-        "auth_register": bool(needs_setup()),
+        "auth_register": True,
     }
 
 

@@ -2,6 +2,7 @@
 import {
   authLogin,
   authLogout,
+  authRegister,
   authSetup,
   onAuthLost,
   fetchShellJobs,
@@ -1071,6 +1072,15 @@ export function App() {
               setAuthBusy(true);
               try {
                 await authSetup(payload);
+                await finishAuth();
+              } finally {
+                setAuthBusy(false);
+              }
+            }}
+            onRegister={async (payload) => {
+              setAuthBusy(true);
+              try {
+                await authRegister(payload);
                 await finishAuth();
               } finally {
                 setAuthBusy(false);
