@@ -74,6 +74,7 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
     pauseForUserInput,
     planCollaboration,
     planReactionOrder,
+    raw,
     reactionFloor,
     resolveExecSlots,
     rosterForPrompt,
@@ -297,6 +298,17 @@ export async function runSocialSendWaves(ctx: SocialSendWavesCtx): Promise<void>
           return "";
         }
       };
+
+      // A private chat is one person talking to one agent. Always answer.
+      // The group judge can stay silent, and that must not apply here.
+      if (view.kind === "dm") {
+        for (const s of slots) {
+          if (ac.signal.aborted || turnState.turnPaused) break;
+          (s as { _forceSpeak?: boolean })._forceSpeak = true;
+          await runDiscussTurn(s, false);
+        }
+        return;
+      }
 
       // The harness picks who works before anyone speaks. Open-floor discussion
       // stays for chat, questions, and groups that are not on a real task.

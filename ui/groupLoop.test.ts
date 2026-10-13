@@ -421,6 +421,15 @@ test("group messages are driven by the collaboration orchestrator", () => {
   assert.match(loop, /s\._freeReply = \{/);
 });
 
+test("a direct message is answered without the group silence judge", () => {
+  const send = readFileSync(new URL("./src/social/socialSend.ts", import.meta.url), "utf8");
+  const call = send.slice(send.indexOf("await runSocialSendWaves("));
+  assert.match(call.slice(0, 2200), /\braw\b/);
+  const waves = readFileSync(new URL("./src/social/socialSendWaves.ts", import.meta.url), "utf8");
+  assert.match(waves, /raw,\n/);
+  assert.match(waves, /if \(view\.kind === "dm"\) \{\s*for \(const s of slots\) \{\s*if \(ac\.signal\.aborted \|\| turnState\.turnPaused\) break;\s*\(s as \{ _forceSpeak\?: boolean \}\)\._forceSpeak = true;/);
+});
+
 test("a finished or failed group turn clears the status pill and the busy flag", () => {
   const send = readFileSync(new URL("./src/social/socialSend.ts", import.meta.url), "utf8");
   // "N 位成员已看到消息" must not come back after a reply is already on screen.
