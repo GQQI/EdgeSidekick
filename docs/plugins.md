@@ -1,23 +1,41 @@
 # 插件与插件市场
 
-插件是可安装的第三方包，让智能体调用外部应用（GitHub、GitLab、Gmail……）。设计参考了 Dify 插件：一个包 = 清单（身份、凭据表单、工具声明）+ 代码；在「设置 → 插件」里从市场一键安装，或上传 zip、填 URL 安装。
+**插件**与 **MCP** 是两套独立能力，请勿混用入口：
 
-## 使用
+1. **第三方插件（本文主体）**：设置 → **插件**。市场 / 上传 / 已安装的 Sidekick 应用包（`manifest.json` + `main.py`），例如 GitHub / GitLab / Gmail 或自定义包。
+2. **MCP**：设置 → **MCP**。开源 Model Context Protocol 服务器目录与手动配置（stdio / HTTP / SSE）。目录与安装不在「插件」页签内。
 
-1. 打开「设置 → 插件 → 市场」，点「安装」。
-2. 进入插件详情，填写凭据，点「保存并验证」。Gmail 这类 OAuth 插件填好 Client ID/Secret 后点「用 Google 授权」。
-3. 之后所有对话（工作台和会话版群聊）里的智能体都能调用它的工具：
-   - **读取类工具**（搜索、读取）直接执行，也可以在只读的判断阶段使用；
-   - **写操作**（创建 Issue、评论、发送邮件）沿用应用原有的审批门，执行前弹窗确认。
-4. 停用或卸载后，下一条消息起工具就会消失。
+## 使用（第三方插件）
 
-内置市场自带：
+1. 打开「设置 → 插件 → 插件市场」，安装所需应用；需要凭据的在详情页配置并验证。Gmail 填好 Client ID/Secret 后可使用 Google 授权。
+2. 也可「下载开发模板」或上传 / 从 URL 安装自定义 zip。
+3. 对话中读取类工具可直接执行；写操作执行前会确认。
+4. 停用或卸载后，下一条消息起对应工具不可用。
 
-| 插件 | 能力 |
-| --- | --- |
-| GitHub | 搜索仓库 / Issue / PR，读取 Issue、PR 改动、文件、提交；创建 Issue、评论。支持 Enterprise |
-| GitLab | 搜索项目，列出 / 读取 Issue 与 MR（含 diff 和流水线状态），读取文件；创建 Issue、评论。支持自建实例 |
-| Gmail | Gmail 搜索语法查邮件，读取邮件 / 会话，标签；起草、发送（含回复同一会话） |
+MCP 的添加与管理请到「设置 → MCP」（含开源目录一键添加）。
+
+### 开源 MCP 目录（节选，入口：设置 → MCP）
+
+| 条目 | 包名 | 说明 |
+| --- | --- | --- |
+| Filesystem | `@modelcontextprotocol/server-filesystem`（npx） | 限定目录内文件读写 |
+| Memory | `@modelcontextprotocol/server-memory`（npx） | 本地知识图谱记忆 |
+| Sequential Thinking | `@modelcontextprotocol/server-sequential-thinking`（npx） | 分步思考 |
+| Time | `mcp-server-time`（uvx） | 时区与当前时间 |
+| Fetch | `mcp-server-fetch`（uvx） | 网页抓取（需联网） |
+| Git | `mcp-server-git`（uvx） | 本地 Git 仓库 |
+| SQLite / Database | `@executeautomation/database-server`（npx） | 社区维护；官方 sqlite 参考实现已归档 |
+| Brave Search | `@brave/brave-search-mcp-server`（npx） | 需 `BRAVE_API_KEY` |
+
+### 内置 / 市场常见插件
+
+| 插件 | 类型 | 能力 |
+| --- | --- | --- |
+| GitHub | 需联网 | 搜索仓库 / Issue / PR，读取文件与提交；创建 Issue、评论。支持 Enterprise |
+| GitLab | 需联网 | 搜索项目，Issue / MR（含 diff）；创建 Issue、评论。支持自建实例 |
+| Gmail | 需联网 | 搜索 / 读取邮件；起草、发送（含回复） |
+
+开发自定义 Sidekick 插件：在设置页「下载开发模板」获取 `hello-plugin.zip`，或请求 `GET /api/plugins/template.zip`；「查看开发说明」对应 `GET /api/plugins/guide`（优先 [plugin-dev-guide.md](plugin-dev-guide.md)，其次 [plugin-upload.md](plugin-upload.md)）。
 
 ## 插件包格式
 
@@ -73,6 +91,7 @@ my-plugin/
 - `credentials[].type`：`secret`（加密保存，界面上不回显）、`text`、`select`（需要 `options`）。`default` 会在未填写时使用。
 - `tools[].description` 必填——模型靠它决定什么时候调用。`parameters` 是 JSON Schema object。
 - `tools[].readonly`：`true` 表示只读；`false`（默认）表示写操作，执行前需要用户确认。
+- `network` / `credentials`：都为空时表示**离线插件**，界面显示「离线可用」，安装后 `credential_status.configured` 即为 true。
 - `oauth`（可选）：OAuth2 授权码流程，见 Gmail 插件。
 
 ```json
@@ -165,9 +184,14 @@ def validate_credentials(ctx: PluginContext):   # 可选，「验证」按钮调
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/plugins/marketplace?refresh=` | 市场目录（含安装状态） |
+| GET | `/api/plugins/marketplace?refresh=` | 市场目录（含安装状态、`offline` / `tool_count`） |
 | PUT | `/api/plugins/marketplace/sources` | 保存市场源 `{sources: []}` |
 | GET | `/api/plugins` | 已安装插件 |
+| GET | `/api/mcp/catalog` | 开源 MCP 精选目录（设置 → MCP；含是否已写入 mcp 配置） |
+| POST | `/api/mcp/catalog/install` | `{id, args?, env?}` 一键写入 MCP 配置 |
+| POST | `/api/mcp/catalog/uninstall` | `{id}` 按目录 id 移除 |
+| GET | `/api/plugins/template.zip` | 下载 hello-plugin 开发模板 zip |
+| GET | `/api/plugins/guide` | 简短开发说明（Markdown） |
 | POST | `/api/plugins/install` | `{id}` 从市场安装，或 `{url}` 从 zip 地址安装 |
 | POST | `/api/plugins/upload` | multipart `file` 上传 zip |
 | GET / PATCH / DELETE | `/api/plugins/{id}` | 详情 / `{enabled}` / 卸载 |

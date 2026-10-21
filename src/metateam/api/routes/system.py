@@ -10,6 +10,7 @@ from ...core.hostinfo import network_available
 
 from ...core.config import get_settings
 from ...services.mcp_config import McpServerConfig, load_mcp_config, update_mcp_config
+from ...services import mcp_catalog
 from ...services.mcp_runtime import test_server as mcp_test_server
 from ...services.memory import (
     library_from_payload,
@@ -27,6 +28,8 @@ from ...services.workspace_store import get_active_workspace
 from ..http import require_loopback
 from ..schemas import (
     MemoryLibraryUpdate,
+    McpCatalogInstallBody,
+    McpCatalogUninstallBody,
     McpTestBody,
     McpUpdateBody,
     MemoryUpdate,
@@ -162,6 +165,31 @@ def api_mcp_test(body: McpTestBody) -> dict[str, Any]:
         enabled=True,
     )
     return mcp_test_server(server)
+
+
+@router.get("/api/mcp/catalog")
+def api_mcp_catalog() -> dict[str, Any]:
+    return mcp_catalog.list_catalog()
+
+
+@router.post("/api/mcp/catalog/install")
+def api_mcp_catalog_install(body: McpCatalogInstallBody) -> dict[str, Any]:
+    try:
+        return mcp_catalog.install_from_catalog(
+            body.id,
+            args=body.args,
+            env=dict(body.env or {}),
+        )
+    except ValueError as exc:
+        raise HTTPException(404 if "没有" in str(exc) else 400, str(exc)) from exc
+
+
+@router.post("/api/mcp/catalog/uninstall")
+def api_mcp_catalog_uninstall(body: McpCatalogUninstallBody) -> dict[str, Any]:
+    try:
+        return mcp_catalog.uninstall_from_catalog(body.id)
+    except ValueError as exc:
+        raise HTTPException(404 if "没有" in str(exc) else 400, str(exc)) from exc
 
 
 @router.get("/api/model")

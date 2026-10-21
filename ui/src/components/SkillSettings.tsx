@@ -57,6 +57,7 @@ const isSkillMd = (p: string) => p.replace(/\\/g, "/").split("/").pop()?.toLower
 
 export function SkillSettings({ t, onToast, onChanged }: Props) {
   const [items, setItems] = useState<SkillItem[] | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
@@ -87,6 +88,7 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
   const distilling = Boolean(bookJob && !["installed", "failed"].includes(bookJob.status));
 
   const reload = async (notify = true) => {
+    setLoadError("");
     const list = await fetchSkills();
     setItems(list);
     if (notify) onChanged?.();
@@ -97,9 +99,12 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
   onToastRef.current = onToast;
 
   useEffect(() => {
-    void reload(false).catch((e) =>
-      onToastRef.current?.(e instanceof Error ? e.message : String(e)),
-    );
+    void reload(false).catch((e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      setItems([]);
+      setLoadError(msg || "加载技能失败");
+      onToastRef.current?.(msg);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -464,6 +469,29 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
 
   if (!items) {
     return <p className="hint">{t("skillsLoading")}</p>;
+  }
+
+  if (loadError && items.length === 0) {
+    return (
+      <div className="settings-pane">
+        <div className="plugin-notice error" role="alert">
+          技能加载失败：{loadError}
+          <button
+            type="button"
+            className="ghost"
+            onClick={() =>
+              void reload(false).catch((e) => {
+                const msg = e instanceof Error ? e.message : String(e);
+                setItems([]);
+                setLoadError(msg || "加载技能失败");
+              })
+            }
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const renderSkillMdEditor = () =>

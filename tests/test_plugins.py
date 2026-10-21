@@ -390,6 +390,7 @@ def test_remote_marketplace_index_and_install(data_dir, monkeypatch):
     cat = marketplace.catalog(http=client)
     by_id = {i["id"]: i for i in cat["items"]}
     assert {"github", "gitlab", "gmail", "echo", "other-id"} <= set(by_id) and "BAD" not in by_id
+    assert "calc" not in by_id and "text-kit" not in by_id
     assert by_id["github"]["source"] == "bundled", "remote entries cannot shadow bundled ones"
     assert by_id["echo"]["source_name"] == "Team" and not by_id["echo"]["installed"]
 
@@ -401,7 +402,10 @@ def test_remote_marketplace_index_and_install(data_dir, monkeypatch):
 
     with pytest.raises(store.PluginError, match="不一致"):
         marketplace.install_from_marketplace("other-id", http=client)
-    assert [p.id for p in store.list_installed()] == ["echo"]
+    ids = {p.id for p in store.list_installed()}
+    assert "echo" in ids
+    assert "github" not in ids and "gitlab" not in ids and "gmail" not in ids
+    assert "calc" not in ids and "text-kit" not in ids
 
 
 def test_unreachable_source_is_reported_not_fatal(data_dir, monkeypatch):
@@ -412,6 +416,7 @@ def test_unreachable_source_is_reported_not_fatal(data_dir, monkeypatch):
     cat = marketplace.catalog(http=client)
     assert cat["errors"] and "503" in cat["errors"][0]["error"]
     assert {"github", "gitlab", "gmail"} <= {i["id"] for i in cat["items"]}
+    assert "calc" not in {i["id"] for i in cat["items"]}
 
 
 # ── HTTP routes ──────────────────────────────────────────────────────────
@@ -444,7 +449,9 @@ def test_routes(data_dir, monkeypatch):
     assert calls and calls[0].url.path == "/user"
 
     assert client.patch("/api/plugins/github", json={"enabled": False}).json()["enabled"] is False
-    assert client.get("/api/plugins").json()[0]["id"] == "github"
+    listed = client.get("/api/plugins").json()
+    assert any(p["id"] == "github" for p in listed)
+    assert not any(p["id"] in {"calc", "text-kit", "json-kit", "datetime-kit", "unit-convert"} for p in listed)
 
     upload = make_zip({"manifest.json": json.dumps(ECHO_MANIFEST), "main.py": ECHO_MAIN})
     r = client.post("/api/plugins/upload", files={"file": ("echo.zip", upload, "application/zip")})
@@ -455,3 +462,25 @@ def test_routes(data_dir, monkeypatch):
 
     assert client.delete("/api/plugins/echo").json() == {"status": "ok"}
     assert client.delete("/api/plugins/echo").status_code == 404
+
+    tz = client.get("/api/plugins/template.zip")
+    assert tz.status_code == 200 and tz.headers.get("content-type", "").startswith("application/zip")
+    assert "attachment" in tz.headers.get("content-disposition", "")
+    with zipfile.ZipFile(io.BytesIO(tz.content)) as zf:
+        names = zf.namelist()
+        assert any(n.endswith("manifest.json") for n in names)
+        manifest = json.loads(next(zf.read(n) for n in names if n.endswith("manifest.json")))
+        assert manifest["id"] == "hello-plugin" and manifest["network"] == []
+
+    guide = client.get("/api/plugins/guide")
+    assert guide.status_code == 200 and "manifest.json" in guide.text
+
+
+def test_template_package_loads():
+    from metateam.api.routes import plugins as routes
+
+    root = routes.TEMPLATE_DIR
+    manifest = load_manifest(root)
+    assert manifest.id == "hello-plugin" and not manifest.network and not manifest.credentials
+    mod = runner._load_entry(root, manifest.entry, manifest.id)
+    assert callable(getattr(mod, "greet", None))

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "id": "hello-plugin",
+  "name": "你好插件",
+  "version": "1.0.0",
+  "author": "EdgeSidekick",
+  "description": "离线示例：一个简单的问候工具。复制此模板即可开发自己的插件。",
+  "category": "本地工具",
+  "tags": ["offline", "template", "example"],
+  "icon": "icon.svg",
+  "entry": "main.py",
+  "timeout": 10,
+  "network": [],
+  "credentials": [],
+  "tools": [
+    {
+      "name": "greet",
+      "label": "打招呼",
+      "readonly": true,
+      "description": "Return a greeting for the given name. Offline hello-world example.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Name to greet, default 世界"}
+        }
+      }
+    }
+  ]
+}

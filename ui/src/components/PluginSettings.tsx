@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  downloadPluginTemplate,
   fetchMarketplace,
   fetchPlugin,
+  fetchPluginGuide,
   fetchPlugins,
   installPlugin,
   saveMarketplaceSources,
@@ -19,12 +21,26 @@ import {
 } from "../api";
 import { MarkdownView } from "./MarkdownView";
 
-type Props = { onToast?: (msg: string) => void };
+type Props = { onToast?: (msg: string) => void; onOpenMcp?: () => void };
 type View = "market" | "installed";
+type NetFilter = "all" | "offline" | "online";
 
+const PAGE_SIZE = 9;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-function PluginIcon({ icon, name, size = 40 }: { icon?: string; name: string; size?: number }) {
+function isOfflineItem(item: { offline?: boolean; network?: string[]; tags?: string[] }): boolean {
+  if (typeof item.offline === "boolean") return item.offline;
+  if (Array.isArray(item.network)) return item.network.length === 0;
+  return (item.tags || []).map((t) => t.toLowerCase()).includes("offline");
+}
+
+function toolCountOf(item: MarketItem | InstalledPlugin): number {
+  if ("tool_count" in item && typeof item.tool_count === "number") return item.tool_count;
+  if (Array.isArray(item.tools)) return item.tools.length;
+  return 0;
+}
+
+function PluginIcon({ icon, name, size = 44 }: { icon?: string; name: string; size?: number }) {
   if (icon) return <img className="plugin-icon" src={icon} alt="" width={size} height={size} />;
   return (
     <span className="plugin-icon plugin-icon-fallback" style={{ width: size, height: size }} aria-hidden>
@@ -33,10 +49,55 @@ function PluginIcon({ icon, name, size = 40 }: { icon?: string; name: string; si
   );
 }
 
+function OfflineBadge({ offline }: { offline: boolean }) {
+  return offline ? (
+    <span className="plugin-badge offline" title="无需联网、无需凭据">
+      离线可用
+    </span>
+  ) : (
+    <span className="plugin-badge online" title="需要访问外网或配置凭据">
+      需联网
+    </span>
+  );
+}
+
 function statusOf(p: InstalledPlugin): { label: string; tone: "ok" | "warn" | "off" } {
   if (!p.enabled) return { label: "已停用", tone: "off" };
   if (!p.credential_status.configured) return { label: "待配置", tone: "warn" };
   return { label: "可用", tone: "ok" };
+}
+
+const UPLOAD_TREE = `my-plugin/
+  manifest.json   ← 必需
+  main.py         ← 必需
+  icon.svg        ← 可选
+  README.md       ← 可选`;
+
+function Pagination({
+  page,
+  pageCount,
+  onChange,
+  label,
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (p: number) => void;
+  label: string;
+}) {
+  if (pageCount <= 1) return null;
+  return (
+    <div className="plugin-pagination" role="navigation" aria-label={label}>
+      <button type="button" className="ghost" disabled={page <= 0} onClick={() => onChange(page - 1)}>
+        上一页
+      </button>
+      <span className="hint">
+        {page + 1} / {pageCount}
+      </span>
+      <button type="button" className="ghost" disabled={page >= pageCount - 1} onClick={() => onChange(page + 1)}>
+        下一页
+      </button>
+    </div>
+  );
 }
 
 export function PluginSettings({ onToast }: Props) {
@@ -50,21 +111,37 @@ export function PluginSettings({ onToast }: Props) {
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
+  const [netFilter, setNetFilter] = useState<NetFilter>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [urlOpen, setUrlOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideText, setGuideText] = useState("");
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [marketPage, setMarketPage] = useState(0);
+  const [installedPage, setInstalledPage] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async (refresh = false) => {
     setLoadError("");
-    try {
-      const [cat, mine] = await Promise.all([fetchMarketplace(refresh), fetchPlugins()]);
-      setCatalog(cat);
-      setInstalled(mine);
-    } catch (e) {
-      setLoadError(errText(e));
+    // Load independently: a hung/failed marketplace must not blank「已安装」.
+    const results = await Promise.allSettled([fetchMarketplace(refresh), fetchPlugins()]);
+    const errors: string[] = [];
+    if (results[0].status === "fulfilled") {
+      setCatalog(results[0].value);
+    } else {
+      errors.push(`市场：${errText(results[0].reason)}`);
+      setCatalog((prev) => prev ?? { items: [], categories: [], sources: [], errors: [] });
     }
+    if (results[1].status === "fulfilled") {
+      setInstalled(results[1].value);
+    } else {
+      errors.push(`已安装：${errText(results[1].reason)}`);
+      setInstalled((prev) => prev ?? []);
+    }
+    if (errors.length) setLoadError(errors.join("；"));
   }, []);
 
   useEffect(() => {
@@ -103,15 +180,56 @@ export function PluginSettings({ onToast }: Props) {
     }
   };
 
+  const openGuide = async () => {
+    setGuideOpen(true);
+    if (guideText) return;
+    setGuideLoading(true);
+    try {
+      setGuideText(await fetchPluginGuide());
+    } catch (e) {
+      setGuideText(`加载失败：${errText(e)}`);
+    } finally {
+      setGuideLoading(false);
+    }
+  };
+
   const items = catalog?.items || [];
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((item) => {
       if (category && item.category !== category) return false;
+      const off = isOfflineItem(item);
+      if (netFilter === "offline" && !off) return false;
+      if (netFilter === "online" && off) return false;
       if (!q) return true;
       return [item.name, item.description, item.id, ...(item.tags || [])].some((s) => String(s || "").toLowerCase().includes(q));
     });
-  }, [items, query, category]);
+  }, [items, query, category, netFilter]);
+
+  const installedFiltered = useMemo(() => {
+    const list = installed || [];
+    const q = query.trim().toLowerCase();
+    return list.filter((p) => {
+      const off = isOfflineItem(p);
+      if (netFilter === "offline" && !off) return false;
+      if (netFilter === "online" && off) return false;
+      if (category && p.category !== category) return false;
+      if (!q) return true;
+      return [p.name, p.description, p.id, ...(p.tags || [])].some((s) => String(s || "").toLowerCase().includes(q));
+    });
+  }, [installed, query, category, netFilter]);
+
+  useEffect(() => {
+    setMarketPage(0);
+    setInstalledPage(0);
+  }, [query, category, netFilter, view]);
+
+  const marketPageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const installedPageCount = Math.max(1, Math.ceil(installedFiltered.length / PAGE_SIZE));
+  const safeMarketPage = Math.min(marketPage, marketPageCount - 1);
+  const safeInstalledPage = Math.min(installedPage, installedPageCount - 1);
+  const marketSlice = filtered.slice(safeMarketPage * PAGE_SIZE, safeMarketPage * PAGE_SIZE + PAGE_SIZE);
+  const installedSlice = installedFiltered.slice(safeInstalledPage * PAGE_SIZE, safeInstalledPage * PAGE_SIZE + PAGE_SIZE);
 
   if (selected) {
     return (
@@ -137,24 +255,35 @@ export function PluginSettings({ onToast }: Props) {
     <div className="plugin-settings settings-pane">
       <header className="settings-pane-intro">
         <h3>插件</h3>
-        <p className="hint">
-          安装插件后，所有智能体（含会话版群聊成员）都能调用对应的外部应用。读取类工具直接可用；创建、评论、发送等写操作执行前会请你确认。
-        </p>
+        <p className="hint">第三方应用</p>
       </header>
 
       <div className="plugin-bar">
         <div className="mcp-transport" role="tablist" aria-label="插件视图">
           <button type="button" role="tab" aria-selected={view === "market"} className={view === "market" ? "active" : ""} onClick={() => setView("market")}>
-            市场
+            插件市场
           </button>
           <button type="button" role="tab" aria-selected={view === "installed"} className={view === "installed" ? "active" : ""} onClick={() => setView("installed")}>
             已安装{installedCount ? ` · ${installedCount}` : ""}
           </button>
         </div>
         <div className="plugin-bar-actions">
-          <input ref={fileRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onUpload(e.target.files?.[0])} />
-          <button type="button" className="ghost" disabled={busy === "upload"} onClick={() => fileRef.current?.click()}>
-            {busy === "upload" ? "安装中…" : "上传插件包"}
+          <button
+            type="button"
+            className="ghost"
+            disabled={busy === "template"}
+            onClick={() => {
+              setBusy("template");
+              void downloadPluginTemplate()
+                .then(() => toast("已下载 hello-plugin.zip 开发模板"))
+                .catch((e) => toast(errText(e)))
+                .finally(() => setBusy(null));
+            }}
+          >
+            下载开发模板
+          </button>
+          <button type="button" className="ghost" onClick={() => void openGuide()}>
+            查看开发说明
           </button>
           <button type="button" className="ghost" onClick={() => setUrlOpen((v) => !v)} aria-expanded={urlOpen}>
             从 URL 安装
@@ -163,6 +292,36 @@ export function PluginSettings({ onToast }: Props) {
             市场源
           </button>
         </div>
+      </div>
+
+      <div
+        className={`plugin-upload-zone${dragOver ? " drag-over" : ""}${busy === "upload" ? " busy" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) void onUpload(f);
+        }}
+      >
+        <input ref={fileRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onUpload(e.target.files?.[0])} />
+        <div className="plugin-upload-main">
+          <strong>上传插件包</strong>
+          <p>
+            将 zip 拖到此处，或
+            <button type="button" className="plugin-link-btn" disabled={busy === "upload"} onClick={() => fileRef.current?.click()}>
+              {busy === "upload" ? "安装中…" : "选择文件"}
+            </button>
+            。根目录须含 <code>manifest.json</code>，体积 ≤10MB。离线插件请保持 <code>network</code> / <code>credentials</code> 为空。
+          </p>
+        </div>
+        <pre className="plugin-upload-tree" aria-label="插件包结构示例">
+          {UPLOAD_TREE}
+        </pre>
       </div>
 
       {urlOpen ? (
@@ -189,6 +348,28 @@ export function PluginSettings({ onToast }: Props) {
         />
       ) : null}
 
+      {guideOpen ? (
+        <div className="modal-backdrop" onClick={() => setGuideOpen(false)} role="presentation">
+          <div
+            className="modal plugin-guide-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="插件开发说明"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <h2>插件开发说明</h2>
+              <button type="button" onClick={() => setGuideOpen(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="modal-body plugin-guide-body">
+              {guideLoading ? <p className="hint">加载中…</p> : <MarkdownView content={guideText} />}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {catalog?.errors?.length ? (
         <div className="plugin-notice warn" role="status">
           {catalog.errors.map((e) => (
@@ -212,76 +393,118 @@ export function PluginSettings({ onToast }: Props) {
             <div key={i} className="plugin-card skeleton" />
           ))}
         </div>
-      ) : view === "market" ? (
+      ) : (
         <>
           <div className="plugin-filter">
             <input
               type="search"
-              placeholder="搜索插件，如 GitHub、邮件、issue"
+              placeholder="搜索插件"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               aria-label="搜索插件"
             />
+            <div className="plugin-chips" role="group" aria-label="联网筛选">
+              {(
+                [
+                  ["all", "全部"],
+                  ["offline", "离线"],
+                  ["online", "需联网"],
+                ] as const
+              ).map(([id, label]) => (
+                <button key={id} type="button" className={netFilter === id ? "active" : ""} onClick={() => setNetFilter(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="plugin-chips" role="group" aria-label="分类">
               {["", ...catalog.categories].map((c) => (
                 <button key={c || "all"} type="button" className={category === c ? "active" : ""} onClick={() => setCategory(c)}>
-                  {c || "全部"}
+                  {c || "全部分类"}
                 </button>
               ))}
             </div>
           </div>
-          {filtered.length === 0 ? (
-            <p className="hint plugin-empty">没有匹配的插件。可以上传自己的插件包，或在「市场源」添加团队的插件索引。</p>
-          ) : (
-            <div className="plugin-grid">
-              {filtered.map((item) => (
-                <MarketCard
-                  key={item.id}
-                  item={item}
-                  busy={busy === item.id}
-                  onOpen={() => setSelected(item.id)}
-                  onInstall={() => void install({ id: item.id }, item.name)}
-                />
-              ))}
+
+          {view === "market" ? (
+            filtered.length === 0 ? (
+              <p className="hint plugin-empty">没有匹配的插件。可上传自定义包，或在「市场源」添加索引。</p>
+            ) : (
+              <>
+                <div className="plugin-grid">
+                  {marketSlice.map((item) => (
+                    <MarketCard
+                      key={item.id}
+                      item={item}
+                      busy={busy === item.id}
+                      onOpen={() => setSelected(item.id)}
+                      onInstall={() => void install({ id: item.id }, item.name)}
+                    />
+                  ))}
+                </div>
+                <Pagination page={safeMarketPage} pageCount={marketPageCount} onChange={setMarketPage} label="插件市场分页" />
+              </>
+            )
+          ) : installedFiltered.length === 0 ? (
+            <div className="plugin-empty">
+              <p className="hint">{installedCount === 0 ? "还没有安装插件。" : "没有匹配的已安装插件。"}</p>
+              {installedCount === 0 ? (
+                <button type="button" className="primary" onClick={() => setView("market")}>
+                  去插件市场看看
+                </button>
+              ) : null}
             </div>
+          ) : (
+            <>
+              <div className="plugin-grid">
+                {installedSlice.map((p) => {
+                  const st = statusOf(p);
+                  const off = isOfflineItem(p);
+                  const labels = p.tools.map((t) => t.label).slice(0, 4);
+                  return (
+                    <button key={p.id} type="button" className="plugin-card" onClick={() => setSelected(p.id)}>
+                      <div className="plugin-card-head">
+                        <PluginIcon icon={p.icon} name={p.name} />
+                        <div className="plugin-card-title">
+                          <strong>{p.name}</strong>
+                          <span>v{p.version}</span>
+                        </div>
+                        <span className={`plugin-badge ${st.tone}`}>{st.label}</span>
+                      </div>
+                      <div className="plugin-card-meta">
+                        <OfflineBadge offline={off} />
+                        <span className="plugin-meta-muted">{toolCountOf(p)} 个工具</span>
+                      </div>
+                      <p className="plugin-card-desc">{p.description}</p>
+                      {labels.length ? (
+                        <div className="plugin-tool-preview" title={p.tools.map((t) => t.label).join("、")}>
+                          {labels.map((lb) => (
+                            <span key={lb} className="plugin-tool-chip">
+                              {lb}
+                            </span>
+                          ))}
+                          {p.tools.length > labels.length ? <span className="plugin-tool-chip more">+{p.tools.length - labels.length}</span> : null}
+                        </div>
+                      ) : null}
+                      <div className="plugin-card-foot">
+                        <span className="plugin-cat">{p.category}</span>
+                        <span>{p.source === "upload" ? "本地上传" : p.source === "url" ? "URL 安装" : "市场"}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <Pagination page={safeInstalledPage} pageCount={installedPageCount} onChange={setInstalledPage} label="已安装插件分页" />
+            </>
           )}
         </>
-      ) : installed.length === 0 ? (
-        <div className="plugin-empty">
-          <p className="hint">还没有安装插件。</p>
-          <button type="button" className="primary" onClick={() => setView("market")}>
-            去市场看看
-          </button>
-        </div>
-      ) : (
-        <div className="plugin-grid">
-          {installed.map((p) => {
-            const st = statusOf(p);
-            return (
-              <button key={p.id} type="button" className="plugin-card" onClick={() => setSelected(p.id)}>
-                <div className="plugin-card-head">
-                  <PluginIcon icon={p.icon} name={p.name} />
-                  <div className="plugin-card-title">
-                    <strong>{p.name}</strong>
-                    <span>v{p.version}</span>
-                  </div>
-                  <span className={`plugin-badge ${st.tone}`}>{st.label}</span>
-                </div>
-                <p className="plugin-card-desc">{p.description}</p>
-                <div className="plugin-card-foot">
-                  <span>{p.tools.length} 个工具</span>
-                  <span>{p.source === "upload" ? "本地上传" : p.source === "url" ? "URL 安装" : "市场"}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
       )}
     </div>
   );
 }
 
 function MarketCard({ item, busy, onOpen, onInstall }: { item: MarketItem; busy: boolean; onOpen: () => void; onInstall: () => void }) {
+  const offline = isOfflineItem(item);
+  const count = toolCountOf(item);
   return (
     <div className="plugin-card" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => (e.key === "Enter" ? onOpen() : undefined)}>
       <div className="plugin-card-head">
@@ -309,10 +532,19 @@ function MarketCard({ item, busy, onOpen, onInstall }: { item: MarketItem; busy:
           </button>
         )}
       </div>
+      <div className="plugin-card-meta">
+        <OfflineBadge offline={offline} />
+        <span className="plugin-meta-muted">{count} 个工具</span>
+      </div>
       <p className="plugin-card-desc">{item.description}</p>
       <div className="plugin-card-foot">
         <span className="plugin-cat">{item.category}</span>
-        {item.tools.length ? <span>{item.tools.length} 个工具</span> : null}
+        {item.source === "bundled" ? <span className="plugin-badge built-in">内置集成</span> : null}
+        {(item.tags || []).slice(0, 3).map((t) => (
+          <span key={t} className="plugin-tag">
+            {t}
+          </span>
+        ))}
         {item.source === "remote" ? <span title={item.source_url}>{item.source_name}</span> : null}
       </div>
     </div>
@@ -377,8 +609,11 @@ function ToolList({ tools }: { tools: PluginToolSpec[] }) {
       {tools.map((t) => (
         <li key={t.name}>
           <span className={`plugin-badge ${t.readonly ? "off" : "warn"}`}>{t.readonly ? "读取" : "写操作"}</span>
-          <strong>{t.label}</strong>
-          <span className="plugin-tool-desc">{t.description}</span>
+          <div className="plugin-tool-body">
+            <strong>{t.label}</strong>
+            <code className="plugin-tool-name">{t.name}</code>
+            <span className="plugin-tool-desc">{t.description}</span>
+          </div>
         </li>
       ))}
     </ul>
@@ -437,6 +672,8 @@ function PluginDetail({
   const tools = plugin?.tools || marketItem?.tool_specs || [];
   const readme = plugin?.readme || marketItem?.readme || "";
   const st = plugin ? statusOf(plugin) : null;
+  const offline = isOfflineItem(plugin || marketItem || {});
+  const network = plugin?.network || marketItem?.network || [];
 
   return (
     <div className="plugin-settings settings-pane plugin-detail">
@@ -449,11 +686,12 @@ function PluginDetail({
           <h3>
             {name}
             {st ? <span className={`plugin-badge ${st.tone}`}>{st.label}</span> : null}
+            <OfflineBadge offline={offline} />
           </h3>
           <p className="hint">
             v{plugin?.version || marketItem?.version}
             {(plugin?.author || marketItem?.author) ? ` · ${plugin?.author || marketItem?.author}` : ""}
-            {plugin?.network?.length ? ` · 访问 ${plugin.network.join("、")}` : ""}
+            {` · ${tools.length} 个工具`}
           </p>
           <p>{plugin?.description || marketItem?.description}</p>
         </div>
@@ -488,6 +726,17 @@ function PluginDetail({
         </div>
       </div>
 
+      <section className="plugin-section">
+        <h4>联网</h4>
+        {offline || network.length === 0 ? (
+          <p className="hint plugin-ready-note">无需联网</p>
+        ) : (
+          <p className="hint">
+            访问：<code>{network.join("、")}</code>
+          </p>
+        )}
+      </section>
+
       {plugin ? <CredentialForm plugin={plugin} onSaved={(p) => { setPlugin(p); onChanged(); }} toast={toast} /> : null}
 
       {tools.length ? (
@@ -499,6 +748,7 @@ function PluginDetail({
 
       {readme ? (
         <section className="plugin-section plugin-readme">
+          <h4>说明</h4>
           <MarkdownView content={readme} />
         </section>
       ) : null}
@@ -562,7 +812,12 @@ function CredentialForm({
   }, [plugin.id, plugin.updated_at]);
 
   if (!plugin.credentials.length) {
-    return <p className="hint plugin-section">这个插件不需要凭据。</p>;
+    return (
+      <section className="plugin-section">
+        <h4>凭据</h4>
+        <p className="hint plugin-ready-note">无需凭据，安装即可用</p>
+      </section>
+    );
   }
 
   const save = async () => {

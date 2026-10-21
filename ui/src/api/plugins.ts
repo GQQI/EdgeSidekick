@@ -1,4 +1,5 @@
 import { apiFetch, authHeaders, json } from "./client";
+import { downloadAuthedFile } from "./fsBrowser";
 
 export type PluginCredentialField = {
   name: string;
@@ -48,6 +49,8 @@ export type InstalledPlugin = {
   agent_tools: string[];
   readme?: string;
   verify?: PluginCallResult;
+  offline?: boolean;
+  tool_count?: number;
 };
 
 export type MarketItem = {
@@ -60,8 +63,11 @@ export type MarketItem = {
   tags: string[];
   homepage: string;
   icon: string;
+  network?: string[];
   tools: string[];
   tool_specs?: PluginToolSpec[];
+  tool_count?: number;
+  offline?: boolean;
   readme: string;
   source: "bundled" | "remote";
   source_name: string;
@@ -104,6 +110,17 @@ export const verifyPlugin = (id: string) =>
   json<PluginCallResult>(`/api/plugins/${encodeURIComponent(id)}/verify`, { method: "POST" });
 export const startPluginOAuth = (id: string) =>
   json<{ url: string; state: string }>(`/api/plugins/${encodeURIComponent(id)}/oauth/start`, { method: "POST" });
+
+export async function fetchPluginGuide(): Promise<string> {
+  const headers = await authHeaders();
+  const res = await apiFetch("/api/plugins/guide", { headers });
+  if (!res.ok) throw new Error(`加载开发说明失败：${res.status}`);
+  return res.text();
+}
+
+export async function downloadPluginTemplate(): Promise<void> {
+  await downloadAuthedFile("/api/plugins/template.zip", "hello-plugin.zip");
+}
 
 export async function uploadPlugin(file: File): Promise<InstalledPlugin> {
   const fd = new FormData();

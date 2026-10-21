@@ -319,7 +319,9 @@ export function SettingsModal({
             <SkillSettings t={t} onToast={onToast} onChanged={onSkillsChanged} />
           )}
 
-          {settingsTab === "plugins" && <PluginSettings onToast={onToast} />}
+          {settingsTab === "plugins" && (
+            <PluginSettings onToast={onToast} onOpenMcp={() => setSettingsTab("mcp")} />
+          )}
           {settingsTab === "mcp" && <McpSettings onToast={onToast} />}
 
           {settingsTab === "account" && (

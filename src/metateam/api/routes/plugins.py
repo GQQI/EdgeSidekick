@@ -5,8 +5,12 @@ from __future__ import annotations
 import html
 from typing import Any, Optional
 
+import io
+import zipfile
+from pathlib import Path
+
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ...plugins import marketplace, oauth
@@ -26,6 +30,9 @@ from ...plugins.store import (
     uninstall,
     verify_credentials,
 )
+
+TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "plugins" / "templates" / "hello-plugin"
+DOCS_DIR = Path(__file__).resolve().parents[4] / "docs"
 
 router = APIRouter(prefix="/api/plugins", tags=["plugins"])
 
@@ -60,6 +67,7 @@ def _fail(exc: PluginError) -> HTTPException:
 
 
 def _public(plugin: InstalledPlugin, *, detail: bool = False) -> dict[str, Any]:
+    offline = marketplace.is_offline_manifest(plugin.manifest)
     out = {
         **plugin.manifest.public(),
         "enabled": plugin.enabled,
@@ -70,6 +78,8 @@ def _public(plugin: InstalledPlugin, *, detail: bool = False) -> dict[str, Any]:
         "icon": icon_data_uri(plugin.path, plugin.manifest),
         "credential_status": credential_status(plugin),
         "agent_tools": [plugin.manifest.tool_name(t.name) for t in plugin.manifest.tools],
+        "offline": offline,
+        "tool_count": len(plugin.manifest.tools),
     }
     if detail:
         out["readme"] = readme_text(plugin.path)
@@ -118,6 +128,47 @@ async def api_upload(file: UploadFile = File(...)) -> dict[str, Any]:
     except PluginError as exc:
         raise _fail(exc) from exc
     return _public(plugin, detail=True)
+
+
+
+def _zip_template() -> bytes:
+    root = TEMPLATE_DIR
+    if not root.is_dir() or not (root / "manifest.json").is_file():
+        raise PluginError("开发模板不可用", 404)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.name.startswith(".") or "__pycache__" in path.parts:
+                continue
+            arc = Path("hello-plugin") / path.relative_to(root)
+            zf.write(path, arc.as_posix())
+    return buf.getvalue()
+
+
+@router.get("/template.zip")
+def api_plugin_template_zip():
+    """Download the hello-plugin sample package as a zip attachment."""
+    try:
+        raw = _zip_template()
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="hello-plugin.zip"'},
+    )
+
+
+@router.get("/guide")
+def api_plugin_guide():
+    """Short developer guide (markdown) for custom plugin uploaders."""
+    for name in ("plugin-dev-guide.md", "plugin-upload.md", "plugins.md"):
+        path = DOCS_DIR / name
+        if path.is_file():
+            return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+    raise HTTPException(404, "开发说明不可用")
 
 
 @router.get("/oauth/callback", response_class=HTMLResponse)

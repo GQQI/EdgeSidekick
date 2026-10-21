@@ -167,6 +167,18 @@ class McpTestBody(BaseModel):
     enabled: bool = True
 
 
+
+class McpCatalogInstallBody(BaseModel):
+    id: str = Field(..., min_length=1)
+    args: list[str] | None = None
+    env: dict[str, str] = Field(default_factory=dict)
+
+
+class McpCatalogUninstallBody(BaseModel):
+    id: str = Field(..., min_length=1)
+
+
+
 class SkillWriteBody(BaseModel):
     name: str = Field(..., min_length=2, max_length=64)
     description: str = Field(..., min_length=1, max_length=800)

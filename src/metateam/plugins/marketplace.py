@@ -159,6 +159,15 @@ def _remote_items(user_id: Optional[str], *, http: Any = None, refresh: bool = F
     return items, errors
 
 
+
+def is_offline_manifest(manifest: Any) -> bool:
+    """True when the package declares no network hosts (always usable offline)."""
+    network = getattr(manifest, "network", None)
+    if network is None and isinstance(manifest, dict):
+        network = manifest.get("network") or []
+    return not list(network or [])
+
+
 def catalog(user_id: Optional[str] = None, *, http: Any = None, refresh: bool = False) -> dict[str, Any]:
     installed = {p.id: p for p in list_installed(user_id)}
     items: list[dict[str, Any]] = []
@@ -169,6 +178,8 @@ def catalog(user_id: Optional[str] = None, *, http: Any = None, refresh: bool = 
                 "icon": icon_data_uri(path, manifest),
                 "tools": [t.label for t in manifest.tools],
                 "tool_specs": [t.public() for t in manifest.tools],
+                "tool_count": len(manifest.tools),
+                "offline": is_offline_manifest(manifest),
                 "readme": readme_text(path),
                 "source": "bundled",
                 "source_name": "内置市场",
@@ -180,12 +191,21 @@ def catalog(user_id: Optional[str] = None, *, http: Any = None, refresh: bool = 
         if item["id"] in known:
             continue
         known.add(item["id"])
+        # Remote indexes rarely include network; treat empty/missing as unknown→online unless tagged offline
+        tags = [str(t).lower() for t in (item.get("tags") or [])]
+        item.setdefault("offline", "offline" in tags and not item.get("network"))
+        item.setdefault("tool_count", len(item.get("tools") or []))
         items.append(item)
     for item in items:
         plugin = installed.get(item["id"])
         item["installed"] = plugin is not None
         item["installed_version"] = plugin.manifest.version if plugin else ""
         item["update_available"] = bool(plugin and is_newer(item["version"], plugin.manifest.version))
+        if "offline" not in item:
+            item["offline"] = not bool(item.get("network"))
+        if "tool_count" not in item:
+            specs = item.get("tool_specs") or item.get("tools") or []
+            item["tool_count"] = len(specs)
     categories = sorted({i["category"] for i in items})
     return {"items": items, "categories": categories, "sources": sources(user_id), "errors": errors}
 

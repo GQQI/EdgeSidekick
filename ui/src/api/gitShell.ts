@@ -356,3 +356,45 @@ export const testMcpServer = (server: McpServer) =>
       body: JSON.stringify(server),
     },
   );
+
+export type McpCatalogEntry = {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  license: string;
+  homepage: string;
+  category: string;
+  tags: string[];
+  offline_capable: boolean;
+  requires_api_key: boolean;
+  requires_network: boolean;
+  transport: string;
+  command: string;
+  args: string[];
+  env_placeholders: string[];
+  install_hint: string;
+  package: string;
+  installed: boolean;
+};
+
+export type McpCatalog = {
+  items: McpCatalogEntry[];
+  categories: string[];
+};
+
+export const fetchMcpCatalog = () => json<McpCatalog>("/api/mcp/catalog");
+
+export const installMcpCatalog = (body: { id: string; args?: string[]; env?: Record<string, string> }) =>
+  json<McpSetup & { status?: string; id?: string; catalog?: McpCatalog }>("/api/mcp/catalog/install", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+export const uninstallMcpCatalog = (id: string) =>
+  json<McpSetup & { status?: string; id?: string; catalog?: McpCatalog }>("/api/mcp/catalog/uninstall", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
