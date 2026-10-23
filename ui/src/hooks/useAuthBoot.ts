@@ -4,12 +4,13 @@ import {
   fetchAuthStatus,
   getStoredToken,
   setApiToken,
+  type AccountProfile,
   type Health,
 } from "../api";
 
 type Phase = "loading" | "setup" | "login" | "ok";
 
-type AccountUser = { id: string; username: string; email?: string } | null;
+type AccountUser = AccountProfile | null;
 
 type Deps = {
   boot: () => Promise<void>;

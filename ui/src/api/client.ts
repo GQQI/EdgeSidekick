@@ -179,16 +179,53 @@ let _token: string | null =
   typeof localStorage !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
 let _bootstrapPromise: Promise<string | null> | null = null;
 
+export type AccountProfile = {
+  id: string;
+  username: string;
+  email?: string;
+  display_name?: string;
+  title?: string;
+  bio?: string;
+  avatar?: string;
+  created_at?: number;
+};
+
 export type AuthStatus = {
   needs_setup: boolean;
   multi_user: boolean;
   user_count: number;
   auth_required?: boolean;
   authenticated?: boolean;
-  user?: { id: string; username: string; email?: string } | null;
+  user?: AccountProfile | null;
   token?: string | null;
   token_header?: string;
 };
+
+export async function updateAccountProfile(patch: {
+  display_name?: string;
+  email?: string;
+  title?: string;
+  bio?: string;
+  avatar?: string;
+}): Promise<AccountProfile> {
+  const r = await apiFetch(`/api/auth/profile`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) {
+    let detail = `profile update failed: ${r.status}`;
+    try {
+      const body = (await r.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  const body = (await r.json()) as { user: AccountProfile };
+  return body.user;
+}
 
 export function getStoredToken(): string | null {
   return _token;
@@ -256,7 +293,7 @@ export async function authSetup(payload: {
   }
   const body = (await r.json()) as {
     token?: string;
-    user?: { id: string; username: string; email?: string };
+    user?: AccountProfile;
   };
   if (body.token) setApiToken(body.token);
   return body;
@@ -280,7 +317,7 @@ export async function authLogin(payload: { email: string; password: string }) {
   }
   const body = (await r.json()) as {
     token?: string;
-    user?: { id: string; username: string; email?: string };
+    user?: AccountProfile;
   };
   if (body.token) setApiToken(body.token);
   return body;
@@ -308,7 +345,7 @@ export async function authRegister(payload: {
   }
   const body = (await r.json()) as {
     token?: string;
-    user?: { id: string; username: string; email?: string };
+    user?: AccountProfile;
   };
   if (body.token) setApiToken(body.token);
   return body;

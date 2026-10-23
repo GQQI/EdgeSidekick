@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   cancelBookToSkillJob,
   createBookToSkillJob,
@@ -102,7 +102,7 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
     void reload(false).catch((e) => {
       const msg = e instanceof Error ? e.message : String(e);
       setItems([]);
-      setLoadError(msg || "加载技能失败");
+      setLoadError(msg || t("skillsLoadFailShort"));
       onToastRef.current?.(msg);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -475,7 +475,7 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
     return (
       <div className="settings-pane">
         <div className="plugin-notice error" role="alert">
-          技能加载失败：{loadError}
+          {t("skillsLoadFail", loadError)}
           <button
             type="button"
             className="ghost"
@@ -483,108 +483,122 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
               void reload(false).catch((e) => {
                 const msg = e instanceof Error ? e.message : String(e);
                 setItems([]);
-                setLoadError(msg || "加载技能失败");
+                setLoadError(msg || t("skillsLoadFailShort"));
               })
             }
           >
-            重试
+            {t("commonRetry")}
           </button>
         </div>
       </div>
     );
   }
 
-  const renderSkillMdEditor = () =>
-    draft ? (
-      <>
-        <label className="mcp-field">
-          <span>{t("skillsName")}</span>
-          <input
-            value={draft.name}
-            disabled={busy || !writable}
-            placeholder="pdf-report"
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          />
-        </label>
-        <label className="mcp-field">
-          <span>{t("skillsDescription")}</span>
-          <textarea
-            className="skill-desc-input"
-            rows={3}
-            value={draft.description}
-            disabled={busy || !writable}
-            placeholder={t("skillsDescriptionHint")}
-            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-          />
-        </label>
-        <label className="mcp-field">
-          <span>{t("skillsBody")}</span>
-          <textarea
-            className="skill-body"
-            rows={14}
-            value={draft.content}
-            disabled={busy || !writable}
-            onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-          />
-        </label>
-        {check && (
-          <div className={`skill-check ${check.ok ? "ok" : "bad"}`}>
-            {!check.ok &&
-              check.errors.map((err) => (
-                <p key={err} className="skill-check-err">
-                  {err}
-                </p>
-              ))}
-            {check.warnings.map((warn) => (
-              <p key={warn} className="skill-check-warn">
-                {warn}
-              </p>
-            ))}
-            {check.ok && !check.warnings.length && <p>{t("skillsValidateOk")}</p>}
-          </div>
-        )}
-        <div className="mcp-card-actions">
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || !writable}
-            onClick={() => void runSaveSkillMd()}
-          >
-            {t("skillsSave")}
-          </button>
-          <button type="button" className="ghost" disabled={busy} onClick={() => void runValidate()}>
-            {t("skillsValidate")}
-          </button>
-          {creating && (
-            <button
-              type="button"
-              className="ghost"
-              disabled={busy}
-              onClick={() => {
-                setCreating(false);
-                setDraft(null);
-                setCheck(null);
-              }}
-            >
-              {t("cancel")}
-            </button>
-          )}
-        </div>
-      </>
-    ) : null;
+  type EditorParts = { body: ReactNode; actions: ReactNode | null };
 
-  const renderFileEditor = () => {
+  const renderSkillMdEditor = (): EditorParts | null =>
+    draft
+      ? {
+          body: (
+            <>
+              <div className="skill-meta-grid">
+                <label className="mcp-field">
+                  <span>{t("skillsName")}</span>
+                  <input
+                    value={draft.name}
+                    disabled={busy || !writable}
+                    placeholder="pdf-report"
+                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                  />
+                  <small className="skill-field-hint">{t("skillsNameHint")}</small>
+                </label>
+                <label className="mcp-field">
+                  <span>{t("skillsDescription")}</span>
+                  <textarea
+                    className="skill-desc-input"
+                    rows={3}
+                    value={draft.description}
+                    disabled={busy || !writable}
+                    placeholder={t("skillsDescriptionHint")}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                  />
+                </label>
+              </div>
+              <label className="mcp-field skill-body-field">
+                <span>{t("skillsBody")}</span>
+                <textarea
+                  className="skill-body"
+                  rows={14}
+                  value={draft.content}
+                  disabled={busy || !writable}
+                  onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+                />
+              </label>
+              {check && (
+                <div className={`skill-check ${check.ok ? "ok" : "bad"}`}>
+                  {!check.ok &&
+                    check.errors.map((err) => (
+                      <p key={err} className="skill-check-err">
+                        {err}
+                      </p>
+                    ))}
+                  {check.warnings.map((warn) => (
+                    <p key={warn} className="skill-check-warn">
+                      {warn}
+                    </p>
+                  ))}
+                  {check.ok && !check.warnings.length && <p>{t("skillsValidateOk")}</p>}
+                </div>
+              )}
+            </>
+          ),
+          actions: (
+            <>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !writable}
+                onClick={() => void runSaveSkillMd()}
+              >
+                {t("skillsSave")}
+              </button>
+              <button type="button" className="ghost" disabled={busy} onClick={() => void runValidate()}>
+                {t("skillsValidate")}
+              </button>
+              {creating && (
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setCreating(false);
+                    setDraft(null);
+                    setCheck(null);
+                  }}
+                >
+                  {t("cancel")}
+                </button>
+              )}
+            </>
+          ),
+        }
+      : null;
+
+  const renderFileEditor = (): EditorParts => {
     if (fileBinary) {
-      return (
-        <div className="skill-binary-notice">
-          <p>{t("skillsBinaryFile")}</p>
-          {fileSize != null && <p className="hint">{fileSize} bytes</p>}
-        </div>
-      );
+      return {
+        body: (
+          <div className="skill-binary-notice">
+            <p>{t("skillsBinaryFile")}</p>
+            {fileSize != null && <p className="hint">{fileSize} bytes</p>}
+          </div>
+        ),
+        actions: null,
+      };
     }
-    return (
-      <>
-        <label className="mcp-field">
+    return {
+      body: (
+        <label className="mcp-field skill-body-field">
           <span>{selectedFile}</span>
           <textarea
             className="skill-body"
@@ -597,19 +611,27 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
             }}
           />
         </label>
-        <div className="mcp-card-actions">
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || !writable || !fileDirty}
-            onClick={() => void runSavePackageFile()}
-          >
-            {t("skillsSaveFile")}
-          </button>
-        </div>
-      </>
-    );
+      ),
+      actions: (
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !writable || !fileDirty}
+          onClick={() => void runSavePackageFile()}
+        >
+          {t("skillsSaveFile")}
+        </button>
+      ),
+    };
   };
+
+  const renderEditor = (parts: EditorParts | null) =>
+    parts ? (
+      <>
+        <div className="skill-editor-scroll">{parts.body}</div>
+        {parts.actions ? <div className="skill-editor-footer">{parts.actions}</div> : null}
+      </>
+    ) : null;
 
   return (
     <div className="skill-settings settings-pane">
@@ -741,7 +763,7 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
                 <strong>{t("skillsNew")}</strong>
               </div>
               <div className="skill-pool-detail-body" style={{ gridTemplateColumns: "1fr" }}>
-                <div className="skill-file-editor">{renderSkillMdEditor()}</div>
+                <div className="skill-file-editor">{renderEditor(renderSkillMdEditor())}</div>
               </div>
             </>
           ) : detail && draft ? (
@@ -749,7 +771,10 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
               <div className="skill-pool-detail-head">
                 <div className="skill-pool-detail-meta">
                   <strong>{detail.name}</strong>
-                  <p className="skill-pool-detail-desc">
+                  <p
+                    className="skill-pool-detail-desc"
+                    title={draft.description || detail.description || t("skillsNoDesc")}
+                  >
                     {draft.description || detail.description || t("skillsNoDesc")}
                   </p>
                 </div>
@@ -853,7 +878,9 @@ export function SkillSettings({ t, onToast, onChanged }: Props) {
                   </nav>
                 </div>
                 <div className="skill-file-editor">
-                  {isSkillMd(selectedFile) ? renderSkillMdEditor() : renderFileEditor()}
+                  {renderEditor(
+                    isSkillMd(selectedFile) ? renderSkillMdEditor() : renderFileEditor(),
+                  )}
                 </div>
               </div>
             </>

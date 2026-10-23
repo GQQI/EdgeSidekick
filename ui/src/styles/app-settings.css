@@ -851,15 +851,15 @@ button.memory-toggle:disabled {
 }
 
 .logs-pane {
-  gap: 8px;
+  gap: 12px;
 }
 
 .logs-grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 14px;
 }
 
 .logs-panel {
@@ -867,8 +867,9 @@ button.memory-toggle:disabled {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface-2);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
   overflow: hidden;
 }
 
@@ -877,52 +878,62 @@ button.memory-toggle:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 11px 16px;
   border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
 }
 
 .logs-panel-head h4 {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
 }
 
 .logs-count {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 1px 8px;
+  padding: 1px 9px;
 }
 
 .logs-panel .live-log,
 .logs-panel .sub-tree {
   flex: 1;
   min-height: 0;
+  margin: 0;
+  max-height: none;
   overflow: auto;
-  padding: 8px;
+  padding: 12px;
+  gap: 9px;
   align-content: start;
 }
 
 .logs-empty {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   gap: 6px;
-  padding: 16px 14px;
+  padding: 32px 18px;
   color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.84rem;
+  line-height: 1.5;
 }
 
 .logs-empty strong {
   color: var(--ink-soft);
-  font-size: 0.88rem;
+  font-size: 0.9rem;
 }
 
 .logs-footnote {
   margin: 0;
   font-size: 0.75rem !important;
+  text-align: center;
 }
 
 @media (max-width: 720px) {

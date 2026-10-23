@@ -20,6 +20,99 @@ def _subprocess_text_kwargs() -> dict[str, Any]:
     return {"text": True, "encoding": "utf-8", "errors": "replace"}
 
 
+# Windows: a Job Object owns the whole process tree, so stopping a job still
+# works after the shell wrapper has exited and a dev server has been reused by
+# a grandchild (taskkill /T only follows live parent links).
+_win_k32: Any = None
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    _win_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _win_k32.CreateJobObjectW.restype = wintypes.HANDLE
+    _win_k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    _win_k32.AssignProcessToJobObject.restype = wintypes.BOOL
+    _win_k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    _win_k32.TerminateJobObject.restype = wintypes.BOOL
+    _win_k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    _win_k32.QueryInformationJobObject.restype = wintypes.BOOL
+    _win_k32.QueryInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+    ]
+    _win_k32.OpenProcess.restype = wintypes.HANDLE
+    _win_k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    _win_k32.CloseHandle.restype = wintypes.BOOL
+    _win_k32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    class _WinJobAccounting(ctypes.Structure):
+        _fields_ = [
+            ("TotalUserTime", ctypes.c_int64),
+            ("TotalKernelTime", ctypes.c_int64),
+            ("ThisPeriodUserTime", ctypes.c_int64),
+            ("ThisPeriodKernelTime", ctypes.c_int64),
+            ("TotalPageFaultCount", wintypes.DWORD),
+            ("TotalProcesses", wintypes.DWORD),
+            ("ActiveProcesses", wintypes.DWORD),
+            ("TotalTerminatedProcesses", wintypes.DWORD),
+        ]
+
+
+def _win_job_create(pid: int) -> Any:
+    """Create a job object and put the freshly spawned shell in it."""
+    if _win_k32 is None or not pid:
+        return None
+    handle = _win_k32.CreateJobObjectW(None, None)
+    if not handle:
+        return None
+    # PROCESS_TERMINATE | PROCESS_SET_QUOTA
+    proc = _win_k32.OpenProcess(0x0001 | 0x0100, False, int(pid))
+    if not proc:
+        _win_k32.CloseHandle(handle)
+        return None
+    ok = _win_k32.AssignProcessToJobObject(handle, proc)
+    _win_k32.CloseHandle(proc)
+    if not ok:
+        _win_k32.CloseHandle(handle)
+        return None
+    return handle
+
+
+def _win_job_active(handle: Any) -> int:
+    if _win_k32 is None or not handle:
+        return 0
+    info = _WinJobAccounting()
+    ok = _win_k32.QueryInformationJobObject(
+        handle, 1, ctypes.byref(info), ctypes.sizeof(info), None  # JobObjectBasicAccountingInformation
+    )
+    return int(info.ActiveProcesses) if ok else 0
+
+
+def _win_job_terminate(handle: Any) -> None:
+    if _win_k32 is None or not handle:
+        return
+    _win_k32.TerminateJobObject(handle, 1)
+
+
+def _win_job_close(handle: Any) -> None:
+    if _win_k32 is None or not handle:
+        return
+    _win_k32.CloseHandle(handle)
+
+
+def _posix_group_alive(pgid: int) -> bool:
+    if not pgid:
+        return False
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except OSError:
+        return False
+
+
 @dataclass
 class ShellJob:
     id: str
@@ -37,6 +130,8 @@ class ShellJob:
     notified: bool = False
     lines: deque[str] = field(default_factory=lambda: deque(maxlen=4000))
     proc: Any = None
+    pgid: int = 0
+    job_obj: Any = field(default=None, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def append_line(self, line: str) -> None:
@@ -55,6 +150,7 @@ class ShellJob:
     def snapshot(self, *, tail: int = 40) -> dict[str, Any]:
         log, n = self.log_text(tail=tail)
         still = self.alive()
+        group = still or self.group_alive()
         return {
             "job_id": self.id,
             "pid": self.pid,
@@ -63,6 +159,7 @@ class ShellJob:
             "session_id": self.session_id,
             "background": self.background,
             "status": "running" if still else self.status,
+            "group_alive": group,
             "exit_code": None if still else self.exit_code,
             "started_at": self.started_at,
             "ended_at": None if still else self.ended_at,
@@ -83,6 +180,19 @@ class ShellJob:
             self.exit_code = int(code)
             self.ended_at = time.time()
         return False
+
+    def group_alive(self) -> bool:
+        """True while any process from this job runs, even after the shell exited.
+
+        A dev server can outlive its wrapper (``Start-Process``, npm's cmd
+        shim, orphaned grandchildren). The web UI uses this to keep a stop
+        action available and the stop path uses it to clean those up.
+        """
+        if self.alive():
+            return True
+        if self.job_obj:
+            return _win_job_active(self.job_obj) > 0
+        return _posix_group_alive(self.pgid)
 
 
 class ShellJobManager:
@@ -162,15 +272,24 @@ class ShellJobManager:
                 proc.stdin.close()
             except Exception:
                 pass
+        pid = int(proc.pid or 0)
+        pgid = 0
+        if os.name != "nt" and pid:
+            try:
+                pgid = os.getpgid(pid)
+            except OSError:
+                pgid = 0
         job = ShellJob(
             id=new_id("job"),
-            pid=int(proc.pid or 0),
+            pid=pid,
             command=command,
             cwd=cwd,
             user_id=uid,
             session_id=sid,
             background=bool(background),
             proc=proc,
+            pgid=pgid,
+            job_obj=_win_job_create(pid),
         )
         threading.Thread(target=self._pump, args=(job,), name=f"shell-job-{job.id}", daemon=True).start()
         with self._lock:
@@ -219,14 +338,20 @@ class ShellJobManager:
         return out
 
     def remove(self, job_id: str, *, user_id: Optional[str] = None) -> bool:
-        """Delete a finished job's record. Refuses while it's still running."""
+        """Delete a finished job. Leftover child processes are stopped first."""
         job = self.get(job_id, user_id=user_id)
         if not job:
             return False
         if job.alive():
             return False
+        if job.group_alive():
+            self._terminate_group(job)
+            time.sleep(0.15)
+            if job.alive():
+                return False
         with self._lock:
             self._jobs.pop(job.id, None)
+        _win_job_close(job.job_obj)
         return True
 
     def wait(self, job_id: str, timeout: float, *, user_id: Optional[str] = None) -> Optional[ShellJob]:
@@ -238,40 +363,76 @@ class ShellJobManager:
             time.sleep(0.2)
         return job
 
+    def _terminate_group(self, job: ShellJob) -> bool:
+        """Kill the wrapper and every descendant. True if anything was alive."""
+        if os.name == "nt":
+            wrapper = job.proc
+            wrapper_alive = bool(wrapper is not None and wrapper.poll() is None)
+            if job.job_obj:
+                active = _win_job_active(job.job_obj)
+                _win_job_terminate(job.job_obj)
+                return wrapper_alive or active > 0
+            # No job object (assignment refused): fall back to the shell tree.
+            if job.pid:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(job.pid), "/T", "/F"],
+                        capture_output=True,
+                        timeout=8,
+                        check=False,
+                    )
+                except Exception:
+                    pass
+            if wrapper_alive and wrapper is not None:
+                try:
+                    wrapper.kill()
+                except Exception:
+                    pass
+            return wrapper_alive
+
+        was_alive = job.alive()
+        group_had = _posix_group_alive(job.pgid)
+        proc = job.proc
+        if job.pgid:
+            try:
+                os.killpg(job.pgid, signal.SIGTERM)
+            except OSError:
+                pass
+        elif proc is not None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        deadline = time.monotonic() + 1.5
+        while was_alive and time.monotonic() < deadline:
+            if job.pgid and not _posix_group_alive(job.pgid):
+                break
+            if not job.pgid and not job.alive():
+                break
+            time.sleep(0.05)
+        if job.pgid and _posix_group_alive(job.pgid):
+            try:
+                os.killpg(job.pgid, signal.SIGKILL)
+            except OSError:
+                pass
+        elif proc is not None and job.alive():
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return was_alive or group_had
+
     def stop(self, job_id: str, *, user_id: Optional[str] = None) -> Optional[ShellJob]:
         job = self.get(job_id, user_id=user_id)
         if not job:
             return None
-        if not job.alive():
-            return job
-        proc = job.proc
-        try:
-            if os.name == "nt":
-                subprocess.run(
-                    ["taskkill", "/PID", str(job.pid), "/T", "/F"],
-                    capture_output=True,
-                    timeout=8,
-                    check=False,
-                )
-            else:
-                try:
-                    os.killpg(os.getpgid(job.pid), signal.SIGTERM)
-                except Exception:
-                    if proc is not None:
-                        proc.terminate()
-        except Exception:
-            if proc is not None:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+        # Even an "exited" wrapper can leave the dev server running; the group
+        # kill makes stop/close actually free the ports.
+        had_work = self._terminate_group(job)
         time.sleep(0.15)
-        job.alive()
-        if job.status == "running":
+        if had_work or job.alive():
             job.status = "killed"
-            job.ended_at = time.time()
-        elif job.exit_code not in (None, 0):
-            job.status = "killed"
+            job.ended_at = job.ended_at or time.time()
         self._fire_done(job)
         return job
 
@@ -305,6 +466,7 @@ class ShellJobManager:
         done.sort(key=lambda j: j.ended_at or 0)
         for j in done[: len(done) - 40]:
             self._jobs.pop(j.id, None)
+            _win_job_close(j.job_obj)
 
 
 JOBS = ShellJobManager()
@@ -325,6 +487,11 @@ def format_job_result(job: ShellJob, *, background: bool, note: str = "", tail: 
             "Process is running in the background. "
             "Do NOT call run_shell again with the same command. "
             "Use shell_job_log / shell_job_wait / shell_job_stop with this job_id."
+        )
+    elif snap.get("group_alive"):
+        lines.append(
+            "The shell exited but child processes from this job are still running "
+            "(for example a dev server). Call shell_job_stop to terminate them."
         )
     if note:
         lines.append(note)

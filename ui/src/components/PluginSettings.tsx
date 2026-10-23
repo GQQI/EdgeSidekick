@@ -19,7 +19,11 @@ import {
   type PluginCallResult,
   type PluginToolSpec,
 } from "../api";
+import { usePrefs } from "../prefs";
+import type { MsgKey } from "../i18n";
 import { MarkdownView } from "./MarkdownView";
+
+type T = (key: MsgKey, ...args: string[]) => string;
 
 type Props = { onToast?: (msg: string) => void; onOpenMcp?: () => void };
 type View = "market" | "installed";
@@ -50,28 +54,29 @@ function PluginIcon({ icon, name, size = 44 }: { icon?: string; name: string; si
 }
 
 function OfflineBadge({ offline }: { offline: boolean }) {
+  const { t } = usePrefs();
   return offline ? (
-    <span className="plugin-badge offline" title="无需联网、无需凭据">
-      离线可用
+    <span className="plugin-badge offline" title={t("pluginBadgeOfflineHint")}>
+      {t("pluginBadgeOffline")}
     </span>
   ) : (
-    <span className="plugin-badge online" title="需要访问外网或配置凭据">
-      需联网
+    <span className="plugin-badge online" title={t("pluginBadgeOnlineHint")}>
+      {t("pluginBadgeOnline")}
     </span>
   );
 }
 
-function statusOf(p: InstalledPlugin): { label: string; tone: "ok" | "warn" | "off" } {
-  if (!p.enabled) return { label: "已停用", tone: "off" };
-  if (!p.credential_status.configured) return { label: "待配置", tone: "warn" };
-  return { label: "可用", tone: "ok" };
+function statusOf(p: InstalledPlugin, t: T): { label: string; tone: "ok" | "warn" | "off" } {
+  if (!p.enabled) return { label: t("pluginBadgeDisabled"), tone: "off" };
+  if (!p.credential_status.configured) return { label: t("pluginBadgeNeedsConfig"), tone: "warn" };
+  return { label: t("pluginBadgeReady"), tone: "ok" };
 }
 
-const UPLOAD_TREE = `my-plugin/
-  manifest.json   ← 必需
-  main.py         ← 必需
-  icon.svg        ← 可选
-  README.md       ← 可选`;
+const uploadTree = (t: T) => `my-plugin/
+  manifest.json   ← ${t("pluginRequired")}
+  main.py         ← ${t("pluginRequired")}
+  icon.svg        ← ${t("pluginOptional")}
+  README.md       ← ${t("pluginOptional")}`;
 
 function Pagination({
   page,
@@ -84,23 +89,25 @@ function Pagination({
   onChange: (p: number) => void;
   label: string;
 }) {
+  const { t } = usePrefs();
   if (pageCount <= 1) return null;
   return (
     <div className="plugin-pagination" role="navigation" aria-label={label}>
       <button type="button" className="ghost" disabled={page <= 0} onClick={() => onChange(page - 1)}>
-        上一页
+        {t("commonPrev")}
       </button>
       <span className="hint">
         {page + 1} / {pageCount}
       </span>
       <button type="button" className="ghost" disabled={page >= pageCount - 1} onClick={() => onChange(page + 1)}>
-        下一页
+        {t("commonNext")}
       </button>
     </div>
   );
 }
 
 export function PluginSettings({ onToast }: Props) {
+  const { t } = usePrefs();
   const toastRef = useRef(onToast);
   toastRef.current = onToast;
   const toast = (msg: string) => toastRef.current?.(msg);
@@ -132,17 +139,17 @@ export function PluginSettings({ onToast }: Props) {
     if (results[0].status === "fulfilled") {
       setCatalog(results[0].value);
     } else {
-      errors.push(`市场：${errText(results[0].reason)}`);
+      errors.push(t("pluginLoadMarket", errText(results[0].reason)));
       setCatalog((prev) => prev ?? { items: [], categories: [], sources: [], errors: [] });
     }
     if (results[1].status === "fulfilled") {
       setInstalled(results[1].value);
     } else {
-      errors.push(`已安装：${errText(results[1].reason)}`);
+      errors.push(t("pluginLoadInstalled", errText(results[1].reason)));
       setInstalled((prev) => prev ?? []);
     }
-    if (errors.length) setLoadError(errors.join("；"));
-  }, []);
+    if (errors.length) setLoadError(errors.join("; "));
+  }, [t]);
 
   useEffect(() => {
     void reload();
@@ -152,12 +159,13 @@ export function PluginSettings({ onToast }: Props) {
     setBusy(target.id || "url");
     try {
       const plugin = await installPlugin(target);
-      toast(`已安装「${plugin.name}」${plugin.credential_status.configured ? "" : "，填写凭据后即可使用"}`);
+      const suffix = plugin.credential_status.configured ? "" : t("pluginInstalledNeedsSetup");
+      toast(t("pluginInstalledToast", plugin.name, suffix));
       await reload();
       setSelected(plugin.id);
       return true;
     } catch (e) {
-      toast(`安装「${label}」失败：${errText(e)}`);
+      toast(t("pluginInstallFailed", label, errText(e)));
       return false;
     } finally {
       setBusy(null);
@@ -169,7 +177,7 @@ export function PluginSettings({ onToast }: Props) {
     setBusy("upload");
     try {
       const plugin = await uploadPlugin(file);
-      toast(`已安装「${plugin.name}」${plugin.version}`);
+      toast(t("pluginInstalledToast", plugin.name, `${plugin.version}`));
       await reload();
       setSelected(plugin.id);
     } catch (e) {
@@ -187,7 +195,7 @@ export function PluginSettings({ onToast }: Props) {
     try {
       setGuideText(await fetchPluginGuide());
     } catch (e) {
-      setGuideText(`加载失败：${errText(e)}`);
+      setGuideText(t("pluginGuideLoadFail", errText(e)));
     } finally {
       setGuideLoading(false);
     }
@@ -254,17 +262,17 @@ export function PluginSettings({ onToast }: Props) {
   return (
     <div className="plugin-settings settings-pane">
       <header className="settings-pane-intro">
-        <h3>插件</h3>
-        <p className="hint">第三方应用</p>
+        <h3>{t("pluginTitle")}</h3>
+        <p className="hint">{t("pluginSubtitle")}</p>
       </header>
 
       <div className="plugin-bar">
-        <div className="mcp-transport" role="tablist" aria-label="插件视图">
+        <div className="mcp-transport" role="tablist" aria-label={t("pluginTitle")}>
           <button type="button" role="tab" aria-selected={view === "market"} className={view === "market" ? "active" : ""} onClick={() => setView("market")}>
-            插件市场
+            {t("pluginMarketTab")}
           </button>
           <button type="button" role="tab" aria-selected={view === "installed"} className={view === "installed" ? "active" : ""} onClick={() => setView("installed")}>
-            已安装{installedCount ? ` · ${installedCount}` : ""}
+            {t("pluginInstalledCount", installedCount ? ` · ${installedCount}` : "")}
           </button>
         </div>
         <div className="plugin-bar-actions">
@@ -275,21 +283,21 @@ export function PluginSettings({ onToast }: Props) {
             onClick={() => {
               setBusy("template");
               void downloadPluginTemplate()
-                .then(() => toast("已下载 hello-plugin.zip 开发模板"))
+                .then(() => toast(t("pluginTemplateDownloaded")))
                 .catch((e) => toast(errText(e)))
                 .finally(() => setBusy(null));
             }}
           >
-            下载开发模板
+            {t("pluginDownloadTemplate")}
           </button>
           <button type="button" className="ghost" onClick={() => void openGuide()}>
-            查看开发说明
+            {t("pluginDevGuide")}
           </button>
           <button type="button" className="ghost" onClick={() => setUrlOpen((v) => !v)} aria-expanded={urlOpen}>
-            从 URL 安装
+            {t("pluginInstallUrl")}
           </button>
           <button type="button" className="ghost" onClick={() => setSourcesOpen((v) => !v)} aria-expanded={sourcesOpen}>
-            市场源
+            {t("pluginSources")}
           </button>
         </div>
       </div>
@@ -310,17 +318,17 @@ export function PluginSettings({ onToast }: Props) {
       >
         <input ref={fileRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onUpload(e.target.files?.[0])} />
         <div className="plugin-upload-main">
-          <strong>上传插件包</strong>
+          <strong>{t("pluginUploadTitle")}</strong>
           <p>
-            将 zip 拖到此处，或
+            {t("pluginUploadDrop")}
             <button type="button" className="plugin-link-btn" disabled={busy === "upload"} onClick={() => fileRef.current?.click()}>
-              {busy === "upload" ? "安装中…" : "选择文件"}
+              {busy === "upload" ? t("pluginInstalling") : t("pluginChooseFile")}
             </button>
-            。根目录须含 <code>manifest.json</code>，体积 ≤10MB。离线插件请保持 <code>network</code> / <code>credentials</code> 为空。
+            {t("pluginUploadRules")}
           </p>
         </div>
-        <pre className="plugin-upload-tree" aria-label="插件包结构示例">
-          {UPLOAD_TREE}
+        <pre className="plugin-upload-tree" aria-label={t("pluginUploadStructure")}>
+          {uploadTree(t)}
         </pre>
       </div>
 
@@ -339,7 +347,7 @@ export function PluginSettings({ onToast }: Props) {
           onSave={async (sources) => {
             try {
               setCatalog(await saveMarketplaceSources(sources));
-              toast("市场源已更新");
+              toast(t("pluginSourceUpdated"));
               setSourcesOpen(false);
             } catch (e) {
               toast(errText(e));
@@ -354,17 +362,17 @@ export function PluginSettings({ onToast }: Props) {
             className="modal plugin-guide-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="插件开发说明"
+            aria-label={t("pluginGuideTitle")}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-head">
-              <h2>插件开发说明</h2>
+              <h2>{t("pluginGuideTitle")}</h2>
               <button type="button" onClick={() => setGuideOpen(false)}>
-                关闭
+                {t("close")}
               </button>
             </div>
             <div className="modal-body plugin-guide-body">
-              {guideLoading ? <p className="hint">加载中…</p> : <MarkdownView content={guideText} />}
+              {guideLoading ? <p className="hint">{t("pluginGuideLoading")}</p> : <MarkdownView content={guideText} />}
             </div>
           </div>
         </div>
@@ -374,7 +382,7 @@ export function PluginSettings({ onToast }: Props) {
         <div className="plugin-notice warn" role="status">
           {catalog.errors.map((e) => (
             <div key={e.source}>
-              市场源 <code>{e.source}</code> 暂时不可用：{e.error}
+              {t("pluginMarketUnavailable", e.source, e.error)}
             </div>
           ))}
         </div>
@@ -382,9 +390,9 @@ export function PluginSettings({ onToast }: Props) {
 
       {loadError ? (
         <div className="plugin-notice error" role="alert">
-          插件列表加载失败：{loadError}
+          {t("pluginLoadFail", loadError)}
           <button type="button" className="ghost" onClick={() => void reload()}>
-            重试
+            {t("commonRetry")}
           </button>
         </div>
       ) : !catalog || !installed ? (
@@ -398,17 +406,17 @@ export function PluginSettings({ onToast }: Props) {
           <div className="plugin-filter">
             <input
               type="search"
-              placeholder="搜索插件"
+              placeholder={t("pluginSearchPlaceholder")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              aria-label="搜索插件"
+              aria-label={t("pluginSearchAria")}
             />
-            <div className="plugin-chips" role="group" aria-label="联网筛选">
+            <div className="plugin-chips" role="group" aria-label={t("pluginFilterNetwork")}>
               {(
                 [
-                  ["all", "全部"],
-                  ["offline", "离线"],
-                  ["online", "需联网"],
+                  ["all", t("pluginAll")],
+                  ["offline", t("pluginOfflineFilter")],
+                  ["online", t("pluginOnlineFilter")],
                 ] as const
               ).map(([id, label]) => (
                 <button key={id} type="button" className={netFilter === id ? "active" : ""} onClick={() => setNetFilter(id)}>
@@ -416,10 +424,10 @@ export function PluginSettings({ onToast }: Props) {
                 </button>
               ))}
             </div>
-            <div className="plugin-chips" role="group" aria-label="分类">
+            <div className="plugin-chips" role="group" aria-label={t("pluginFilterCategory")}>
               {["", ...catalog.categories].map((c) => (
                 <button key={c || "all"} type="button" className={category === c ? "active" : ""} onClick={() => setCategory(c)}>
-                  {c || "全部分类"}
+                  {c || t("pluginAllCategories")}
                 </button>
               ))}
             </div>
@@ -427,7 +435,7 @@ export function PluginSettings({ onToast }: Props) {
 
           {view === "market" ? (
             filtered.length === 0 ? (
-              <p className="hint plugin-empty">没有匹配的插件。可上传自定义包，或在「市场源」添加索引。</p>
+              <p className="hint plugin-empty">{t("pluginEmptyMarket")}</p>
             ) : (
               <>
                 <div className="plugin-grid">
@@ -441,15 +449,15 @@ export function PluginSettings({ onToast }: Props) {
                     />
                   ))}
                 </div>
-                <Pagination page={safeMarketPage} pageCount={marketPageCount} onChange={setMarketPage} label="插件市场分页" />
+                <Pagination page={safeMarketPage} pageCount={marketPageCount} onChange={setMarketPage} label={t("pluginMarketPager")} />
               </>
             )
           ) : installedFiltered.length === 0 ? (
             <div className="plugin-empty">
-              <p className="hint">{installedCount === 0 ? "还没有安装插件。" : "没有匹配的已安装插件。"}</p>
+              <p className="hint">{installedCount === 0 ? t("pluginEmptyInstalled") : t("pluginNoMatchInstalled")}</p>
               {installedCount === 0 ? (
                 <button type="button" className="primary" onClick={() => setView("market")}>
-                  去插件市场看看
+                  {t("pluginBrowseMarket")}
                 </button>
               ) : null}
             </div>
@@ -457,9 +465,9 @@ export function PluginSettings({ onToast }: Props) {
             <>
               <div className="plugin-grid">
                 {installedSlice.map((p) => {
-                  const st = statusOf(p);
+                  const st = statusOf(p, t);
                   const off = isOfflineItem(p);
-                  const labels = p.tools.map((t) => t.label).slice(0, 4);
+                  const labels = p.tools.map((tool) => tool.label).slice(0, 4);
                   return (
                     <button key={p.id} type="button" className="plugin-card" onClick={() => setSelected(p.id)}>
                       <div className="plugin-card-head">
@@ -472,11 +480,11 @@ export function PluginSettings({ onToast }: Props) {
                       </div>
                       <div className="plugin-card-meta">
                         <OfflineBadge offline={off} />
-                        <span className="plugin-meta-muted">{toolCountOf(p)} 个工具</span>
+                        <span className="plugin-meta-muted">{t("pluginToolsCount", String(toolCountOf(p)))}</span>
                       </div>
                       <p className="plugin-card-desc">{p.description}</p>
                       {labels.length ? (
-                        <div className="plugin-tool-preview" title={p.tools.map((t) => t.label).join("、")}>
+                        <div className="plugin-tool-preview" title={p.tools.map((tool) => tool.label).join(", ")}>
                           {labels.map((lb) => (
                             <span key={lb} className="plugin-tool-chip">
                               {lb}
@@ -487,13 +495,19 @@ export function PluginSettings({ onToast }: Props) {
                       ) : null}
                       <div className="plugin-card-foot">
                         <span className="plugin-cat">{p.category}</span>
-                        <span>{p.source === "upload" ? "本地上传" : p.source === "url" ? "URL 安装" : "市场"}</span>
+                        <span>
+                          {p.source === "upload"
+                            ? t("pluginSourceUpload")
+                            : p.source === "url"
+                              ? t("pluginSourceUrl")
+                              : t("pluginSourceMarket")}
+                        </span>
                       </div>
                     </button>
                   );
                 })}
               </div>
-              <Pagination page={safeInstalledPage} pageCount={installedPageCount} onChange={setInstalledPage} label="已安装插件分页" />
+              <Pagination page={safeInstalledPage} pageCount={installedPageCount} onChange={setInstalledPage} label={t("pluginInstalledPager")} />
             </>
           )}
         </>
@@ -503,6 +517,7 @@ export function PluginSettings({ onToast }: Props) {
 }
 
 function MarketCard({ item, busy, onOpen, onInstall }: { item: MarketItem; busy: boolean; onOpen: () => void; onInstall: () => void }) {
+  const { t } = usePrefs();
   const offline = isOfflineItem(item);
   const count = toolCountOf(item);
   return (
@@ -517,7 +532,7 @@ function MarketCard({ item, busy, onOpen, onInstall }: { item: MarketItem; busy:
           </span>
         </div>
         {item.installed && !item.update_available ? (
-          <span className="plugin-badge ok">已安装</span>
+          <span className="plugin-badge ok">{t("pluginInstalled")}</span>
         ) : (
           <button
             type="button"
@@ -528,21 +543,21 @@ function MarketCard({ item, busy, onOpen, onInstall }: { item: MarketItem; busy:
               onInstall();
             }}
           >
-            {busy ? "安装中…" : item.update_available ? "更新" : "安装"}
+            {busy ? t("pluginInstalling") : item.update_available ? t("pluginUpdate") : t("pluginInstall")}
           </button>
         )}
       </div>
       <div className="plugin-card-meta">
         <OfflineBadge offline={offline} />
-        <span className="plugin-meta-muted">{count} 个工具</span>
+        <span className="plugin-meta-muted">{t("pluginToolsCount", String(count))}</span>
       </div>
       <p className="plugin-card-desc">{item.description}</p>
       <div className="plugin-card-foot">
         <span className="plugin-cat">{item.category}</span>
-        {item.source === "bundled" ? <span className="plugin-badge built-in">内置集成</span> : null}
-        {(item.tags || []).slice(0, 3).map((t) => (
-          <span key={t} className="plugin-tag">
-            {t}
+        {item.source === "bundled" ? <span className="plugin-badge built-in">{t("pluginSourceBundled")}</span> : null}
+        {(item.tags || []).slice(0, 3).map((tag) => (
+          <span key={tag} className="plugin-tag">
+            {tag}
           </span>
         ))}
         {item.source === "remote" ? <span title={item.source_url}>{item.source_name}</span> : null}
@@ -552,6 +567,7 @@ function MarketCard({ item, busy, onOpen, onInstall }: { item: MarketItem; busy:
 }
 
 function UrlInstall({ busy, onSubmit }: { busy: boolean; onSubmit: (url: string) => void }) {
+  const { t } = usePrefs();
   const [url, setUrl] = useState("");
   return (
     <form
@@ -562,26 +578,27 @@ function UrlInstall({ busy, onSubmit }: { busy: boolean; onSubmit: (url: string)
       }}
     >
       <label className="mcp-field grow">
-        <span>插件包地址（.zip）</span>
+        <span>{t("pluginPackageUrl")}</span>
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/plugins/jira-1.0.0.zip" type="url" required />
       </label>
       <button type="submit" className="primary" disabled={busy || !url.trim()}>
-        {busy ? "安装中…" : "安装"}
+        {busy ? t("pluginInstalling") : t("pluginInstall")}
       </button>
     </form>
   );
 }
 
 function SourcesEditor({ sources, onSave }: { sources: string[]; onSave: (sources: string[]) => void }) {
+  const { t } = usePrefs();
   const [text, setText] = useState(sources.join("\n"));
   return (
     <div className="plugin-inline-form column">
       <label className="mcp-field">
-        <span>市场索引地址（每行一个）</span>
+        <span>{t("pluginSourcesLabel")}</span>
         <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="https://plugins.example.com/index.json" />
       </label>
       <p className="hint">
-        索引是一个 JSON：<code>{'{"plugins":[{"id","name","version","description","download_url"}]}'}</code>。内置市场始终可用。
+        {t("pluginSourcesHint", '{"plugins":[{"id","name","version","description","download_url"}]}')}
       </p>
       <div className="mcp-card-actions">
         <button
@@ -596,7 +613,7 @@ function SourcesEditor({ sources, onSave }: { sources: string[]; onSave: (source
             )
           }
         >
-          保存市场源
+          {t("pluginSaveSources")}
         </button>
       </div>
     </div>
@@ -604,15 +621,18 @@ function SourcesEditor({ sources, onSave }: { sources: string[]; onSave: (source
 }
 
 function ToolList({ tools }: { tools: PluginToolSpec[] }) {
+  const { t } = usePrefs();
   return (
     <ul className="plugin-tools">
-      {tools.map((t) => (
-        <li key={t.name}>
-          <span className={`plugin-badge ${t.readonly ? "off" : "warn"}`}>{t.readonly ? "读取" : "写操作"}</span>
+      {tools.map((tool) => (
+        <li key={tool.name}>
+          <span className={`plugin-badge ${tool.readonly ? "off" : "warn"}`}>
+            {tool.readonly ? t("pluginReadonly") : t("pluginWriteOp")}
+          </span>
           <div className="plugin-tool-body">
-            <strong>{t.label}</strong>
-            <code className="plugin-tool-name">{t.name}</code>
-            <span className="plugin-tool-desc">{t.description}</span>
+            <strong>{tool.label}</strong>
+            <code className="plugin-tool-name">{tool.name}</code>
+            <span className="plugin-tool-desc">{tool.description}</span>
           </div>
         </li>
       ))}
@@ -641,6 +661,7 @@ function PluginDetail({
   onRemoved: () => void;
   toast: (msg: string) => void;
 }) {
+  const { t } = usePrefs();
   const [plugin, setPlugin] = useState<InstalledPlugin | null>(installedPlugin || null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const isInstalled = Boolean(installedPlugin);
@@ -671,14 +692,14 @@ function PluginDetail({
   const icon = plugin?.icon || marketItem?.icon;
   const tools = plugin?.tools || marketItem?.tool_specs || [];
   const readme = plugin?.readme || marketItem?.readme || "";
-  const st = plugin ? statusOf(plugin) : null;
+  const st = plugin ? statusOf(plugin, t) : null;
   const offline = isOfflineItem(plugin || marketItem || {});
   const network = plugin?.network || marketItem?.network || [];
 
   return (
     <div className="plugin-settings settings-pane plugin-detail">
       <button type="button" className="ghost plugin-back" onClick={onBack}>
-        ← 返回
+        {t("pluginBack")}
       </button>
       <div className="plugin-detail-head">
         <PluginIcon icon={icon} name={name} size={56} />
@@ -691,19 +712,19 @@ function PluginDetail({
           <p className="hint">
             v{plugin?.version || marketItem?.version}
             {(plugin?.author || marketItem?.author) ? ` · ${plugin?.author || marketItem?.author}` : ""}
-            {` · ${tools.length} 个工具`}
+            {` · ${t("pluginToolsCount", String(tools.length))}`}
           </p>
           <p>{plugin?.description || marketItem?.description}</p>
         </div>
         <div className="plugin-detail-actions">
           {!plugin && marketItem ? (
             <button type="button" className="primary" disabled={busy} onClick={() => onInstall(marketItem)}>
-              {busy ? "安装中…" : "安装"}
+              {busy ? t("pluginInstalling") : t("pluginInstall")}
             </button>
           ) : null}
           {plugin && marketItem?.update_available ? (
             <button type="button" className="primary" disabled={busy} onClick={() => onInstall(marketItem)}>
-              {busy ? "更新中…" : `更新到 v${marketItem.version}`}
+              {busy ? t("pluginUpdating") : t("pluginUpdateTo", marketItem.version)}
             </button>
           ) : null}
           {plugin ? (
@@ -720,19 +741,20 @@ function PluginDetail({
                   }
                 }}
               />
-              启用
+              {t("pluginEnable")}
             </label>
           ) : null}
         </div>
       </div>
 
       <section className="plugin-section">
-        <h4>联网</h4>
+        <h4>{t("pluginNetwork")}</h4>
         {offline || network.length === 0 ? (
-          <p className="hint plugin-ready-note">无需联网</p>
+          <p className="hint plugin-ready-note">{t("pluginNoNetwork")}</p>
         ) : (
           <p className="hint">
-            访问：<code>{network.join("、")}</code>
+            {t("pluginAccess")}
+            <code>{network.join(", ")}</code>
           </p>
         )}
       </section>
@@ -741,14 +763,14 @@ function PluginDetail({
 
       {tools.length ? (
         <section className="plugin-section">
-          <h4>工具（{tools.length}）</h4>
+          <h4>{t("pluginToolsHeading", String(tools.length))}</h4>
           <ToolList tools={tools} />
         </section>
       ) : null}
 
       {readme ? (
         <section className="plugin-section plugin-readme">
-          <h4>说明</h4>
+          <h4>{t("pluginDescriptionHeading")}</h4>
           <MarkdownView content={readme} />
         </section>
       ) : null}
@@ -757,29 +779,29 @@ function PluginDetail({
         <section className="plugin-section plugin-danger">
           {confirmRemove ? (
             <>
-              <span>卸载会删除插件文件和已保存的凭据。</span>
+              <span>{t("pluginUninstallHint")}</span>
               <button
                 type="button"
                 className="ghost danger"
                 onClick={async () => {
                   try {
                     await uninstallPlugin(plugin.id);
-                    toast(`已卸载「${plugin.name}」`);
+                    toast(t("pluginUninstalled", plugin.name));
                     onRemoved();
                   } catch (e) {
                     toast(errText(e));
                   }
                 }}
               >
-                确认卸载
+                {t("pluginUninstallConfirm")}
               </button>
               <button type="button" className="ghost" onClick={() => setConfirmRemove(false)}>
-                取消
+                {t("commonCancel")}
               </button>
             </>
           ) : (
             <button type="button" className="ghost danger" onClick={() => setConfirmRemove(true)}>
-              卸载插件
+              {t("pluginUninstall")}
             </button>
           )}
         </section>
@@ -797,6 +819,7 @@ function CredentialForm({
   onSaved: (p: InstalledPlugin) => void;
   toast: (msg: string) => void;
 }) {
+  const { t } = usePrefs();
   const initial = () =>
     Object.fromEntries(
       plugin.credentials.map((c) => [c.name, c.type === "secret" ? "" : plugin.credential_status.fields[c.name]?.value || ""]),
@@ -814,8 +837,8 @@ function CredentialForm({
   if (!plugin.credentials.length) {
     return (
       <section className="plugin-section">
-        <h4>凭据</h4>
-        <p className="hint plugin-ready-note">无需凭据，安装即可用</p>
+        <h4>{t("pluginCredentials")}</h4>
+        <p className="hint plugin-ready-note">{t("pluginNoCredentials")}</p>
       </section>
     );
   }
@@ -828,7 +851,12 @@ function CredentialForm({
       onSaved(next);
       setValues(Object.fromEntries(next.credentials.map((c) => [c.name, c.type === "secret" ? "" : next.credential_status.fields[c.name]?.value || ""])));
       if (next.verify) setResult(next.verify);
-      else toast(next.credential_status.configured ? "凭据已保存" : "已保存，还有必填项没有填写");
+      else
+        toast(
+          next.credential_status.configured
+            ? t("pluginCredentialsSaved")
+            : t("pluginCredentialsPartial"),
+        );
     } catch (e) {
       setResult({ ok: false, error: errText(e) });
     } finally {
@@ -852,7 +880,7 @@ function CredentialForm({
     try {
       const { url } = await startPluginOAuth(plugin.id);
       window.open(url, "sidekick-plugin-oauth", "width=520,height=680");
-      toast("已打开授权页面，完成后会自动保存");
+      toast(t("pluginOAuthOpened"));
     } catch (e) {
       toast(errText(e));
     }
@@ -860,7 +888,7 @@ function CredentialForm({
 
   return (
     <section className="plugin-section">
-      <h4>凭据</h4>
+      <h4>{t("pluginCredentials")}</h4>
       <form
         className="plugin-cred-form"
         onSubmit={(e) => {
@@ -876,7 +904,9 @@ function CredentialForm({
               <span>
                 {c.label}
                 {c.required ? <em className="plugin-req"> *</em> : null}
-                {c.type === "secret" && status?.set ? <span className="plugin-saved">已保存</span> : null}
+                {c.type === "secret" && status?.set ? (
+                  <span className="plugin-saved">{t("pluginSavedBadge")}</span>
+                ) : null}
               </span>
               {c.type === "select" ? (
                 <select value={values[c.name] || c.default} onChange={(e) => setValues({ ...values, [c.name]: e.target.value })}>
@@ -891,7 +921,11 @@ function CredentialForm({
                   type={c.type === "secret" ? "password" : "text"}
                   autoComplete="off"
                   value={values[c.name] || ""}
-                  placeholder={c.type === "secret" && status?.set ? "已保存，留空则不修改" : c.placeholder || c.default}
+                  placeholder={
+                    c.type === "secret" && status?.set
+                      ? t("pluginSecretKept")
+                      : c.placeholder || c.default
+                  }
                   aria-invalid={missing || undefined}
                   onChange={(e) => setValues({ ...values, [c.name]: e.target.value })}
                 />
@@ -903,7 +937,7 @@ function CredentialForm({
                     <>
                       {" "}
                       <a href={c.url} target="_blank" rel="noreferrer">
-                        去获取 ↗
+                        {t("pluginGetIt")}
                       </a>
                     </>
                   ) : null}
@@ -914,7 +948,7 @@ function CredentialForm({
         })}
         <div className="mcp-card-actions">
           <button type="submit" className="primary" disabled={saving}>
-            {saving ? "保存中…" : "保存并验证"}
+            {saving ? t("commonSaving") : t("pluginSaveVerify")}
           </button>
           {oauth ? (
             <button type="button" className="ghost" onClick={() => void startOAuth()}>
@@ -922,12 +956,14 @@ function CredentialForm({
             </button>
           ) : null}
           <button type="button" className="ghost" disabled={checking || !plugin.credential_status.configured} onClick={() => void verify()}>
-            {checking ? "验证中…" : "验证"}
+            {checking ? t("pluginVerifying") : t("pluginVerify")}
           </button>
         </div>
         {result ? (
           <div className={`plugin-notice ${result.ok ? "ok" : "error"}`} role="status">
-            {result.ok ? result.result || "验证通过" : result.error || "验证失败"}
+            {result.ok
+              ? result.result || t("pluginVerified")
+              : result.error || t("pluginVerifyFailed")}
           </div>
         ) : null}
       </form>

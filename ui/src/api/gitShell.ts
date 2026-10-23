@@ -49,6 +49,8 @@ export type ShellJobSnapshot = {
   session_id?: string;
   background?: boolean;
   status: string;
+  /** Any process from the job still runs, even if the shell wrapper exited. */
+  group_alive?: boolean;
   exit_code: number | null;
   started_at: number;
   ended_at: number | null;

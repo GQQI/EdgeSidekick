@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { BrandMark } from "./BrandMark";
+import { usePrefs } from "../prefs";
 
 type Props = {
   mode: "setup" | "login";
@@ -12,8 +13,110 @@ type Props = {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const COPY = {
+  zh: {
+    language: "语言",
+    titleSetup: "创建管理员账号",
+    titleLogin: "登录",
+    titleRegister: "注册",
+    hintSetup: "用邮箱创建本机账号。每个账号的对话、模型、记忆和工作区互相隔离。",
+    hintLogin: "使用邮箱登录。",
+    hintRegister: "用邮箱注册。每个账号的对话、模型、记忆和工作区互相隔离。",
+    displayName: "显示名",
+    displayPlaceholder: "例如：小明",
+    email: "邮箱",
+    password: "密码",
+    passwordPlaceholder: "至少 6 位",
+    confirm: "确认密码",
+    confirmPlaceholder: "再输入一次",
+    busy: "请稍候…",
+    submitSetup: "完成设置",
+    submitRegister: "注册",
+    submitLogin: "登录",
+    noAccount: "没有账号？",
+    haveAccount: "已有账号？",
+    goRegister: "注册",
+    goLogin: "去登录",
+    invalidEmail: "请输入有效邮箱",
+    shortName: "显示名至少 2 个字符",
+    shortPassword: "密码至少 6 位",
+    mismatch: "两次密码不一致",
+  },
+  en: {
+    language: "Language",
+    titleSetup: "Create admin account",
+    titleLogin: "Sign in",
+    titleRegister: "Sign up",
+    hintSetup: "Create a local account with email. Each account keeps its own chats, models, memory, and workspace.",
+    hintLogin: "Sign in with your email.",
+    hintRegister: "Sign up with email. Each account keeps its own chats, models, memory, and workspace.",
+    displayName: "Display name",
+    displayPlaceholder: "e.g. Alex",
+    email: "Email",
+    password: "Password",
+    passwordPlaceholder: "At least 6 characters",
+    confirm: "Confirm password",
+    confirmPlaceholder: "Type it again",
+    busy: "Please wait…",
+    submitSetup: "Finish setup",
+    submitRegister: "Sign up",
+    submitLogin: "Sign in",
+    noAccount: "No account yet?",
+    haveAccount: "Already have an account?",
+    goRegister: "Sign up",
+    goLogin: "Sign in",
+    invalidEmail: "Enter a valid email",
+    shortName: "Display name must be at least 2 characters",
+    shortPassword: "Password must be at least 6 characters",
+    mismatch: "Passwords do not match",
+  },
+} as const;
+
+const ERROR_COPY = {
+  zh: {
+    badCredentials: "邮箱或密码不正确",
+    nameTaken: "这个显示名已被使用",
+    emailTaken: "这个邮箱已经注册",
+    alreadySetUp: "已经完成初始化",
+    registrationClosed: "注册未开放，请联系已有用户添加账号",
+    shortName: "显示名至少 2 个字符",
+    shortPassword: "密码至少 6 位",
+    invalidEmail: "请输入有效邮箱",
+  },
+  en: {
+    badCredentials: "Invalid email or password",
+    nameTaken: "That display name is taken",
+    emailTaken: "That email is already registered",
+    alreadySetUp: "This instance is already set up",
+    registrationClosed: "Registration is closed; ask an existing user to add accounts",
+    shortName: "Display name must be at least 2 characters",
+    shortPassword: "Password must be at least 6 characters",
+    invalidEmail: "Enter a valid email",
+  },
+} as const;
+
+type ErrorKey = keyof (typeof ERROR_COPY)["zh"];
+
+const BACKEND_ERRORS: Record<string, ErrorKey> = {
+  "invalid email or password": "badCredentials",
+  "username too short": "shortName",
+  "password must be at least 6 characters": "shortPassword",
+  "username taken": "nameTaken",
+  "email already registered": "emailTaken",
+  "invalid email": "invalidEmail",
+  "already set up": "alreadySetUp",
+  "registration closed; ask an existing user to add accounts": "registrationClosed",
+};
+
+function localizeError(raw: string, locale: "zh" | "en"): string {
+  const mapped = BACKEND_ERRORS[raw.trim().toLowerCase()];
+  return mapped ? ERROR_COPY[locale][mapped] : raw;
+}
+
 /** First-run setup, or login with open self-registration. */
 export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Props) {
+  const { locale, setLocale } = usePrefs();
+  const c = COPY[locale];
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,31 +125,29 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
   const [wantRegister, setWantRegister] = useState(false);
 
   const registering = mode === "setup" || wantRegister;
-  const title = mode === "setup" ? "创建管理员账号" : registering ? "注册" : "登录 EdgeSidekick";
-  const hint = registering
-    ? "用邮箱注册。每个账号的对话、模型、记忆和工作区互相隔离。"
-    : "使用邮箱登录。数据仅保存在本机。";
+  const title = mode === "setup" ? c.titleSetup : registering ? c.titleRegister : c.titleLogin;
+  const hint = mode === "setup" ? c.hintSetup : registering ? c.hintRegister : c.hintLogin;
 
   const submit = async () => {
     setLocalError(null);
     const mail = email.trim().toLowerCase();
     if (!EMAIL_RE.test(mail)) {
-      setLocalError("请输入有效邮箱");
+      setLocalError(c.invalidEmail);
       return;
     }
     if (registering) {
       const u = username.trim();
       if (u.length < 2) {
-        setLocalError("显示名至少 2 个字符");
+        setLocalError(c.shortName);
         return;
       }
     }
     if (password.length < 6) {
-      setLocalError("密码至少 6 位");
+      setLocalError(c.shortPassword);
       return;
     }
     if (registering && password !== password2) {
-      setLocalError("两次密码不一致");
+      setLocalError(c.mismatch);
       return;
     }
     try {
@@ -58,12 +159,31 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
         await onLogin({ email: mail, password });
       }
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : String(e));
+      const raw = e instanceof Error ? e.message : String(e);
+      setLocalError(localizeError(raw, locale));
     }
   };
 
   return (
     <section className="welcome-gate" aria-label={title}>
+      <div className="auth-locale" role="group" aria-label={c.language}>
+        <button
+          type="button"
+          className={locale === "zh" ? "active" : ""}
+          aria-pressed={locale === "zh"}
+          onClick={() => setLocale("zh")}
+        >
+          中文
+        </button>
+        <button
+          type="button"
+          className={locale === "en" ? "active" : ""}
+          aria-pressed={locale === "en"}
+          onClick={() => setLocale("en")}
+        >
+          EN
+        </button>
+      </div>
       <div className="welcome-stage">
         <div className="welcome-brand">
           <span className="welcome-brand-mark">
@@ -87,10 +207,10 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
         >
           {registering && (
             <label className="auth-field">
-              <span>显示名</span>
+              <span>{c.displayName}</span>
               <input
                 autoComplete="nickname"
-                placeholder="例如：小明"
+                placeholder={c.displayPlaceholder}
                 value={username}
                 disabled={busy}
                 onChange={(e) => setUsername(e.target.value)}
@@ -98,7 +218,7 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
             </label>
           )}
           <label className="auth-field">
-            <span>邮箱</span>
+            <span>{c.email}</span>
             <input
               type="email"
               autoComplete="email"
@@ -109,11 +229,11 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
             />
           </label>
           <label className="auth-field">
-            <span>密码</span>
+            <span>{c.password}</span>
             <input
               type="password"
               autoComplete={registering ? "new-password" : "current-password"}
-              placeholder="至少 6 位"
+              placeholder={c.passwordPlaceholder}
               value={password}
               disabled={busy}
               onChange={(e) => setPassword(e.target.value)}
@@ -121,11 +241,11 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
           </label>
           {registering && (
             <label className="auth-field">
-              <span>确认密码</span>
+              <span>{c.confirm}</span>
               <input
                 type="password"
                 autoComplete="new-password"
-                placeholder="再输入一次"
+                placeholder={c.confirmPlaceholder}
                 value={password2}
                 disabled={busy}
                 onChange={(e) => setPassword2(e.target.value)}
@@ -134,17 +254,23 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
           )}
           {(localError || error) && (
             <p className="auth-error" role="alert">
-              {localError || error}
+              {localError || (error ? localizeError(error, locale) : "")}
             </p>
           )}
           <button type="submit" className="welcome-cta" disabled={busy}>
             <span>
-              {busy ? "请稍候…" : mode === "setup" ? "完成设置" : registering ? "注册" : "登录"}
+              {busy
+                ? c.busy
+                : mode === "setup"
+                  ? c.submitSetup
+                  : registering
+                    ? c.submitRegister
+                    : c.submitLogin}
             </span>
           </button>
           {mode === "login" && (
             <p className="auth-switch">
-              {wantRegister ? "已有账号？" : "没有账号？"}
+              {wantRegister ? c.haveAccount : c.noAccount}
               <button
                 type="button"
                 className="auth-switch-btn"
@@ -154,7 +280,7 @@ export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Pr
                   setWantRegister((v) => !v);
                 }}
               >
-                {wantRegister ? "去登录" : "注册"}
+                {wantRegister ? c.goLogin : c.goRegister}
               </button>
             </p>
           )}

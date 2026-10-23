@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { McpSettings } from "./McpSettings";
 import { PluginSettings } from "./PluginSettings";
 import { SkillSettings } from "./SkillSettings";
+import { AccountPane } from "./AccountPane";
 import { ModelSettings } from "./ModelSettings";
 import { IconMoon, IconSun } from "./icons";
 import type { LiveLine, SettingsTab, SubNode } from "../types/chat";
 import type { ModelSetup } from "../types/modelSetup";
-import type { SessionItem, WorkspaceItem } from "../api";
+import type { AccountProfile, SessionItem, WorkspaceItem } from "../api";
 import type { Density, Locale, MsgKey, Theme } from "../i18n";
 import type { UiMode } from "../uiMode";
 import { IconCheck, IconChat, IconFolder, IconTrash } from "./icons";
@@ -39,7 +40,8 @@ export type SettingsModalProps = {
   onModelSave: (next?: ModelSetup, opts?: { restartChat?: boolean }) => void;
   subs: SubNode[];
   live: LiveLine[];
-  accountUser?: { id: string; username: string; email?: string } | null;
+  accountUser?: AccountProfile | null;
+  onAccountChange?: (user: AccountProfile) => void;
   onLogout?: () => void;
   onToast?: (msg: string) => void;
   onSkillsChanged?: () => void;
@@ -75,6 +77,7 @@ export function SettingsModal({
   subs,
   live,
   accountUser,
+  onAccountChange,
   onLogout,
   onToast,
   onSkillsChanged,
@@ -133,11 +136,11 @@ export function SettingsModal({
               ["safety", t("tabSafety")],
               ["model", t("tabModel")],
               ["skills", t("tabSkills")],
-              ["plugins", "插件"],
+              ["plugins", t("tabPlugins")],
               ["mcp", "MCP"],
               ["appearance", t("tabAppearance")],
               ["runtime", t("tabRuntime")],
-              ["account", "账号"],
+              ["account", t("tabAccount")],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -325,21 +328,12 @@ export function SettingsModal({
           {settingsTab === "mcp" && <McpSettings onToast={onToast} />}
 
           {settingsTab === "account" && (
-            <div className="settings-pane">
-              <h3>账号</h3>
-              <p className="hint">
-                {accountUser
-                  ? `当前用户：${accountUser.username}${accountUser.email ? ` · ${accountUser.email}` : ""}`
-                  : "尚未登录（遗留单机模式）"}
-              </p>
-              {onLogout && (
-                <div className="account-actions">
-                  <button type="button" className="ghost" onClick={() => void onLogout()}>
-                    退出
-                  </button>
-                </div>
-              )}
-            </div>
+            <AccountPane
+              user={accountUser ?? null}
+              onUserChange={onAccountChange}
+              onLogout={onLogout}
+              onToast={onToast}
+            />
           )}
 
           {settingsTab === "appearance" && (

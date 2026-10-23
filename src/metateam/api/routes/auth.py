@@ -11,15 +11,17 @@ from ...services.store import STORE
 from ...services.user_auth import (
     auth_status,
     create_user,
+    get_user,
     list_users,
     login as user_login,
     multi_user_enabled,
     register_account,
     revoke_token,
     setup_admin,
+    update_profile,
 )
 from ..http import require_loopback
-from ..schemas import AuthCreateUserBody, AuthLoginBody, AuthSetupBody
+from ..schemas import AuthCreateUserBody, AuthLoginBody, AuthProfileBody, AuthSetupBody
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -30,9 +32,9 @@ def api_auth_status(request: Request) -> dict[str, Any]:
     status = auth_status()
     user = None
     uid = getattr(request.state, "user_id", None)
-    uname = getattr(request.state, "username", None)
-    if uid and uname:
-        user = {"id": uid, "username": uname}
+    if uid:
+        record = get_user(uid)
+        user = record.public() if record else {"id": uid, "username": getattr(request.state, "username", "")}
     return {**status, "user": user, "authenticated": bool(user)}
 
 
@@ -104,10 +106,31 @@ def api_auth_logout(request: Request) -> dict[str, Any]:
 @router.get("/me")
 def api_auth_me(request: Request) -> dict[str, Any]:
     uid = getattr(request.state, "user_id", None)
-    uname = getattr(request.state, "username", None)
     if not uid:
         raise HTTPException(401, "not authenticated")
-    return {"id": uid, "username": uname or ""}
+    record = get_user(uid)
+    if record:
+        return record.public()
+    return {"id": uid, "username": getattr(request.state, "username", "") or ""}
+
+
+@router.patch("/profile")
+def api_auth_profile(body: AuthProfileBody, request: Request) -> dict[str, Any]:
+    uid = getattr(request.state, "user_id", None)
+    if not uid:
+        raise HTTPException(401, "not authenticated")
+    try:
+        user = update_profile(
+            uid,
+            display_name=body.display_name,
+            email=body.email,
+            title=body.title,
+            bio=body.bio,
+            avatar=body.avatar,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"status": "ok", "user": user.public()}
 
 
 @router.get("/users")

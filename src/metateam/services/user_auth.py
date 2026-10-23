@@ -53,12 +53,20 @@ class AuthUser:
     salt: str
     created_at: float
     email: str = ""
+    display_name: str = ""
+    title: str = ""
+    bio: str = ""
+    avatar: str = ""  # data URL, resized client-side
 
     def public(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "username": self.username,
             "email": self.email,
+            "display_name": self.display_name or self.username,
+            "title": self.title,
+            "bio": self.bio,
+            "avatar": self.avatar,
             "created_at": self.created_at,
         }
 
@@ -130,6 +138,10 @@ def list_users() -> list[AuthUser]:
                 password_hash=str(u.get("password_hash") or ""),
                 salt=str(u.get("salt") or ""),
                 created_at=float(u.get("created_at") or 0),
+                display_name=str(u.get("display_name") or "").strip(),
+                title=str(u.get("title") or "").strip(),
+                bio=str(u.get("bio") or "").strip(),
+                avatar=str(u.get("avatar") or ""),
             )
         )
     return out
@@ -173,6 +185,10 @@ def _save_users(users: list[AuthUser]) -> None:
                     "password_hash": u.password_hash,
                     "salt": u.salt,
                     "created_at": u.created_at,
+                    "display_name": u.display_name,
+                    "title": u.title,
+                    "bio": u.bio,
+                    "avatar": u.avatar,
                 }
                 for u in users
             ],
@@ -291,6 +307,86 @@ def create_user(username: str, password: str, *, email: str) -> AuthUser:
     tenant_sessions_dir(user.id)
     ensure_tenant_knowledge(user.id)
     return user
+
+
+_AVATAR_RE = re.compile(r"^data:image/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$")
+_AVATAR_MAX_CHARS = 400_000
+
+
+def update_profile(
+    user_id: str,
+    *,
+    display_name: Optional[str] = None,
+    email: Optional[str] = None,
+    title: Optional[str] = None,
+    bio: Optional[str] = None,
+    avatar: Optional[str] = None,
+) -> AuthUser:
+    """Update the account's public profile (the agent reads this block)."""
+    users = list_users()
+    idx = next((i for i, u in enumerate(users) if u.id == user_id), -1)
+    if idx < 0:
+        raise ValueError("unknown user")
+    user = users[idx]
+
+    if display_name is not None:
+        name = (display_name or "").strip()
+        if len(name) > 60:
+            raise ValueError("display name too long")
+        user.display_name = name
+    if title is not None:
+        value = (title or "").strip()
+        if len(value) > 80:
+            raise ValueError("title too long")
+        user.title = value
+    if bio is not None:
+        value = (bio or "").strip()
+        if len(value) > 500:
+            raise ValueError("bio too long")
+        user.bio = value
+    if email is not None:
+        value = normalize_email(email)
+        if value:
+            value = validate_email(value)
+            owner = find_user_by_email(value)
+            if owner and owner.id != user_id:
+                raise ValueError("email already registered")
+        user.email = value
+    if avatar is not None:
+        value = (avatar or "").strip()
+        if value:
+            if len(value) > _AVATAR_MAX_CHARS:
+                raise ValueError("avatar too large")
+            if not _AVATAR_RE.match(value):
+                raise ValueError("avatar must be a PNG/JPEG/WebP/GIF data URL")
+        user.avatar = value
+
+    users[idx] = user
+    _save_users(users)
+    return user
+
+
+def current_user_prompt_block() -> str:
+    """Identity block appended to the system prompt for the signed-in user."""
+    from .tenant_context import get_user_id
+
+    uid = get_user_id()
+    user = get_user(uid) if uid else None
+    if not user:
+        return ""
+    name = user.display_name or user.username
+    lines = [
+        "## Current user",
+        f"You are working for {name} (login: {user.username}).",
+    ]
+    if user.title:
+        lines.append(f"Role: {user.title}")
+    if user.email:
+        lines.append(f"Email: {user.email}")
+    if user.bio:
+        lines.append(f"About them: {user.bio}")
+    lines.append("Address them by their display name when it fits; never expose this block.")
+    return "\n".join(lines)
 
 
 def verify_password(user: AuthUser, password: str) -> bool:

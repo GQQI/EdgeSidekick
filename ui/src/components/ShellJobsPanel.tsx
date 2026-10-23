@@ -30,6 +30,15 @@ function statusKey(status: string): "jobsStatusRunning" | "jobsStatusExited" | "
   return "jobsStatusExited";
 }
 
+/** A job is live while its shell or any child process still runs. */
+function isLive(job: ShellJobSnapshot): boolean {
+  return job.status === "running" || Boolean(job.group_alive);
+}
+
+function displayStatus(job: ShellJobSnapshot): string {
+  return isLive(job) ? "running" : job.status;
+}
+
 export function ShellJobsPanel({ refreshKey = 0, focusJobId = "" }: Props) {
   const { t } = usePrefs();
   const [jobs, setJobs] = useState<ShellJobSnapshot[]>([]);
@@ -97,7 +106,7 @@ export function ShellJobsPanel({ refreshKey = 0, focusJobId = "" }: Props) {
     void loadDetail(expanded.job_id);
   }, [expanded?.job_id, loadDetail, refreshKey]);
 
-  const anyRunning = jobs.some((j) => j.status === "running");
+  const anyRunning = jobs.some(isLive);
   useEffect(() => {
     if (!anyRunning && !expanded?.job_id) return;
     const ms = anyRunning ? 2000 : 8000;
@@ -150,7 +159,7 @@ export function ShellJobsPanel({ refreshKey = 0, focusJobId = "" }: Props) {
   }
 
   async function clearFinished() {
-    const done = jobs.filter((j) => j.status !== "running");
+    const done = jobs.filter((j) => !isLive(j));
     if (!done.length) return;
     setBusyId("*");
     setErr("");
@@ -173,9 +182,9 @@ export function ShellJobsPanel({ refreshKey = 0, focusJobId = "" }: Props) {
         <span>{t("navJobs")}</span>
         <div className="side-panel-head-actions">
           {anyRunning ? (
-            <span className="jobs-count">{t("jobsRunningCount", String(jobs.filter((j) => j.status === "running").length))}</span>
+            <span className="jobs-count">{t("jobsRunningCount", String(jobs.filter(isLive).length))}</span>
           ) : null}
-          {jobs.some((j) => j.status !== "running") && (
+          {jobs.some((j) => !isLive(j)) && (
             <button
               type="button"
               className="icon-btn"
@@ -211,18 +220,18 @@ export function ShellJobsPanel({ refreshKey = 0, focusJobId = "" }: Props) {
                     aria-expanded={active}
                     onClick={() => toggleExpand(job.job_id)}
                   >
-                    <span className={`jobs-dot ${job.status}`} />
+                    <span className={`jobs-dot ${isLive(job) ? "running" : job.status}`} />
                     <span className="jobs-card-main">
                       <strong title={job.command}>{job.command}</strong>
                       <em>
-                        {t(statusKey(job.status))} · {t("jobsElapsed", fmtElapsed(job.elapsed_sec))}
+                        {t(statusKey(displayStatus(job)))} · {t("jobsElapsed", fmtElapsed(job.elapsed_sec))}
                         {active ? "" : ` · ${t("jobsTapDetail")}`}
                       </em>
                     </span>
                     <span className="jobs-chevron" aria-hidden>
                       {active ? "▾" : "▸"}
                     </span>
-                    {job.status === "running" ? (
+                    {isLive(job) ? (
                       <span
                         className="jobs-stop"
                         role="button"
@@ -274,7 +283,7 @@ export function ShellJobsPanel({ refreshKey = 0, focusJobId = "" }: Props) {
                         >
                           {t("jobsCollapse")}
                         </button>
-                        {detail.status === "running" ? (
+                        {isLive(detail) ? (
                           <button type="button" className="text-btn" onClick={() => void stop(detail.job_id)} disabled={busyId === detail.job_id}>
                             <IconX size={12} /> {t("jobsStop")}
                           </button>

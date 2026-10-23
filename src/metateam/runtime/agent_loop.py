@@ -58,6 +58,13 @@ from .prompts import (
     language_pin_messages,
 )
 from .coherence import inject_contract_into_goal, shape_contract_from_plan
+from .goal_completion import (
+    GOAL_CONTINUE_NUDGE,
+    active_obligation,
+    assess_goal_state,
+    should_continue_for_goal,
+    tool_evidence,
+)
 from .review import run_review
 from ..services.skills import Skill, invalidate_skills_cache, load_skills
 from .tool_registry import drop_delegate_schemas, filter_readonly_schemas, skill_tool_name
@@ -89,20 +96,62 @@ class AgentLoopMixin:
         loop_start: int,
         hold_for_goal: bool,
         goal_nudges: int,
-        tools_at_nudge: int,
         emit_assistant_text: bool,
-    ) -> tuple[bool, int, int]:
-        """Codex ends the turn when this reply has no tool call.
+    ) -> tuple[bool, int]:
+        """Judge the stopped reply; continue only on an explicit "continue".
 
-        The model already saw the tool results and decided whether they match
-        the user's request. A reply with no tool call is that decision, so
-        the loop does not ask another model.
+        The main model already saw its tool results. The cheap judge checks the
+        requested outcome against that evidence, which is stricter than reading
+        a tool-less reply as success and cheaper than polishing until a keyword
+        guard is satisfied. ``done`` and ``blocked`` end the turn; an unreadable
+        verdict also ends it rather than spending another round on a guess.
         """
         if not hold_for_goal or getattr(self, "_disable_tools", False):
-            return False, goal_nudges, tools_at_nudge
-        self._goal_satisfied = True
-        self._emit("goal_settled", {"satisfied": True, "blocked": False})
-        return False, goal_nudges, tools_at_nudge
+            return False, goal_nudges
+        turn_messages = self.messages[max(0, loop_start) :]
+        if not any(msg.get("role") == "tool" for msg in turn_messages):
+            # A text-only turn used no tools, so there is nothing for a judge
+            # to verify. Skipping the call keeps plain chat fast.
+            self._goal_satisfied = True
+            self._emit("goal_settled", {"satisfied": True, "blocked": False})
+            return False, goal_nudges
+        goal = active_obligation(self.messages)
+        state = assess_goal_state(
+            self.compress_llm,
+            goal=goal,
+            evidence=tool_evidence(self.messages, start=loop_start),
+            candidate=preamble,
+        )
+        if should_continue_for_goal(state, nudges=goal_nudges):
+            self._emit(
+                "assistant_status",
+                {"text": "任务尚有未完成部分，继续执行…", "tools": []},
+            )
+            if emit_assistant_text:
+                self._emit("assistant_delta", {"chunk": "", "reset": True})
+            self.messages.append(
+                {
+                    "role": "user",
+                    "content": GOAL_CONTINUE_NUDGE
+                    + "\n\n"
+                    + language_directive(
+                        str(getattr(self, "_response_language_src", "") or "")
+                    ),
+                    "sidekick_internal": True,
+                    "sidekick": {"internal": True, "kind": "goal_continue"},
+                }
+            )
+            return True, goal_nudges + 1
+        # Only an explicit done verdict closes the goal (an unreadable verdict
+        # also stops, so a judge failure cannot become an endless repair loop).
+        # A blocked goal stays open for the user's answer.
+        satisfied = state == "done" or state is None
+        self._goal_satisfied = satisfied
+        self._emit(
+            "goal_settled",
+            {"satisfied": satisfied, "blocked": state == "blocked"},
+        )
+        return False, goal_nudges
 
     def _run_agent_loop(
         self,
@@ -125,7 +174,6 @@ class AgentLoopMixin:
         delegate_nudges = 0
         file_fail_nudges = 0
         goal_nudges = 0
-        tools_at_nudge = 0
         tool_names: list[str] = []
         cap = int(max_iters or 0)
         i = 0
@@ -506,12 +554,11 @@ class AgentLoopMixin:
                         self._emit("assistant_delta", {"chunk": final})
                     break
 
-                continue_goal, goal_nudges, tools_at_nudge = self._reject_early_stop(
+                continue_goal, goal_nudges = self._reject_early_stop(
                     preamble,
                     loop_start=loop_start,
                     hold_for_goal=hold_for_goal,
                     goal_nudges=goal_nudges,
-                    tools_at_nudge=tools_at_nudge,
                     emit_assistant_text=emit_assistant_text,
                 )
                 if continue_goal:

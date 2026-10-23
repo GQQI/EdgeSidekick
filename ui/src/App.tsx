@@ -13,6 +13,7 @@ import {
   browserClose,
   fetchNetworkOnline,
   truncateSession,
+  type AccountProfile,
   type Health,
   type SessionItem,
   type ShellJobSnapshot,
@@ -104,11 +105,7 @@ export function App() {
   const [bootReady, setBootReady] = useState(false);
   const [authPhase, setAuthPhase] = useState<"loading" | "setup" | "login" | "ok">("loading");
   const [authBusy, setAuthBusy] = useState(false);
-  const [accountUser, setAccountUser] = useState<{
-    id: string;
-    username: string;
-    email?: string;
-  } | null>(null);
+  const [accountUser, setAccountUser] = useState<AccountProfile | null>(null);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [openTabs, setOpenTabs] = useState<ChatTabRef[]>(() => loadOpenTabs());
   const [sessionsPage, setSessionsPage] = useState(1);
@@ -1493,6 +1490,7 @@ export function App() {
           subs={subs}
           live={live}
           accountUser={accountUser}
+          onAccountChange={setAccountUser}
           onToast={(msg) => setToast(msg)}
           autoApproveTools={Boolean(health?.auto_approve_tools)}
           autoApproveBusy={dialogs.autoApproveBusy}

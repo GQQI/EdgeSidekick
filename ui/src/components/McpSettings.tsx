@@ -6,7 +6,11 @@ import {
   type McpServer,
   type McpSetup,
 } from "../api";
+import { usePrefs } from "../prefs";
+import type { MsgKey } from "../i18n";
 import { McpCatalogPanel } from "./McpCatalogPanel";
+
+type T = (key: MsgKey, ...args: string[]) => string;
 
 type Props = {
   onToast?: (msg: string) => void;
@@ -80,24 +84,25 @@ function textToArgs(text: string): string[] {
     .filter(Boolean);
 }
 
-function transportBadge(transport: Transport): string {
-  if (transport === "stdio") return "本地";
+function transportBadge(transport: Transport, t: T): string {
+  if (transport === "stdio") return t("mcpLocalBadge");
   if (transport === "sse") return "SSE";
   return "HTTP";
 }
 
-function serverOneLiner(s: McpServer): string {
+function serverOneLiner(s: McpServer, t: T): string {
   const transport = (s.transport || "stdio") as Transport;
   if (transport === "stdio") {
     const cmd = (s.command || "").trim();
     const args = (s.args || []).join(" ").trim();
     const line = [cmd, args].filter(Boolean).join(" ");
-    return line || "未设置命令";
+    return line || t("mcpNoCommand");
   }
-  return (s.url || "").trim() || "未设置 URL";
+  return (s.url || "").trim() || t("mcpNoUrl");
 }
 
 export function McpSettings({ onToast }: Props) {
+  const { t } = usePrefs();
   const [setup, setSetup] = useState<McpSetup | null>(null);
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -122,21 +127,21 @@ export function McpSettings({ onToast }: Props) {
       const msg = e instanceof Error ? e.message : String(e);
       // Leave loading state: empty setup so the pane is usable / retryable.
       setSetup({ version: 2, servers: [] } as McpSetup);
-      setLoadError(msg || "加载 MCP 配置失败");
+      setLoadError(msg || t("mcpLoadFailShort"));
       onToastRef.current?.(msg);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!setup) {
-    return <p className="hint">加载 MCP 配置…</p>;
+    return <p className="hint">{t("mcpLoading")}</p>;
   }
 
   if (loadError && setup.servers.length === 0) {
     return (
       <div className="mcp-settings settings-pane">
         <div className="plugin-notice error" role="alert">
-          MCP 配置加载失败：{loadError}
+          {t("mcpLoadFail", loadError)}
           <button
             type="button"
             className="ghost"
@@ -144,11 +149,11 @@ export function McpSettings({ onToast }: Props) {
               void reload().catch((e) => {
                 const msg = e instanceof Error ? e.message : String(e);
                 setSetup({ version: 2, servers: [] } as McpSetup);
-                setLoadError(msg || "加载 MCP 配置失败");
+                setLoadError(msg || t("mcpLoadFailShort"));
               })
             }
           >
-            重试
+            {t("commonRetry")}
           </button>
         </div>
       </div>
@@ -218,7 +223,7 @@ export function McpSettings({ onToast }: Props) {
           setSelectedId(match?.id ?? null);
         }
       }
-      onToast?.("MCP 已保存（新会话生效）");
+      onToast?.(t("mcpSaved"));
     } catch (e) {
       onToast?.(e instanceof Error ? e.message : String(e));
     } finally {
@@ -230,8 +235,8 @@ export function McpSettings({ onToast }: Props) {
     setTesting(s.id);
     try {
       const res = await testMcpServer(s);
-      if (res.ok) onToast?.(`连接成功 · ${res.tool_count ?? 0} 个工具`);
-      else onToast?.(res.error || "连接失败");
+      if (res.ok) onToast?.(t("mcpConnected", String(res.tool_count ?? 0)));
+      else onToast?.(res.error || t("mcpConnectFailed"));
     } catch (e) {
       onToast?.(e instanceof Error ? e.message : String(e));
     } finally {
@@ -259,15 +264,15 @@ export function McpSettings({ onToast }: Props) {
       {!opts?.detail ? (
         <>
           <button type="button" className="ghost" onClick={() => addServer("stdio")}>
-            添加本地
+            {t("mcpAddLocal")}
           </button>
           <button type="button" className="ghost" onClick={() => addServer("http")}>
-            添加远程
+            {t("mcpAddRemote")}
           </button>
         </>
       ) : null}
       <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
-        {busy ? "保存中…" : "保存"}
+        {busy ? t("commonSaving") : t("commonSave")}
       </button>
       {opts?.detail && opts.server ? (
         <>
@@ -277,10 +282,10 @@ export function McpSettings({ onToast }: Props) {
             disabled={testing === opts.server.id}
             onClick={() => void runTest(opts.server!)}
           >
-            {testing === opts.server.id ? "测试中…" : "测试"}
+            {testing === opts.server.id ? t("mcpTesting") : t("mcpTest")}
           </button>
           <button type="button" className="ghost danger" onClick={removeSelected}>
-            删除
+            {t("mcpDelete")}
           </button>
         </>
       ) : null}
@@ -297,13 +302,13 @@ export function McpSettings({ onToast }: Props) {
             className="ghost plugin-back"
             onClick={() => setSelectedId(null)}
           >
-            ← 返回列表
+            {t("mcpBackToList")}
           </button>
 
           <div className="mcp-card">
             <div className="mcp-card-head">
               <label className="mcp-field grow">
-                <span>名称</span>
+                <span>{t("mcpName")}</span>
                 <input
                   value={selected.name}
                   placeholder="filesystem"
@@ -326,16 +331,16 @@ export function McpSettings({ onToast }: Props) {
                     updateServer(selectedIdx, { enabled: e.target.checked })
                   }
                 />
-                启用
+                {t("mcpEnable")}
               </label>
             </div>
 
-            <div className="mcp-transport" role="group" aria-label="连接方式">
+            <div className="mcp-transport" role="group" aria-label={t("mcpTransportLabel")}>
               {(
                 [
-                  ["stdio", "本地进程"],
-                  ["http", "远程 HTTP"],
-                  ["sse", "远程 SSE"],
+                  ["stdio", t("mcpStdio")],
+                  ["http", t("mcpHttp")],
+                  ["sse", t("mcpSse")],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -356,7 +361,7 @@ export function McpSettings({ onToast }: Props) {
             {((selected.transport || "stdio") as Transport) === "stdio" ? (
               <>
                 <label className="mcp-field">
-                  <span>启动命令</span>
+                  <span>{t("mcpCommandField")}</span>
                   <input
                     value={selected.command || ""}
                     placeholder="npx / node / python / uvx"
@@ -366,7 +371,7 @@ export function McpSettings({ onToast }: Props) {
                   />
                 </label>
                 <label className="mcp-field">
-                  <span>参数（每行一条）</span>
+                  <span>{t("mcpArgsField")}</span>
                   <textarea
                     rows={3}
                     value={argsToText(selected.args)}
@@ -379,7 +384,7 @@ export function McpSettings({ onToast }: Props) {
                   />
                 </label>
                 <label className="mcp-field">
-                  <span>环境变量（KEY=value，每行一条）</span>
+                  <span>{t("mcpEnvField")}</span>
                   <textarea
                     rows={2}
                     value={kvToText(selected.env)}
@@ -409,7 +414,7 @@ export function McpSettings({ onToast }: Props) {
                   />
                 </label>
                 <label className="mcp-field">
-                  <span>Headers（KEY=value，每行一条）</span>
+                  <span>{t("mcpHeadersField")}</span>
                   <textarea
                     rows={2}
                     value={kvToText(selected.headers)}
@@ -438,7 +443,7 @@ export function McpSettings({ onToast }: Props) {
       {!catalogDetailOpen ? (
         <header className="settings-pane-intro">
           <h3>MCP</h3>
-          <p className="hint">本地 stdio 与远程 HTTP/SSE 服务器；可从开源目录添加。</p>
+          <p className="hint">{t("mcpIntro")}</p>
         </header>
       ) : null}
 
@@ -450,11 +455,11 @@ export function McpSettings({ onToast }: Props) {
       />
 
       {!catalogDetailOpen ? (
-        <section className="mcp-configured" aria-label="已配置">
-          <h4 className="mcp-configured-title">已配置</h4>
+        <section className="mcp-configured" aria-label={t("mcpConfigured")}>
+          <h4 className="mcp-configured-title">{t("mcpConfigured")}</h4>
           <div className="mcp-list" role="list">
             {setup.servers.length === 0 && (
-              <p className="hint">还没有 MCP Server。先添加本地进程或远程 URL。</p>
+              <p className="hint">{t("mcpNoServers")}</p>
             )}
             {setup.servers.map((s) => {
               const transport = (s.transport || "stdio") as Transport;
@@ -476,21 +481,21 @@ export function McpSettings({ onToast }: Props) {
                     <strong>{s.name || s.id}</strong>
                     <div className="mcp-list-row-badges">
                       <span className="plugin-badge offline">
-                        {transportBadge(transport)}
+                        {transportBadge(transport, t)}
                       </span>
                       {s.enabled ? (
-                        <span className="plugin-badge ok">已启用</span>
+                        <span className="plugin-badge ok">{t("mcpEnabledBadge")}</span>
                       ) : (
-                        <span className="plugin-badge off">已禁用</span>
+                        <span className="plugin-badge off">{t("mcpDisabledBadge")}</span>
                       )}
-                      <span className="mcp-list-row-meta" title={serverOneLiner(s)}>
-                        {serverOneLiner(s)}
+                      <span className="mcp-list-row-meta" title={serverOneLiner(s, t)}>
+                        {serverOneLiner(s, t)}
                       </span>
                     </div>
                   </div>
                   <div className="mcp-list-row-actions">
                     <span className="mcp-list-row-detail" aria-hidden>
-                      详情
+                      {t("commonDetails")}
                     </span>
                   </div>
                 </div>

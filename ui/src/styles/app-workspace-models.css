@@ -102,6 +102,42 @@
   overflow: auto;
 }
 
+.auth-locale {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow-soft, none);
+  z-index: 2;
+}
+
+.auth-locale button {
+  border: 0;
+  background: transparent;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.auth-locale button:hover {
+  color: var(--ink);
+}
+
+.auth-locale button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .boot-gate {
   padding: 0;
 }

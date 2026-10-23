@@ -150,6 +150,16 @@ class AuthCreateUserBody(BaseModel):
     password: str = Field(..., min_length=6)
 
 
+class AuthProfileBody(BaseModel):
+    """Partial profile update; omitted fields stay untouched."""
+
+    display_name: str | None = None
+    email: str | None = None
+    title: str | None = None
+    bio: str | None = None
+    avatar: str | None = None
+
+
 class McpUpdateBody(BaseModel):
     version: int | None = 1
     servers: list[dict[str, Any]] = Field(default_factory=list)

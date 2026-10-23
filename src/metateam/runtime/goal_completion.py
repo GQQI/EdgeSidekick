@@ -1,11 +1,13 @@
 """Decide whether a tool-using turn has actually met its goal.
 
-The agent loop used to treat every tool-less assistant message as the end of
-the turn. Models often stop after an intermediate observation. This module
-asks for a structured verdict over the active obligation and the tool
-evidence, then tells the loop whether to keep working.
+A tool-less assistant reply is the model's own stopping decision, but it can
+also be an early stop after an intermediate observation. This module asks the
+cheap model for one structured verdict over the active obligation and the tool
+evidence, and the loop follows that verdict.
 
-Verdicts are model judgments, not keyword lists over the user's task.
+Verdicts are model judgments, not keyword lists over the user's task. A
+capped number of continuations is allowed when the verdict says a requested
+action is still missing; after that the turn ends instead of polishing forever.
 """
 
 from __future__ import annotations
@@ -14,11 +16,11 @@ import json
 import re
 from typing import Any, Optional
 
-from ..core.guardrails import looks_failed
 from ..core.textutil import safe_clip
 
-# Safety cap for "still not done, but each nudge produced new tool work".
-GOAL_CONTINUE_LIMIT = 6
+# Hard safety cap: each continuation costs a full model round. The judge is
+# allowed to ask twice, never to keep the turn alive indefinitely.
+GOAL_CONTINUE_LIMIT = 2
 
 GOAL_CONTINUE_NUDGE = (
     "The active goal is not finished. Continue from the tool results already "
@@ -35,13 +37,24 @@ _GOAL_STATE_SYSTEM = """You judge whether an agent has finished the active goal.
 Reply with ONLY valid JSON (no markdown fences):
 {"state": "done"|"continue"|"blocked", "reason": "one short sentence"}
 
-state=done only when the tool evidence shows the user's requested outcome is already met. A successful intermediate tool is not enough. One successful edit does not finish a goal that also asks to create, open, or verify something else. A working version is enough for a single action. Do not require extra polish once that outcome is present and the latest check did not fail.
+Judge only what the user asked for. Do not invent follow-up work, refactoring,
+tests, documentation, or polish that the request did not include.
 
-state=blocked when the remaining work depends on a choice, secret, or action only the user can provide, and the candidate asks for that.
+state=done when the tool evidence shows the requested outcome is already met.
+A working version is enough for a single action; extra checks or a prettier
+result are not required. One successful edit is not enough when the request
+also asks to create, open, run, or verify something else.
 
-state=continue when any requested action is still absent, the latest check failed, or the reply is only a status update, a plan, or a promise of later work. Repeating the same page, console, or file read is not missing work.
+state=blocked when the remaining work depends on a choice, secret, or action
+only the user can provide, and the candidate asks for that.
 
-When unsure: inspection only, or a later requested action with no successful tool evidence, is continue. Done requires evidence for each requested action, not merely the first one.
+state=continue only when a requested action is still absent, the latest check
+failed, or the reply is only a status update, a plan, or a promise of later
+work. Repeating the same page, console, or file read is not missing work.
+
+When unsure: inspection only, or a later requested action with no successful
+tool evidence, is continue. Done requires evidence for each requested action,
+not merely the first one.
 """
 
 _STATES = frozenset({"done", "continue", "blocked"})
@@ -140,94 +153,6 @@ def active_obligation(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
-def tool_result_count(messages: list[dict[str, Any]], start: int = 0) -> int:
-    window = (messages or [])[max(0, start) :]
-    return sum(1 for msg in window if msg.get("role") == "tool")
-
-
-# Looking at the workspace or the page is not delivery. A later judge must
-# not reopen a turn that already changed the requested outcome and stopped.
-_INSPECT_TOOLS = frozenset(
-    {
-        "read_file",
-        "list_dir",
-        "search_text",
-        "codebase_overview",
-        "codebase_find_similar",
-        "codebase_impact",
-        "web_search",
-        "web_fetch",
-        "browser_observe",
-        "browser_snapshot",
-        "browser_console",
-        "browser_diagnostics",
-        "browser_screenshot",
-        "browser_network",
-        "browser_get_page_content",
-        "browser_find_elements",
-        "browser_tabs",
-        "browser_extract_content",
-        "browser_wait",
-    }
-)
-
-
-def _tool_rows(messages: list[dict[str, Any]], start: int = 0) -> list[dict[str, Any]]:
-    return [msg for msg in (messages or [])[max(0, start) :] if msg.get("role") == "tool"]
-
-
-def _usable_tool_text(msg: dict[str, Any]) -> str:
-    text = str(msg.get("content") or "").lstrip()
-    if not text or text.startswith("[cleared tool result:"):
-        return ""
-    return text
-
-
-def turn_delivery(messages: list[dict[str, Any]], start: int = 0) -> str:
-    """How this turn stands once the model stops calling tools.
-
-    delivered: a non-inspect tool succeeded and the latest call did not fail.
-    failed: the latest tool call failed.
-    inspect_only: the turn only read or observed.
-    none: no usable tool result.
-    """
-    rows = _tool_rows(messages, start)
-    if not rows:
-        return "none"
-    last = _usable_tool_text(rows[-1])
-    if last and looks_failed(last):
-        return "failed"
-    for msg in rows:
-        name = str(msg.get("name") or "")
-        if name in _INSPECT_TOOLS:
-            continue
-        text = _usable_tool_text(msg)
-        if text and not looks_failed(text):
-            return "delivered"
-    if any(_usable_tool_text(msg) for msg in rows):
-        return "inspect_only"
-    return "none"
-
-
-def useful_tool_result_count(messages: list[dict[str, Any]], start: int = 0) -> int:
-    """Tool results that changed the task, not failed or discarded retries.
-
-    A blocked repeat, an ERROR string, or a cleared stub is not new work.
-    Counting those as progress kept the loop editing and re-checking forever.
-    """
-    count = 0
-    for msg in (messages or [])[max(0, start) :]:
-        if msg.get("role") != "tool":
-            continue
-        text = str(msg.get("content") or "").lstrip()
-        if not text or text.startswith("[cleared tool result:"):
-            continue
-        if looks_failed(text):
-            continue
-        count += 1
-    return count
-
-
 def tool_evidence(
     messages: list[dict[str, Any]],
     *,
@@ -245,32 +170,6 @@ def tool_evidence(
     if len(rows) > limit_items:
         rows = rows[-limit_items:]
     return "\n".join(rows)
-
-
-_ACTION_VERBS = ("删除", "写入", "创建", "打开", "验证", "修改", "修复", "运行", "测试", "审查", "优化")
-
-
-def owner_goal_text(goal: str) -> str:
-    """Drop a clause the user explicitly gave to other members."""
-    parts = re.split(r"然后(?:其他|别的|其余)", goal or "", maxsplit=1)
-    return parts[0] if parts else ""
-
-
-def requested_actions_missing(goal: str, evidence: str, candidate: str) -> bool:
-    """True when a later requested action has no trace in the evidence or reply.
-
-    A goal joined by 然后 is not finished just because the first action succeeded.
-    """
-    owned = owner_goal_text(goal)
-    parts = [part.strip() for part in re.split(r"然后|接着|之后", owned) if len(part.strip()) >= 2]
-    if len(parts) < 2:
-        return False
-    blob = f"{evidence or ''}\n{candidate or ''}"
-    for part in parts:
-        wanted = [verb for verb in _ACTION_VERBS if verb in part]
-        if wanted and not any(verb in blob for verb in wanted):
-            return True
-    return False
 
 
 def assess_goal_state(
@@ -300,24 +199,13 @@ def assess_goal_state(
 def should_continue_for_goal(
     state: Optional[str],
     *,
-    new_tools: bool,
     nudges: int,
     limit: int = GOAL_CONTINUE_LIMIT,
 ) -> bool:
     """Whether a tool-less reply should be rejected so the turn keeps working.
 
-    ``done`` means the produced result matches the user's request, and the
-    turn stops. A successful tool call is not that verdict. ``blocked`` stops.
-    An unreadable verdict allows one continuation. ``continue`` keeps going
-    while new tool work appears, and a reply that adds no tools gets one more
-    nudge, then stops.
+    Only an explicit ``continue`` verdict reopens the turn. ``done`` and
+    ``blocked`` stop. An unreadable verdict also stops: spending another
+    model round on a guess is what made finished turns keep "improving".
     """
-    if state in {"done", "blocked"}:
-        return False
-    if nudges >= limit:
-        return False
-    if state is None:
-        return nudges == 0
-    if nudges >= 2 and not new_tools:
-        return False
-    return True
+    return state == "continue" and nudges < limit

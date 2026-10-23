@@ -152,6 +152,17 @@ class AgentGroundingMixin:
             content = content.split(wm_marker, 1)[0].rstrip()
         if marker in content:
             content = content.split(marker, 1)[0].rstrip()
+        try:
+            from ..services.user_auth import current_user_prompt_block
+
+            identity = current_user_prompt_block()
+        except Exception:
+            identity = ""
+        user_marker = "## Current user"
+        if user_marker in content:
+            content = content.split(user_marker, 1)[0].rstrip()
+        if identity:
+            content = (content.rstrip() + "\n\n" + identity).strip()
         old_cm = "## Codebase memory (structure projection)"
         if old_cm in content:
             head, _, tail = content.partition(old_cm)
