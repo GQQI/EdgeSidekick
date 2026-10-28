@@ -90,23 +90,13 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const logEndRef = useRef<HTMLLIElement | null>(null);
   const [confirmAllowAll, setConfirmAllowAll] = useState(false);
-  const [selectedSubId, setSelectedSubId] = useState<string | null>(null);
   const switchOn = autoApproveTools || confirmAllowAll;
   const flatSubs = flattenSubNodes(subs);
-  const selectedSub = flatSubs.find((s) => s.id === selectedSubId) || null;
 
   useEffect(() => {
-    if (settingsTab !== "runtime") {
-      setSelectedSubId(null);
-      return;
-    }
+    if (settingsTab !== "runtime") return;
     logEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [settingsTab, live.length]);
-
-  useEffect(() => {
-    if (!selectedSubId) return;
-    if (!flatSubs.some((s) => s.id === selectedSubId)) setSelectedSubId(null);
-  }, [flatSubs, selectedSubId]);
 
   useEffect(() => {
     if (settingsTab !== "safety" || autoApproveTools) setConfirmAllowAll(false);
@@ -456,7 +446,7 @@ export function SettingsModal({
                 <p className="hint">{t("logsHint")}</p>
               </header>
 
-              <div className={`logs-grid${selectedSub ? " has-sub-detail" : ""}`}>
+              <div className="logs-grid">
                 <section className="logs-panel logs-panel-events">
                   <div className="logs-panel-head">
                     <h4>{t("runtimeEvents")}</h4>
@@ -491,78 +481,29 @@ export function SettingsModal({
                     </div>
                   ) : (
                     <ul className="sub-tree">
-                      {flatSubs.map((s) => {
-                        const active = selectedSubId === s.id;
-                        return (
-                          <li key={s.id} className={`${s.status}${active ? " active" : ""}`}>
-                            <button
-                              type="button"
-                              className="sub-row"
-                              aria-pressed={active}
-                              onClick={() => {
-                                if (onOpenSubagent) {
-                                  onOpenSubagent(s);
-                                  onClose();
-                                  return;
-                                }
-                                setSelectedSubId((id) => (id === s.id ? null : s.id));
-                              }}
-                            >
-                              <div className="sub-goal">{s.goal || s.role || s.id}</div>
-                              <div className="sub-meta">
-                                {s.status}
-                                {s.activity ? ` · ${s.activity}` : ""}
-                              </div>
-                            </button>
-                          </li>
-                        );
-                      })}
+                      {flatSubs.map((s) => (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            className={`sub-row status-${s.status}`}
+                            onClick={() => {
+                              onOpenSubagent?.(s);
+                              onClose();
+                            }}
+                          >
+                            <span className="sub-goal">
+                              {s.goal || s.role || s.id}
+                            </span>
+                            <span className="sub-meta">
+                              {s.status}
+                              {s.activity ? ` · ${s.activity}` : ""}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
                     </ul>
                   )}
                 </section>
-
-                {selectedSub ? (
-                  <section className="logs-panel logs-panel-detail">
-                    <div className="logs-panel-head">
-                      <h4>{t("detailSubagent")}</h4>
-                      <button
-                        type="button"
-                        className="ghost logs-detail-close"
-                        onClick={() => setSelectedSubId(null)}
-                      >
-                        {t("close")}
-                      </button>
-                    </div>
-                    <div className="logs-sub-detail">
-                      <p className="sub-goal">{selectedSub.goal}</p>
-                      <div className="sub-meta">
-                        {selectedSub.status}
-                        {selectedSub.activity ? ` · ${selectedSub.activity}` : ""}
-                      </div>
-                      {selectedSub.summary ? (
-                        <pre className="sub-sum">{selectedSub.summary}</pre>
-                      ) : null}
-                      {(selectedSub.transcript || []).length > 0 ? (
-                        <ul className="logs-transcript">
-                          {selectedSub.transcript.map((item) => (
-                            <li key={item.id}>
-                              <code>{item.kind}</code>
-                              <span>
-                                {item.kind === "assistant"
-                                  ? String(item.text || item.reasoning || "").trim()
-                                  : item.kind === "tool"
-                                    ? `${item.tool?.name || "tool"}${item.tool?.status ? ` · ${item.tool.status}` : ""}`
-                                    : ""}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="hint">{t("runtimeSubsHint")}</p>
-                      )}
-                    </div>
-                  </section>
-                ) : null}
               </div>
               <p className="hint logs-footnote">{t("logsClearView")}</p>
             </div>
