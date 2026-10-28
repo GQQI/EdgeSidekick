@@ -7144,8 +7144,16 @@ button.memory-toggle:disabled {
   border-radius: 12px;
 }
 
+.modal-body:has(.logs-pane) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .logs-pane {
   gap: 12px;
+  min-height: 0;
 }
 
 .logs-grid {
@@ -7154,6 +7162,10 @@ button.memory-toggle:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 14px;
+}
+
+.logs-grid.has-sub-detail {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.15fr);
 }
 
 .logs-panel {
@@ -7194,7 +7206,8 @@ button.memory-toggle:disabled {
 }
 
 .logs-panel .live-log,
-.logs-panel .sub-tree {
+.logs-panel .sub-tree,
+.logs-panel .logs-sub-detail {
   flex: 1;
   min-height: 0;
   margin: 0;
@@ -7203,6 +7216,76 @@ button.memory-toggle:disabled {
   padding: 12px;
   gap: 9px;
   align-content: start;
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+}
+
+.logs-panel .live-log {
+  /* Keep the event stream readable even when the sibling panel is busy. */
+  min-height: 160px;
+}
+
+.sub-tree .sub-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sub-tree .sub-row:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.sub-tree li.active .sub-row {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.logs-sub-detail {
+  gap: 10px;
+}
+
+.logs-detail-close {
+  font-size: 0.8rem;
+}
+
+.logs-transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.logs-transcript li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.live-log-text {
+  min-width: 0;
+  flex: 1;
 }
 
 .logs-empty {
@@ -7231,10 +7314,16 @@ button.memory-toggle:disabled {
 }
 
 @media (max-width: 720px) {
-  .logs-grid {
+  .logs-grid,
+  .logs-grid.has-sub-detail {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-rows: minmax(180px, 1fr) minmax(180px, 1fr) auto;
   }
+}
+
+/* Do not let the legacy chat live-log cap shrink the settings event stream. */
+.logs-panel .live-log {
+  margin-top: 0;
 }
 
 html[data-density="compact"] {

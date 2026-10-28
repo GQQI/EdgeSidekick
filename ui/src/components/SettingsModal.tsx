@@ -48,6 +48,8 @@ export type SettingsModalProps = {
   autoApproveTools?: boolean;
   autoApproveBusy?: boolean;
   onToggleAutoApprove?: (enabled: boolean) => void;
+  /** Open a sub-agent in the main detail pane (settings should close). */
+  onOpenSubagent?: (sub: SubNode) => void;
 };
 
 export function SettingsModal({
@@ -84,15 +86,27 @@ export function SettingsModal({
   autoApproveTools = false,
   autoApproveBusy = false,
   onToggleAutoApprove,
+  onOpenSubagent,
 }: SettingsModalProps) {
   const logEndRef = useRef<HTMLLIElement | null>(null);
   const [confirmAllowAll, setConfirmAllowAll] = useState(false);
+  const [selectedSubId, setSelectedSubId] = useState<string | null>(null);
   const switchOn = autoApproveTools || confirmAllowAll;
+  const flatSubs = flattenSubNodes(subs);
+  const selectedSub = flatSubs.find((s) => s.id === selectedSubId) || null;
 
   useEffect(() => {
-    if (settingsTab !== "runtime") return;
+    if (settingsTab !== "runtime") {
+      setSelectedSubId(null);
+      return;
+    }
     logEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [settingsTab, live.length]);
+
+  useEffect(() => {
+    if (!selectedSubId) return;
+    if (!flatSubs.some((s) => s.id === selectedSubId)) setSelectedSubId(null);
+  }, [flatSubs, selectedSubId]);
 
   useEffect(() => {
     if (settingsTab !== "safety" || autoApproveTools) setConfirmAllowAll(false);
@@ -442,53 +456,113 @@ export function SettingsModal({
                 <p className="hint">{t("logsHint")}</p>
               </header>
 
-              <div className="logs-grid">
-                <section className="logs-panel">
+              <div className={`logs-grid${selectedSub ? " has-sub-detail" : ""}`}>
+                <section className="logs-panel logs-panel-events">
                   <div className="logs-panel-head">
                     <h4>{t("runtimeEvents")}</h4>
                     <span className="logs-count">{live.length}</span>
                   </div>
-                  <ul className="live-log">
-                    {live.length === 0 ? (
-                      <li className="logs-empty">
-                        <strong>{t("runtimeEvents")}</strong>
-                        <span>{t("runtimeEventsHint")}</span>
-                      </li>
-                    ) : (
-                      live.map((l, idx) => (
+                  {live.length === 0 ? (
+                    <div className="logs-empty">
+                      <strong>{t("runtimeEvents")}</strong>
+                      <span>{t("runtimeEventsHint")}</span>
+                    </div>
+                  ) : (
+                    <ul className="live-log">
+                      {live.map((l, idx) => (
                         <li key={l.id} ref={idx === live.length - 1 ? logEndRef : undefined}>
-                          <code>{l.kind}</code> {l.text}
+                          <code>{l.kind}</code>
+                          <span className="live-log-text">{l.text}</span>
                         </li>
-                      ))
-                    )}
-                  </ul>
+                      ))}
+                    </ul>
+                  )}
                 </section>
 
-                <section className="logs-panel">
+                <section className="logs-panel logs-panel-subs">
                   <div className="logs-panel-head">
                     <h4>{t("runtimeSubs")}</h4>
-                    <span className="logs-count">{subs.length}</span>
+                    <span className="logs-count">{flatSubs.length}</span>
                   </div>
-                  {subs.length === 0 ? (
+                  {flatSubs.length === 0 ? (
                     <div className="logs-empty">
                       <strong>{t("runtimeSubs")}</strong>
                       <span>{t("runtimeSubsHint")}</span>
                     </div>
                   ) : (
                     <ul className="sub-tree">
-                      {subs.map((s) => (
-                        <li key={s.id} className={s.status}>
-                          <div className="sub-goal">{s.goal}</div>
-                          <div className="sub-meta">
-                            {s.status}
-                            {s.activity ? ` · ${s.activity}` : ""}
-                          </div>
-                          {s.summary && <pre className="sub-sum">{s.summary}</pre>}
-                        </li>
-                      ))}
+                      {flatSubs.map((s) => {
+                        const active = selectedSubId === s.id;
+                        return (
+                          <li key={s.id} className={`${s.status}${active ? " active" : ""}`}>
+                            <button
+                              type="button"
+                              className="sub-row"
+                              aria-pressed={active}
+                              onClick={() => {
+                                if (onOpenSubagent) {
+                                  onOpenSubagent(s);
+                                  onClose();
+                                  return;
+                                }
+                                setSelectedSubId((id) => (id === s.id ? null : s.id));
+                              }}
+                            >
+                              <div className="sub-goal">{s.goal || s.role || s.id}</div>
+                              <div className="sub-meta">
+                                {s.status}
+                                {s.activity ? ` · ${s.activity}` : ""}
+                              </div>
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </section>
+
+                {selectedSub ? (
+                  <section className="logs-panel logs-panel-detail">
+                    <div className="logs-panel-head">
+                      <h4>{t("detailSubagent")}</h4>
+                      <button
+                        type="button"
+                        className="ghost logs-detail-close"
+                        onClick={() => setSelectedSubId(null)}
+                      >
+                        {t("close")}
+                      </button>
+                    </div>
+                    <div className="logs-sub-detail">
+                      <p className="sub-goal">{selectedSub.goal}</p>
+                      <div className="sub-meta">
+                        {selectedSub.status}
+                        {selectedSub.activity ? ` · ${selectedSub.activity}` : ""}
+                      </div>
+                      {selectedSub.summary ? (
+                        <pre className="sub-sum">{selectedSub.summary}</pre>
+                      ) : null}
+                      {(selectedSub.transcript || []).length > 0 ? (
+                        <ul className="logs-transcript">
+                          {selectedSub.transcript.map((item) => (
+                            <li key={item.id}>
+                              <code>{item.kind}</code>
+                              <span>
+                                {item.kind === "assistant"
+                                  ? String(item.text || item.reasoning || "").trim()
+                                  : item.kind === "tool"
+                                    ? `${item.tool?.name || "tool"}${item.tool?.status ? ` · ${item.tool.status}` : ""}`
+                                    : ""}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="hint">{t("runtimeSubsHint")}</p>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
               </div>
               <p className="hint logs-footnote">{t("logsClearView")}</p>
             </div>
@@ -497,4 +571,17 @@ export function SettingsModal({
       </div>
     </div>
   );
+}
+
+function flattenSubNodes(nodes: SubNode[]): SubNode[] {
+  const out: SubNode[] = [];
+  const seen = new Set<string>();
+  const walk = (node: SubNode) => {
+    if (!node?.id || seen.has(node.id)) return;
+    seen.add(node.id);
+    out.push(node);
+    for (const child of node.children || []) walk(child);
+  };
+  for (const node of nodes || []) walk(node);
+  return out;
 }

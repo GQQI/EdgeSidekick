@@ -1656,6 +1656,10 @@ export function App() {
           autoApproveTools={Boolean(health?.auto_approve_tools)}
           autoApproveBusy={dialogs.autoApproveBusy}
           onToggleAutoApprove={(enabled) => void dialogs.toggleAutoApprove(enabled)}
+          onOpenSubagent={(sub) => {
+            setSettingsOpen(false);
+            openDetail({ type: "subagent", subagent: sub });
+          }}
           onSkillsChanged={() => {
             void fetchSkills().then(setSkills).catch(() => undefined);
           }}
