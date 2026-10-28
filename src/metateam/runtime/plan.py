@@ -247,29 +247,15 @@ plan=false for ordinary work — even if it takes a few tool calls:
 - edit / fix / tweak one file (HTML image swaps, CSS, copy, small bugfix)
 - clear single-outcome asks ("改这六个图", "加个按钮", "修报错")
 - questions, explanations, lookups
-- spawning / running multiple agents (智能体, 对抗, 辩论, delegate)
+- spawning / running multiple agents or parallel workers (delegate_task)
 - anything a competent agent can finish without needing the user to approve a roadmap
+
+When the user wants parallel agents or a live multi-agent session, choose
+plan=false so work starts immediately (Plan confirm is for implementation
+roadmaps, not for spawning workers).
 
 When unsure, choose plan=false.
 """
-
-_MULTI_AGENT_RE = re.compile(
-    # NOTE: do NOT match bare "智能体" — social chat / peer-eval mentions it constantly
-    # and would false-positive into delegate_task fan-out.
-    # Chinese count words (两/三/…) must match too — users rarely write "启动2个".
-    r"(子智能体|多智能体|多代理|[两多]\s*个\s*智能体|几个智能体去|对抗|辩论|红蓝|谈判|"
-    r"delegate(?:_task|_dialogue)?|multi-?agent|sub-?agents?|"
-    r"启动\s*(?:\d+|[两三四五六七八九十百]+)\s*个|开\s*(?:\d+|[两三四五六七八九十百]+)\s*个智能体|spawn\s+\d+|"
-    r"(?:派|叫|让)\s*(?:\d+|[两三四五六七八九十百]+)\s*个(?:智能体|代理)|并行(?:研究|调研|分析))",
-    re.I,
-)
-
-
-def is_multi_agent_request(user_text: str) -> bool:
-    """True when the user asked to spawn or run multiple agents, not a build plan."""
-    goal = extract_plan_goal(user_text) or (user_text or "")
-    return bool(_MULTI_AGENT_RE.search(goal))
-
 
 def _parse_loose_json_object(raw: str) -> dict[str, Any]:
     text = (raw or "").strip()
@@ -509,12 +495,10 @@ def needs_plan(llm: "LLM", user_text: str) -> bool:
 
     Biased toward false: only complex work should pause for a plan. Skill-only
     injections with no user task skip the call. On model failure, default False.
-    Multi-agent spawn/dialogue must run first — plan afterwards if still needed.
+    The model decides (including multi-agent → plan=false); no keyword lists.
     """
     goal = extract_plan_goal(user_text).strip()
     if not goal:
-        return False
-    if is_multi_agent_request(user_text):
         return False
     try:
         raw = llm.complete_text(
@@ -745,11 +729,13 @@ def generate_plan(llm: "LLM", goal: str, *, gathered: str = "") -> dict[str, Any
 
 
 def snapshot_plan_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Copy task dicts so later status mutations cannot rewrite queued SSE events."""
+    """Deep-copy task dicts so later status mutations cannot rewrite queued SSE events."""
+    import copy
+
     out: list[dict[str, Any]] = []
     for item in tasks:
         if isinstance(item, dict):
-            out.append(dict(item))
+            out.append(copy.deepcopy(item))
     return out
 
 

@@ -334,7 +334,7 @@ def test_gmail_revoked_grant_is_explained(data_dir, monkeypatch):
     store.set_credentials("gmail", {"client_id": "cid", "client_secret": "cs", "refresh_token": "rt"})
     mock_executor(monkeypatch, lambda req: httpx.Response(400, json={"error": "invalid_grant"}))
     res = store.invoke_tool("gmail", "list_labels", {})
-    assert res["ok"] is False and "重新授权" in res["error"]
+    assert res["ok"] is False and ("重新" in res["error"] and ("授权" in res["error"] or "access_denied" in res["error"]))
 
 
 # ── OAuth ────────────────────────────────────────────────────────────────
@@ -346,6 +346,7 @@ def test_oauth_flow_stores_refresh_token(data_dir):
         oauth.start("gmail", "http://127.0.0.1:8787/api/plugins/oauth/callback", "default")
     store.set_credentials("gmail", {"client_id": "cid", "client_secret": "cs"})
     started = oauth.start("gmail", "http://127.0.0.1:8787/api/plugins/oauth/callback", "default")
+    assert started["redirect_uri"] == "http://127.0.0.1:8787/api/plugins/oauth/callback"
     q = parse_qs(urlparse(started["url"]).query)
     assert q["client_id"] == ["cid"] and q["access_type"] == ["offline"] and q["state"] == [started["state"]]
     assert q["scope"] == ["https://www.googleapis.com/auth/gmail.modify"]
@@ -360,6 +361,24 @@ def test_oauth_flow_stores_refresh_token(data_dir):
     assert store.credentials_for(store.get_installed("gmail"))["refresh_token"] == "new-rt"
     with pytest.raises(store.PluginError, match="过期或无效"):
         oauth.complete(started["state"], "the-code", http=client)
+
+
+def test_oauth_access_denied_explains_testing(data_dir):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from metateam.api.routes import plugins as routes
+
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+    r = client.get(
+        "/api/plugins/oauth/callback",
+        params={"error": "access_denied", "error_description": "Forbidden", "state": "x"},
+    )
+    assert r.status_code == 400
+    assert "测试用户" in r.text
+    assert "access_denied" in r.text or "403" in r.text
 
 
 # ── remote marketplace ───────────────────────────────────────────────────

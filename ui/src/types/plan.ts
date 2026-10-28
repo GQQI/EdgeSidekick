@@ -1,6 +1,12 @@
 /** Shared chat / plan types used across App and panels. */
 
-export type PlanTaskStatus = "pending" | "running" | "done" | "error" | "cancelled";
+export type PlanTaskStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "skipped"
+  | "error"
+  | "cancelled";
 
 export type PlanTask = {
   id: string;

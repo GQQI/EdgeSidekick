@@ -12,6 +12,7 @@ from ...core.config import get_settings
 from ...services.mcp_config import McpServerConfig, load_mcp_config, update_mcp_config
 from ...services import mcp_catalog
 from ...services.mcp_runtime import test_server as mcp_test_server
+from ...services.mcp_runtime import tools_public_list as mcp_tools_public_list
 from ...services.memory import (
     library_from_payload,
     load_library,
@@ -20,10 +21,10 @@ from ...services.memory import (
     write_memory,
 )
 from ...services.model_config import load_model_config, select_model_role, update_model_config
-from ...services.app_prefs import auto_approve_tools, load_app_prefs, save_app_prefs
+from ...services.app_prefs import auto_approve_tools, load_app_prefs, save_app_prefs, mcp_in_chat, plugins_in_chat
 from ...services.local_auth import get_token
 from ...services.store import STORE
-from ...services.user_auth import auth_status
+from ...services.user_auth import auth_status, needs_setup
 from ...services.workspace_store import get_active_workspace
 from ..http import require_loopback
 from ..schemas import (
@@ -99,6 +100,8 @@ def health() -> dict[str, Any]:
         "allow_shell": bool(getattr(s, "allow_shell", False)),
         "shell_sandbox": bool(getattr(s, "shell_sandbox", True)),
         "mcp_enabled": bool(getattr(s, "mcp_enabled", True)),
+        "mcp_in_chat": mcp_in_chat(),
+        "plugins_in_chat": plugins_in_chat(),
         "auto_approve_tools": auto_approve_tools(),
         "auth_register": True,
     }
@@ -139,7 +142,25 @@ def bootstrap(request: Request) -> dict[str, Any]:
 
 @router.get("/api/mcp")
 def api_mcp_get() -> dict[str, Any]:
-    return load_mcp_config().public_dict()
+    from ...services.mcp_runtime import get_server_health
+
+    data = load_mcp_config().public_dict()
+    health = get_server_health()
+    for s in data.get("servers") or []:
+        if not isinstance(s, dict):
+            continue
+        sid = str(s.get("id") or "")
+        info = health.get(sid) if isinstance(health, dict) else None
+        if isinstance(info, dict) and not info.get("ok", True):
+            s["ok"] = False
+            s["error"] = info.get("error")
+            s["health"] = "unhealthy"
+        else:
+            s["ok"] = True
+            s["error"] = None
+            s["health"] = "ok"
+    data["health"] = health
+    return data
 
 
 @router.put("/api/mcp")
@@ -165,6 +186,18 @@ def api_mcp_test(body: McpTestBody) -> dict[str, Any]:
         enabled=True,
     )
     return mcp_test_server(server)
+
+
+
+
+@router.get("/api/mcp/tools")
+def api_mcp_tools() -> dict[str, Any]:
+    """List tools from enabled MCP servers (does not require chat binding)."""
+    try:
+        tools = mcp_tools_public_list()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"MCP list_tools failed: {exc}") from exc
+    return {"tools": tools, "count": len(tools)}
 
 
 @router.get("/api/mcp/catalog")

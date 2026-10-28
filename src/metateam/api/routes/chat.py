@@ -108,6 +108,57 @@ async def chat_sse(req: ChatRequest) -> EventSourceResponse:
             # naming convention, so session ids must never decide capability.
             classify = bool(getattr(req, "classify", False))
             disable_tools = bool(getattr(req, "disable_tools", False)) or classify
+            # Session binding for MCP / plugins (binding = optional filter).
+            # Empty binding = all enabled (auto); non-empty = subset.
+            try:
+                from ...runtime.tools.build import (
+                    apply_extension_budget_safely,
+                    register_mcp_safely,
+                    register_plugins_safely,
+                )
+                from ...runtime.tools.extension_budget import normalize_id_list
+
+                raw_mcp = getattr(req, "mcp_server_ids", None)
+                raw_plugins = getattr(req, "plugin_ids", None)
+                if raw_mcp is not None:
+                    mcp_bound = normalize_id_list(raw_mcp)
+                    sess.mcp_server_ids = mcp_bound
+                else:
+                    mcp_bound = normalize_id_list(getattr(sess, "mcp_server_ids", None))
+                if raw_plugins is not None:
+                    plugin_bound = normalize_id_list(raw_plugins)
+                    sess.plugin_ids = plugin_bound
+                else:
+                    plugin_bound = normalize_id_list(getattr(sess, "plugin_ids", None))
+
+                setattr(sess.agent.settings, "mcp_bound_ids", mcp_bound)
+                setattr(sess.agent.settings, "plugin_bound_ids", plugin_bound)
+                recent = list(getattr(sess, "recent_tool_successes", None) or [])
+                setattr(sess.agent.settings, "recent_tool_successes", recent)
+
+                register_mcp_safely(
+                    sess.agent.registry,
+                    settings=sess.agent.settings,
+                    server_ids=mcp_bound,
+                )
+                register_plugins_safely(
+                    sess.agent.registry,
+                    settings=sess.agent.settings,
+                    plugin_ids=plugin_bound,
+                )
+                # Budget/hot-set: recent successes prioritize when schemas > threshold.
+                # Also pin tools for plugins/MCP sources named in this user message
+                # (generic mention→plugin matching — avoids dropping the right plugin).
+                setattr(sess.agent.settings, "budget_mention_text", str(req.message or ""))
+                apply_extension_budget_safely(
+                    sess.agent.registry,
+                    settings=sess.agent.settings,
+                    recent=recent,
+                    mention_text=str(req.message or ""),
+                )
+            except Exception as exc:
+                log_exception(_log, f"MCP/plugin bind failed for {sess.id}", exc)
+
             result = sess.agent.run(
                 req.message,
                 mode=req.mode or "agent",

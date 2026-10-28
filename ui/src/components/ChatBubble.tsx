@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import { FileTypeIcon, fileCardMeta } from "./FileTypeIcon";
 import { IconCheck, IconCube, IconUser } from "./icons";
 import { IconRobotCube } from "./IconRobotCube";
@@ -154,6 +154,16 @@ export const ChatBubble = memo(function ChatBubble({
   onCtrlClickUrl,
 }: BubbleProps) {
   const skillInject = m.role === "user" && isSkillInjectMessage(m.content);
+  const openWorkspaceFile = useCallback(
+    (path: string) => {
+      void readFileContent(path)
+        .then((file) => onSetDetail(fileToDetail(file)))
+        .catch((err) =>
+          onToast(err instanceof Error ? err.message : String(err)),
+        );
+    },
+    [onSetDetail, onToast],
+  );
   return (
     <article
       className={`bubble ${m.role}${m.streaming ? " streaming" : ""}${
@@ -273,6 +283,7 @@ export const ChatBubble = memo(function ChatBubble({
             content={m.role === "assistant" ? formatAssistantDisplay(stripToolCallMarkup(m.content)) : m.content}
             streaming={m.streaming && !m.reasoningStreaming}
             onCtrlClickUrl={onCtrlClickUrl}
+            onOpenWorkspaceFile={openWorkspaceFile}
           />
         ) : m.streaming && !m.reasoningStreaming ? (
           <div className="plain muted">…</div>

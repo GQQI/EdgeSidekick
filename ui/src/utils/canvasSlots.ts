@@ -72,6 +72,7 @@ export function alignCanvasSlots(primary: SubNode[], extras: SubNode[]): SubNode
 
   const slots = primary.map(cloneNode);
   const taken = new Set<number>();
+  const primaryLen = slots.length;
 
   const take = (predicate: (slot: SubNode) => boolean): number => {
     const idx = slots.findIndex((slot, i) => !taken.has(i) && predicate(slot));
@@ -86,8 +87,7 @@ export function alignCanvasSlots(primary: SubNode[], extras: SubNode[]): SubNode
       idx = take((slot) => canvasGoalsMatch(slot.goal, extra.goal));
     }
     if (idx < 0) {
-      const extraEph = isEphemeralCanvasId(extra.id);
-      idx = take((slot) => extraEph || isEphemeralCanvasId(slot.id));
+      idx = take((slot) => isEphemeralCanvasId(slot.id));
     }
     if (idx >= 0) {
       slots[idx] = mergeBound(slots[idx], extra);
@@ -96,12 +96,19 @@ export function alignCanvasSlots(primary: SubNode[], extras: SubNode[]): SubNode
     leftover.push(extra);
   }
 
+  // Never grow past the authoritative primary slot count — bind leftovers onto
+  // any remaining ephemeral slots instead of appending a 4th/5th robot.
   for (const extra of leftover) {
     if (isEphemeralCanvasId(extra.id)) continue;
     if (slots.some((slot) => slot.id === extra.id)) continue;
-    slots.push(cloneNode(extra));
+    const empty = take((slot) => isEphemeralCanvasId(slot.id));
+    if (empty >= 0) {
+      slots[empty] = mergeBound(slots[empty], extra);
+      continue;
+    }
+    if (slots.length < primaryLen) slots.push(cloneNode(extra));
   }
-  return slots;
+  return slots.slice(0, Math.max(primaryLen, 1));
 }
 
 /** Drop surplus roots so the board cannot outgrow the delegated task list. */
@@ -109,8 +116,21 @@ export function limitCanvasRoots(nodes: SubNode[], declared: number): SubNode[] 
   if (!Number.isFinite(declared) || declared <= 0 || nodes.length <= declared) {
     return nodes;
   }
+  // Prefer real ids already bound into slots; keep slot order stable.
   const preferred = nodes.filter((n) => !isEphemeralCanvasId(n.id));
   const fallback = nodes.filter((n) => isEphemeralCanvasId(n.id));
-  const keep = new Set([...preferred, ...fallback].slice(0, declared).map((n) => n.id));
-  return nodes.filter((n) => keep.has(n.id));
+  const ordered = [...preferred, ...fallback];
+  const keep = new Set(ordered.slice(0, declared).map((n) => n.id));
+  return nodes.filter((n) => keep.has(n.id)).slice(0, declared);
+}
+
+/** Highest pending/queued/restored index + 1, or plain root count. */
+export function peakCanvasSlotCount(nodes: SubNode[]): number {
+  let maxIdx = -1;
+  for (const n of nodes) {
+    const id = String(n.id || "");
+    const m = /^(?:pending|queued|restored):[^:]+:(\d+)$/.exec(id);
+    if (m) maxIdx = Math.max(maxIdx, Number(m[1]));
+  }
+  return Math.max(maxIdx + 1, nodes.length);
 }

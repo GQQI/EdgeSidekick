@@ -164,8 +164,8 @@ CATALOG: tuple[McpCatalogEntry, ...] = (
         tags=("official", "offline", "sqlite"),
         offline_capable=True,
         command="uvx",
-        args=("mcp-server-sqlite", "--db-path", "./data.db"),
-        install_hint="添加前填写本地 .db 路径。需 uv/uvx。勿用 @executeautomation/database-server（依赖 sqlite3，Node 24 无预编译绑定会崩溃）。",
+        args=("--with", "mcp<2", "mcp-server-sqlite", "--db-path", "./data.db"),
+        install_hint="添加前填写本地 .db 路径。需 uv/uvx；已自动 --with mcp<2（兼容 mcp 2.x 宿主）。勿用 @executeautomation/database-server（依赖 sqlite3，Node 24 无预编译绑定会崩溃）。",
         package="mcp-server-sqlite",
     ),
     McpCatalogEntry(

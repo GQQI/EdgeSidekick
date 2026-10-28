@@ -11,7 +11,7 @@ import type {
 import { emptyBoard, normalizeBoard } from "./sharedBoard";
 
 export const DEFAULT_SKILLS = ["研究", "写作", "总结"];
-export const DEFAULT_TOOLS = ["搜索", "文件", "浏览器"];
+export const DEFAULT_TOOLS = ["搜索", "文件", "终端", "浏览器"];
 
 function normalizeAgent(a: Partial<SocialAgent> & Pick<SocialAgent, "id" | "name">): SocialAgent {
   return {

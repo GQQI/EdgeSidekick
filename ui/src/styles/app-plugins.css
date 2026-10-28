@@ -247,6 +247,36 @@ html[data-theme="dark"] .plugin-ready-note { color: #6ee7b7; }
 .plugin-toggle { padding-bottom: 0 !important; }
 .plugin-section { border-top: 1px solid var(--line); padding-top: 16px; }
 .plugin-section h4 { margin: 0 0 12px; font-size: 0.95rem; }
+.plugin-version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.plugin-version-list > li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2, transparent);
+}
+.plugin-version-list > li.active {
+  border-color: color-mix(in srgb, var(--accent, #2563eb) 45%, var(--line));
+}
+.plugin-version-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+.plugin-version-meta strong { font-size: 0.95rem; }
+.plugin-version-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .plugin-tools { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .plugin-tools li {
   display: grid;
@@ -534,4 +564,102 @@ html[data-theme="dark"] .plugin-badge.built-in { color: #5eead4; }
   }
   .mcp-list-row { flex-direction: column; align-items: stretch; }
   .mcp-list-row-actions { justify-content: flex-end; }
+}
+
+/* Page header: title left, actions right (mock-aligned) */
+.plugin-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.plugin-page-titles h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.plugin-page-titles .hint {
+  margin: 4px 0 0;
+}
+.plugin-page-head .plugin-bar-actions {
+  flex-shrink: 0;
+}
+.plugin-settings .settings-pane-intro { display: none; }
+
+/* Tabs row without crowding actions */
+.plugin-bar {
+  margin-bottom: 2px;
+}
+
+/* Plugin modal close: match SettingsModal icon-btn + drawer-head hit target */
+.plugin-action-modal .modal-head .icon-btn,
+.plugin-guide-modal .modal-head .icon-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.plugin-action-modal .modal-head .icon-btn:hover:not(:disabled),
+.plugin-guide-modal .modal-head .icon-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.plugin-action-modal .modal-head .icon-btn:disabled,
+.plugin-guide-modal .modal-head .icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Upload / URL action modals */
+.plugin-action-modal {
+  width: min(520px, 92vw);
+  max-height: min(86vh, 640px);
+}
+.plugin-upload-modal .modal-body {
+  display: grid;
+  gap: 12px;
+}
+.plugin-upload-hint {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+.plugin-action-modal .plugin-upload-zone {
+  margin: 0;
+  min-height: 160px;
+}
+.plugin-modal-form {
+  display: grid;
+  gap: 14px;
+}
+.plugin-modal-form .mcp-field {
+  display: grid;
+  gap: 6px;
+}
+.plugin-modal-form input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-2, var(--surface));
+  color: inherit;
+  font: inherit;
+}
+.plugin-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

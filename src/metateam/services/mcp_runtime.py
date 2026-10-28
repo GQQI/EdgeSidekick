@@ -152,6 +152,27 @@ def _arg_after_flag(args: list[str], flag: str) -> str:
     return str(args[idx + 1]).strip()
 
 
+def _set_arg_after_flag(args: list[str], flag: str, value: str) -> list[str]:
+    out = list(args)
+    try:
+        idx = out.index(flag)
+    except ValueError:
+        return out
+    if idx + 1 >= len(out):
+        out.append(value)
+    else:
+        out[idx + 1] = value
+    return out
+
+
+def _workspace_root() -> Any:
+    from pathlib import Path as _P
+
+    from ..core.config import get_settings
+
+    return get_settings().workspace.resolve()
+
+
 def _looks_like_git_repo(path: str) -> bool:
     from pathlib import Path as _P
 
@@ -172,20 +193,48 @@ def _looks_like_git_repo(path: str) -> bool:
     return False
 
 
+def _resolve_relative_path_args(args: list[str]) -> list[str]:
+    """Map '.' / relative --repository and --db-path onto the active workspace."""
+    from pathlib import Path as _P
+
+    out = [str(a) for a in args]
+    try:
+        ws = _workspace_root()
+    except Exception:  # noqa: BLE001
+        return out
+
+    repo = _arg_after_flag(out, "--repository")
+    if repo in ("", ".", ".."):
+        out = _set_arg_after_flag(out, "--repository", str(ws))
+    elif repo and not _P(repo).expanduser().is_absolute():
+        out = _set_arg_after_flag(out, "--repository", str((ws / repo).resolve()))
+
+    db = _arg_after_flag(out, "--db-path")
+    if db and not _P(db).expanduser().is_absolute():
+        resolved = (ws / db).resolve()
+        try:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+        out = _set_arg_after_flag(out, "--db-path", str(resolved))
+    return out
+
+
 def _preflight_server(server: McpServerConfig) -> Optional[str]:
     """Return a human-readable skip reason, or None if OK to launch.
 
-    Soft-fails known broken configs (git cwd=., Node24+sqlite3 native) instead
-    of spawning processes that crash-loop.
+    Soft-fails known broken configs (git non-repo path, Node24+sqlite3 native)
+    instead of spawning processes that crash-loop. Relative '.' paths are
+    rewritten to the active workspace before the check.
     """
     transport = server.normalized_transport()
     if transport != "stdio":
         return None
-    args = [str(a) for a in (server.args or [])]
+    args = _resolve_relative_path_args([str(a) for a in (server.args or [])])
     joined = " ".join(args).lower()
     cmd = (server.command or "").strip().lower()
 
-    # --- Git: bare "." / non-repo path ---
+    # --- Git: missing / non-repo path (after workspace rewrite) ---
     is_git = (
         server.id == "git"
         or "mcp-server-git" in joined
@@ -197,15 +246,12 @@ def _preflight_server(server: McpServerConfig) -> Optional[str]:
             last = args[-1]
             if last and last != "mcp-server-git" and not last.startswith("-"):
                 repo = last
-        if not repo or repo in (".", ".."):
-            return (
-                "Git MCP repository path is missing or '.' - Sidekick cwd is often "
-                "not a git repo. Set --repository to a real local git path in MCP settings."
-            )
+        if not repo:
+            return "Git 仓库路径未配置。请在 MCP 设置里为 --repository 填写真实本地仓库路径。"
         if not _looks_like_git_repo(repo):
             return (
-                f"Git MCP path is not a git repository: {repo}. "
-                "Update the path in MCP settings (or disable this server)."
+                f"Git 路径不是有效仓库：{repo}。"
+                "请在 MCP 设置中改为含 .git 的目录，或禁用该服务器。"
             )
 
     # --- SQLite via @executeautomation/database-server (native sqlite3) ---
@@ -217,14 +263,89 @@ def _preflight_server(server: McpServerConfig) -> Optional[str]:
         major = _node_major()
         if major is not None and major >= 24:
             return (
-                f"SQLite MCP (@executeautomation/database-server) uses native sqlite3, "
-                f"which has no prebuilds for Node.js {major} (ABI node-v137). "
-                "Disable it or re-add \"SQLite / Database\" from the catalog "
-                "(uvx mcp-server-sqlite), or use Node 20 LTS."
+                f"SQLite MCP（@executeautomation/database-server）依赖原生 sqlite3，"
+                f"当前 Node.js {major} 无预编译包。请改用目录中的 "
+                "「SQLite / Database」（uvx mcp-server-sqlite），或换 Node 20 LTS。"
             )
 
     return None
 
+
+
+
+
+def _format_mcp_exc(exc: BaseException) -> str:
+    """Flatten ExceptionGroup / TaskGroup errors into a readable one-liner."""
+    parts: list[str] = []
+
+    def _walk(e: BaseException) -> None:
+        sub = getattr(e, "exceptions", None)
+        if sub:
+            for child in sub:
+                if isinstance(child, BaseException):
+                    _walk(child)
+            return
+        parts.append(f"{type(e).__name__}: {e}")
+
+    try:
+        _walk(exc)
+    except Exception:  # noqa: BLE001
+        parts = [str(exc)]
+    msg = "; ".join(parts) if parts else str(exc)
+    # Known: archived mcp-server-sqlite vs mcp>=2 (Server.list_resources removed).
+    if "list_resources" in msg or "has no attribute 'list_resources'" in msg:
+        msg = (
+            f"{msg} — mcp-server-sqlite is incompatible with the mcp 2.x SDK. "
+            "Use uvx --with 'mcp<2' mcp-server-sqlite (catalog default), then re-test."
+        )
+    return msg[:500]
+
+
+def _stdio_command_args(server: McpServerConfig) -> tuple[str, list[str]]:
+    """Return (command, args), resolving workspace paths + pinning mcp<2 for sqlite.
+
+    mcp-server-sqlite (archived official) still calls Server.list_resources, which
+    was removed in mcp 2.x. Without --with mcp<2, uvx resolves mcp 2.3+ and the
+    child crashes — tools never register while Settings still show enabled.
+    """
+    cmd = (server.command or "").strip()
+    args = _resolve_relative_path_args([str(a) for a in (server.args or [])])
+    cmd_l = cmd.lower()
+    if cmd_l not in ("uvx", "uv") and not cmd_l.endswith("uvx.exe") and not cmd_l.endswith("uv.exe"):
+        return cmd, args
+    if "mcp-server-sqlite" not in args:
+        return cmd, args
+    # Respect an explicit --with that already mentions mcp.
+    for i, a in enumerate(args):
+        if a == "--with" and i + 1 < len(args) and "mcp" in str(args[i + 1]).lower():
+            return cmd, args
+    out: list[str] = []
+    inserted = False
+    for a in args:
+        if not inserted and a == "mcp-server-sqlite":
+            out.extend(["--with", "mcp<2"])
+            inserted = True
+        out.append(a)
+    if inserted:
+        _log.info(
+            "MCP %s: auto-inserted uvx --with mcp<2 for mcp-server-sqlite compatibility",
+            server.id,
+        )
+    return cmd, out if inserted else args
+
+
+def get_server_health(server_id: str = "") -> dict[str, Any]:
+    """Public health snapshot for Settings / prompt honesty."""
+    sid = (server_id or "").strip()
+    if sid:
+        reason = _is_unhealthy(sid)
+        return {"id": sid, "ok": reason is None, "error": reason}
+    out: dict[str, Any] = {}
+    for key in list(_unhealthy_reason.keys()):
+        reason = _is_unhealthy(key)
+        if reason:
+            out[key] = {"ok": False, "error": reason}
+    return out
 
 
 
@@ -309,9 +430,10 @@ async def _open_session(server: McpServerConfig) -> AsyncIterator[Any]:
         from mcp.client.stdio import stdio_client
 
         env = {**os.environ, **(server.env or {})}
+        launch_cmd, launch_args = _stdio_command_args(server)
         params = StdioServerParameters(
-            command=server.command,
-            args=list(server.args or []),
+            command=launch_cmd,
+            args=list(launch_args),
             env=env,
         )
         _install_quiet_stdio_pipe_handler()
@@ -357,7 +479,9 @@ async def _open_session(server: McpServerConfig) -> AsyncIterator[Any]:
                 yield session
 
 
-async def _list_tools_async(server: McpServerConfig) -> list[McpToolInfo]:
+async def _list_tools_async(
+    server: McpServerConfig, *, timeout: float = 18.0
+) -> list[McpToolInfo]:
     async def _inner() -> list[McpToolInfo]:
         tools: list[McpToolInfo] = []
         async with _open_session(server) as session:
@@ -382,7 +506,7 @@ async def _list_tools_async(server: McpServerConfig) -> list[McpToolInfo]:
 
     # Inner wait_for so a stuck initialize/list_tools cannot outlive the
     # thread-level timeout (stdio npx can ignore cancellation otherwise).
-    return await asyncio.wait_for(_inner(), timeout=18.0)
+    return await asyncio.wait_for(_inner(), timeout=max(5.0, float(timeout)))
 
 
 async def _call_tool_async(
@@ -405,14 +529,30 @@ async def _call_tool_async(
         return out
 
 
-def list_enabled_tools(setup: Optional[McpSetup] = None) -> list[McpToolInfo]:
+def list_enabled_tools(
+    setup: Optional[McpSetup] = None,
+    *,
+    server_ids: Optional[list[str]] = None,
+) -> list[McpToolInfo]:
+    """List tools from enabled MCP servers.
+
+    ``server_ids``: None = all enabled; [] = none; list = subset. Implements 启用 ≠ 绑定: when provided, only those server
+    ids are contacted even if other servers are marked enabled in config.
+    """
     if not _mcp_available():
         _log.warning("mcp package not installed - MCP tools disabled")
         return []
     cfg = setup or load_mcp_config()
+    # None = all enabled; explicit list (including empty) = only those ids.
+    if server_ids is None:
+        allow = None
+    else:
+        allow = {str(x).strip() for x in server_ids if str(x).strip()}
     out: list[McpToolInfo] = []
     for server in cfg.servers:
         if not server.enabled:
+            continue
+        if allow is not None and server.id not in allow:
             continue
         transport = server.normalized_transport()
         if transport == "stdio" and not (server.command or "").strip():
@@ -430,17 +570,19 @@ def list_enabled_tools(setup: Optional[McpSetup] = None) -> list[McpToolInfo]:
         try:
             # Keep per-server budget short so one broken MCP (sqlite/npx)
             # cannot stall agent boot / exhaust the API thread pool.
-            tools = _run_coro(_list_tools_async(server), timeout=20.0)
+            tools = _run_coro(_list_tools_async(server, timeout=18.0), timeout=20.0)
             _clear_unhealthy(server.id)
             out.extend(tools)
         except BaseException as exc:  # noqa: BLE001 - include ExceptionGroup / TimeoutError
-            msg = str(exc)
+            msg = _format_mcp_exc(exc)
             # Enrich known Node native-binding crashes for clearer logs.
             if "Could not locate the bindings file" in msg or "node-v137" in msg:
                 msg = (
                     f"{msg} - native sqlite3/better-sqlite3 missing for this Node ABI; "
-                    "use uvx mcp-server-sqlite or Node 20 LTS."
+                    "use uvx --with 'mcp<2' mcp-server-sqlite or Node 20 LTS."
                 )
+            if "timed out" in msg.lower() or "TimeoutError" in msg:
+                msg = f"连接超时：{msg}"
             _mark_unhealthy(server.id, msg)
             _log.warning("MCP list_tools failed for %s: %s", server.id, msg)
     return out
@@ -457,15 +599,21 @@ def call_tool(server: McpServerConfig, tool_name: str, arguments: dict[str, Any]
 
 def test_server(server: McpServerConfig) -> dict[str, Any]:
     if not _mcp_available():
-        return {"ok": False, "error": "mcp package not installed"}
+        return {"ok": False, "error": "未安装 mcp 包（pip install mcp）"}
     # Explicit test clears prior unhealthy so the user can re-check after editing paths.
     _clear_unhealthy(server.id)
     reason = _preflight_server(server)
     if reason:
         _mark_unhealthy(server.id, reason)
         return {"ok": False, "error": reason}
+    cmd = (server.command or "").strip().lower()
+    # uvx cold-start (first package pull) often exceeds 20s.
+    budget = 60.0 if cmd in ("uvx", "uv") or cmd.endswith("uvx.exe") or cmd.endswith("uv.exe") else 30.0
     try:
-        tools = _run_coro(_list_tools_async(server), timeout=20.0)
+        tools = _run_coro(
+            _list_tools_async(server, timeout=max(15.0, budget - 5.0)),
+            timeout=budget,
+        )
         _clear_unhealthy(server.id)
         return {
             "ok": True,
@@ -473,11 +621,16 @@ def test_server(server: McpServerConfig) -> dict[str, Any]:
             "tools": [{"name": t.name, "qualified": t.qualified} for t in tools[:40]],
         }
     except BaseException as exc:  # noqa: BLE001
-        msg = str(exc)
+        msg = _format_mcp_exc(exc)
+        if "timed out" in msg.lower() or "TimeoutError" in msg:
+            msg = (
+                f"连接超时（{int(budget)}s）。若首次使用 uvx，请确认本机已安装 uv/uvx 后重试；"
+                f"也可检查 --db-path / --repository 是否指向有效路径。原始错误：{msg}"
+            )
         if "Could not locate the bindings file" in msg or "node-v137" in msg:
             msg = (
-                f"{msg} - native sqlite3 missing for this Node ABI; "
-                "prefer catalog SQLite (uvx mcp-server-sqlite) or Node 20 LTS."
+                f"{msg} — 原生 sqlite3 与当前 Node ABI 不兼容；"
+                "请改用目录中的 SQLite（uvx --with 'mcp<2' mcp-server-sqlite）或 Node 20 LTS。"
             )
         _mark_unhealthy(server.id, msg)
         return {"ok": False, "error": msg}
@@ -488,10 +641,19 @@ def register_mcp_tools(
     *,
     Tool: Any,
     setup: Optional[McpSetup] = None,
+    server_ids: Optional[list[str]] = None,
 ) -> int:
+    """Register MCP tools into the agent ToolRegistry.
+
+    Always Ask-First for MCP (external side effects). Callers pass
+    ``server_ids`` to bind a subset of enabled servers for this session.
+    """
+    # Drop previous MCP tools so disable / rebind mid-session takes effect.
+    if hasattr(registry, "drop_prefix"):
+        registry.drop_prefix("mcp_")
     cfg = setup or load_mcp_config()
     by_id = {s.id: s for s in cfg.servers}
-    tools = list_enabled_tools(cfg)
+    tools = list_enabled_tools(cfg, server_ids=server_ids)
     count = 0
     for info in tools:
         server = by_id.get(info.server_id)
@@ -517,7 +679,29 @@ def register_mcp_tools(
                 f"[MCP:{info.server_name}] {info.description}",
                 schema,
                 _make(server, info.name),
+                parallel_safe=False,
+                requires_approval=True,
+                readonly=False,
             )
         )
         count += 1
     return count
+
+
+def tools_public_list(
+    setup: Optional[McpSetup] = None,
+    *,
+    server_ids: Optional[list[str]] = None,
+) -> list[dict[str, Any]]:
+    """Serialize enabled MCP tools for /api/mcp/tools."""
+    return [
+        {
+            "server_id": t.server_id,
+            "server_name": t.server_name,
+            "name": t.name,
+            "qualified": t.qualified,
+            "description": t.description,
+            "input_schema": t.input_schema,
+        }
+        for t in list_enabled_tools(setup, server_ids=server_ids)
+    ]

@@ -226,8 +226,12 @@ export function useAppChrome(d: Deps) {
     };
   }, []);
 
+  const chromeRef = useRef(d);
+  chromeRef.current = d;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const d = chromeRef.current;
       const mod = e.metaKey || e.ctrlKey;
       const target = e.target as HTMLElement | null;
       const typing =
@@ -289,17 +293,7 @@ export function useAppChrome(d: Deps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [
-    d.approval,
-    d.askPrompt,
-    d.settingsOpen,
-    d.sidePanel,
-    d.explorerCollapsed,
-    d.detail,
-    d.input,
-    d.sessionsPage,
-    d.planConfirm,
-  ]);
+  }, []);
 
   useEffect(() => {
     if (!d.toast) return;

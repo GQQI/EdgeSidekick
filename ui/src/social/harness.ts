@@ -615,12 +615,21 @@ export function diagnoseHarness(input: {
     text: [...row.texts].reverse().find((item) => item.trim()) || "",
   }));
   const workers = finals.filter((row) => row.role === "owner" || row.role === "worker");
-  const delivered = workers.filter((row) => substantive(row.text) && !unfinished(row.text) && !row.goalBlocked && row.goalSatisfied !== false);
+  // The goal verdict is the primary completion signal. Text heuristics only
+  // fill in when the backend sent no verdict (older stream / no judge call).
+  const delivered = workers.filter(
+    (row) =>
+      !row.goalBlocked
+      && row.goalSatisfied !== false
+      && (row.goalSatisfied === true || (substantive(row.text) && !unfinished(row.text))),
+  );
   const failures: FailureCode[] = [];
   if (!workers.length) failures.push("spec_no_owner");
   if (workers.some((row) => row.goalBlocked)) failures.push("verify_goal_blocked");
   if (workers.some((row) => row.goalSatisfied === false)) failures.push("verify_no_evidence");
-  if (workers.some((row) => unfinished(row.text) || !substantive(row.text))) failures.push("verify_unfinished");
+  if (workers.some((row) => row.goalSatisfied !== true && (unfinished(row.text) || !substantive(row.text)))) {
+    failures.push("verify_unfinished");
+  }
   if (workers.some((row) => row.toolErrors > 0 && row.goalSatisfied !== true)) failures.push("coord_tool_conflict");
   if (
     input.plan.phase === "work"
@@ -640,7 +649,9 @@ export function diagnoseHarness(input: {
   const talkOk = input.plan.phase === "talk" && finals.some((row) => substantive(row.text) && !unfinished(row.text));
   const workOk = input.plan.phase === "work"
     && delivered.length > 0
-    && !workers.some((row) => row.goalBlocked || row.goalSatisfied === false || unfinished(row.text));
+    && !workers.some(
+      (row) => row.goalBlocked || row.goalSatisfied === false || (row.goalSatisfied !== true && unfinished(row.text)),
+    );
   const success = (talkOk || workOk)
     && !failures.includes("verify_goal_blocked")
     && !failures.includes("verify_no_evidence");

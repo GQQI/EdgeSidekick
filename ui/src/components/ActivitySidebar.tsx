@@ -57,6 +57,8 @@ export type ActivitySidebarProps = {
   browserOpenRequest?: BrowserOpenRequest | null;
   browserSuspended?: boolean;
   onWorkspaceMutated?: () => void;
+  onUndoRestored?: (info?: { truncated?: boolean }) => void;
+  onToast?: (msg: string) => void;
   mainView?: "chat" | "memory";
   onOpenMemory?: () => void;
   onOpenChat?: () => void;
@@ -101,6 +103,8 @@ export function ActivitySidebar({
   browserOpenRequest,
   browserSuspended = false,
   onWorkspaceMutated,
+  onUndoRestored,
+  onToast,
   mainView = "chat",
   onOpenMemory,
   onOpenChat,
@@ -113,6 +117,25 @@ export function ActivitySidebar({
   const sidePanelEff = forcedPanel ?? sidePanel;
   const explorerCollapsedEff = embedded ? false : explorerCollapsed;
   const showChat = () => onOpenChat?.();
+  /** Clear keyboard focus so :focus cannot keep a prior rail button looking selected. */
+  const blurRailFocus = () => {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement && el.classList.contains("activity-btn")) el.blur();
+  };
+  /**
+   * Side-rail items are mutually exclusive with each other and with mainView=memory.
+   * Memory is a main-view mode, not a SidePanel — never leave a panel marked active under it.
+   */
+  const panelActive = (panel: SidePanel) =>
+    mainView !== "memory" && sidePanelEff === panel && !explorerCollapsedEff;
+  /** Enter memory: leave chat panels, drop undo/etc selection, collapse body, blur focus. */
+  const openMemoryExclusive = () => {
+    // Clear panel selection away from undo/jobs/etc so nothing stays "selected" in state.
+    setSidePanel("files");
+    setExplorerCollapsed(true);
+    blurRailFocus();
+    onOpenMemory?.();
+  };
 
   const projectSwitch = (
     <ProjectSwitch
@@ -132,6 +155,7 @@ export function ActivitySidebar({
           className="activity-brand"
           title="EdgeSidekick"
           onClick={() => {
+            showChat();
             setSidePanel("files");
             setExplorerCollapsed(false);
           }}
@@ -141,9 +165,10 @@ export function ActivitySidebar({
         <div className="activity-top">
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "search" && !explorerCollapsedEff ? " active" : ""}`}
+            className={`activity-btn${panelActive("search") ? " active" : ""}`}
             title={t("navSearch")}
             onClick={() => {
+              showChat();
               setSidePanel("search");
               setExplorerCollapsed(false);
             }}
@@ -153,12 +178,13 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "files" && !explorerCollapsedEff ? " active" : ""}`}
+            className={`activity-btn${panelActive("files") ? " active" : ""}`}
             title={t("navFiles")}
             onClick={() => {
-              if (sidePanelEff === "files" && !explorerCollapsedEff) {
+              if (sidePanelEff === "files" && !explorerCollapsedEff && mainView !== "memory") {
                 setExplorerCollapsed(true);
               } else {
+                showChat();
                 setSidePanel("files");
                 setExplorerCollapsed(false);
               }
@@ -169,12 +195,13 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "browser" && !explorerCollapsedEff ? " active" : ""}`}
+            className={`activity-btn${panelActive("browser") ? " active" : ""}`}
             title={t("navBrowser")}
             onClick={() => {
-              if (sidePanelEff === "browser" && !explorerCollapsedEff) {
+              if (sidePanelEff === "browser" && !explorerCollapsedEff && mainView !== "memory") {
                 setExplorerCollapsed(true);
               } else {
+                showChat();
                 setSidePanel("browser");
                 setExplorerCollapsed(false);
               }
@@ -186,12 +213,13 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "git" && !explorerCollapsedEff ? " active" : ""}`}
+            className={`activity-btn${panelActive("git") ? " active" : ""}`}
             title={t("navGit")}
             onClick={() => {
-              if (sidePanelEff === "git" && !explorerCollapsedEff) {
+              if (sidePanelEff === "git" && !explorerCollapsedEff && mainView !== "memory") {
                 setExplorerCollapsed(true);
               } else {
+                showChat();
                 setSidePanel("git");
                 setExplorerCollapsed(false);
               }
@@ -202,7 +230,7 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "jobs" && !explorerCollapsedEff ? " active" : ""}${jobsRunning > 0 ? " has-badge" : ""}`}
+            className={`activity-btn${panelActive("jobs") ? " active" : ""}${jobsRunning > 0 ? " has-badge" : ""}`}
             title={t("navJobs")}
             onClick={() => {
               showChat();
@@ -223,7 +251,7 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "schedules" && !explorerCollapsedEff ? " active" : ""}${schedulesCount > 0 ? " has-badge" : ""}`}
+            className={`activity-btn${panelActive("schedules") ? " active" : ""}${schedulesCount > 0 ? " has-badge" : ""}`}
             title={t("navSchedules")}
             onClick={() => {
               showChat();
@@ -244,11 +272,13 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "undo" && !explorerCollapsedEff ? " active" : ""}`}
+            className={`activity-btn${panelActive("undo") ? " active" : ""}`}
+            aria-pressed={panelActive("undo")}
             title={t("navUndo")}
             onClick={() => {
               showChat();
-              if (sidePanelEff === "undo" && !explorerCollapsedEff) {
+              blurRailFocus();
+              if (sidePanelEff === "undo" && !explorerCollapsedEff && mainView !== "memory") {
                 setExplorerCollapsed(true);
               } else {
                 setSidePanel("undo");
@@ -262,10 +292,15 @@ export function ActivitySidebar({
           <button
             type="button"
             className={`activity-btn${mainView === "memory" ? " active" : ""}`}
+            aria-pressed={mainView === "memory"}
             title={t("navMemory")}
             onClick={() => {
-              if (mainView === "memory") showChat();
-              else onOpenMemory?.();
+              if (mainView === "memory") {
+                showChat();
+                blurRailFocus();
+              } else {
+                openMemoryExclusive();
+              }
             }}
           >
             <IconBook size={18} />
@@ -273,11 +308,12 @@ export function ActivitySidebar({
           </button>
           <button
             type="button"
-            className={`activity-btn${sidePanelEff === "history" && !explorerCollapsedEff && mainView !== "memory" ? " active" : ""}`}
+            className={`activity-btn${panelActive("history") ? " active" : ""}`}
             title={t("history")}
             onClick={() => {
               showChat();
-              if (sidePanelEff === "history" && !explorerCollapsedEff) {
+              blurRailFocus();
+              if (sidePanelEff === "history" && !explorerCollapsedEff && mainView !== "memory") {
                 setExplorerCollapsed(true);
               } else {
                 onOpenHistoryPanel();
@@ -369,7 +405,12 @@ export function ActivitySidebar({
               <UndoTimeline
                 refreshKey={fsRefresh}
                 sessionId={sessionId}
-                onRestored={onWorkspaceMutated}
+                workspace={activeWs?.path || null}
+                onRestored={(info) => {
+                  onWorkspaceMutated?.();
+                  onUndoRestored?.(info);
+                }}
+                onToast={onToast}
               />
             </div>
           ) : (

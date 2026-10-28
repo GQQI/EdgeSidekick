@@ -1,4 +1,4 @@
-"""Expose installed, enabled, configured plugins as agent tools."""
+"""Expose installed (configured when credentials required) plugins as agent tools."""
 
 from __future__ import annotations
 
@@ -8,12 +8,20 @@ from .manifest import TOOL_PREFIX
 from .store import credential_status, current_user, invoke_tool, list_installed
 
 
-def plugin_tool_summary(user_id: Optional[str] = None) -> list[dict[str, Any]]:
-    """Enabled plugins and whether they are usable, for prompts and the UI."""
+def plugin_tool_summary(
+    user_id: Optional[str] = None,
+    *,
+    plugin_ids: Optional[list[str]] = None,
+) -> list[dict[str, Any]]:
+    """Installed plugins and whether they are usable, for prompts and the UI."""
     out: list[dict[str, Any]] = []
+    allow = None
+    if plugin_ids is not None:
+        allow = {str(x).strip() for x in plugin_ids if str(x).strip()}
     for plugin in list_installed(user_id):
-        if not plugin.enabled:
+        if allow is not None and plugin.id not in allow:
             continue
+        # Product: install in Settings is enough; no separate enable step.
         out.append(
             {
                 "id": plugin.id,
@@ -29,12 +37,27 @@ def plugin_tool_summary(user_id: Optional[str] = None) -> list[dict[str, Any]]:
     return out
 
 
-def register_plugin_tools(registry: Any, *, Tool: Any, user_id: Optional[str] = None) -> int:
+def register_plugin_tools(
+    registry: Any,
+    *,
+    Tool: Any,
+    user_id: Optional[str] = None,
+    plugin_ids: Optional[list[str]] = None,
+) -> int:
     uid = user_id or current_user()
     registry.drop_prefix(TOOL_PREFIX)
+    allow = None
+    if plugin_ids is not None:
+        allow = {str(x).strip() for x in plugin_ids if str(x).strip()}
     count = 0
     for plugin in list_installed(uid):
-        if not plugin.enabled or not credential_status(plugin)["configured"]:
+        if allow is not None and plugin.id not in allow:
+            continue
+        # Disabled plugins stay installed but must not appear as agent tools.
+        if not plugin.enabled:
+            continue
+        # Still require credentials when the manifest declares them.
+        if not credential_status(plugin)["configured"]:
             continue
         for spec in plugin.manifest.tools:
 

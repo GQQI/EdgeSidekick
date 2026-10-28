@@ -14,8 +14,13 @@ import re
 import threading
 import time as _time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 
 from ..core.events import new_id
 from ..core.logutil import get_logger, log_exception
@@ -45,18 +50,187 @@ def parse_hhmm(value: str) -> tuple[int, int]:
     return hh, mm
 
 
-def parse_local_dt(value: str) -> float:
-    """Parse 'YYYY-MM-DD HH:MM' (or ISO) as local time → epoch seconds."""
+# Fixed offsets when the OS has no IANA tz database (common on Windows
+# without the ``tzdata`` package). Keys are normative zone names only —
+# never calendar dates.
+_TZ_FIXED = {
+    "Asia/Shanghai": timezone(timedelta(hours=8)),
+    "Asia/Chongqing": timezone(timedelta(hours=8)),
+    "Asia/Hong_Kong": timezone(timedelta(hours=8)),
+    "UTC": timezone.utc,
+    "Etc/UTC": timezone.utc,
+}
+
+
+def schedule_tz(tz: str | None = None):
+    """User/local timezone for schedule wall-clock math.
+
+    Prefer an explicit IANA name when given; otherwise the host local zone
+    (Asia/Shanghai on most Sidekick installs). Never hard-code a calendar day.
+    """
+    name = (tz or "").strip()
+    if name:
+        if ZoneInfo is not None:
+            try:
+                return ZoneInfo(name)
+            except Exception:
+                pass
+        fixed = _TZ_FIXED.get(name)
+        if fixed is not None:
+            return fixed
+    local = datetime.now().astimezone().tzinfo
+    return local or timezone.utc
+
+
+def local_now(*, now: datetime | None = None, tz: str | None = None) -> datetime:
+    """Current (or injected) instant in the schedule timezone."""
+    zone = schedule_tz(tz)
+    if now is None:
+        return datetime.now(zone)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=zone)
+    return now.astimezone(zone)
+
+
+def parse_local_dt(value: str, *, tz: str | None = None) -> float:
+    """Parse 'YYYY-MM-DD HH:MM' (or ISO) as schedule-local wall clock → epoch."""
     text = str(value or "").strip().replace("T", " ")
+    zone = schedule_tz(tz)
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
-            return datetime.strptime(text, fmt).timestamp()
+            naive = datetime.strptime(text, fmt)
+            return naive.replace(tzinfo=zone).timestamp()
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(text).timestamp()
+        parsed = datetime.fromisoformat(text)
     except ValueError as exc:
         raise ValueError("时间格式必须是 YYYY-MM-DD HH:MM") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=zone)
+    else:
+        parsed = parsed.astimezone(zone)
+    return parsed.timestamp()
+
+
+_DAY_OFFSETS = {
+    "今天": 0,
+    "今日": 0,
+    "明天": 1,
+    "明日": 1,
+    "后天": 2,
+    "後天": 2,
+    "today": 0,
+    "tomorrow": 1,
+}
+
+
+def _apply_day_part(hour: int, part: str) -> int:
+    part = part or ""
+    if part in ("下午", "晚上", "傍晚") and hour < 12:
+        hour += 12
+    if part == "中午" and hour < 11:
+        hour = 12
+    if part in ("上午", "早上", "凌晨") and hour == 12:
+        hour = 0
+    return min(23, max(0, hour))
+
+
+def _parse_clock_tokens(hour_tok: str, minute_tok: str | None, part: str) -> tuple[int, int] | None:
+    raw_h = (hour_tok or "").strip()
+    if raw_h.isdigit():
+        hour = int(raw_h)
+    else:
+        hour = _number_token(raw_h)
+        if hour <= 0 and raw_h not in ("0", "零", "〇"):
+            return None
+    minute = 0
+    if minute_tok not in (None, ""):
+        raw_m = str(minute_tok).strip()
+        if raw_m.isdigit():
+            minute = int(raw_m)
+        else:
+            minute = _number_token(raw_m)
+    hour = _apply_day_part(hour, part)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour, minute
+
+
+def once_at_from_relative_text(
+    text: str,
+    *,
+    now: datetime | None = None,
+    tz: str | None = None,
+) -> str:
+    """Resolve 「今天 9:15」/「明天上午九点」/bare「9点15分」to local YYYY-MM-DD HH:MM.
+
+    Rules (schedule timezone, typically Asia/Shanghai / host local):
+    - Explicit 今天/今日 keeps today's date when that local time has not passed.
+    - Roll to the next calendar day only when that local time has already passed
+      (bare clock times, or 今天 after the slot).
+    - 明天/后天 use a fixed day offset (no same-day roll).
+    """
+    raw = text or ""
+    base = local_now(now=now, tz=tz)
+    day_pat = (
+        r"(?P<day>今天|今日|明天|明日|后天|後天|today|tomorrow)"
+        r"\s*(?P<part>上午|早上|凌晨|中午|下午|晚上|傍晚)?"
+        r"\s*(?P<h>\d{1,2}|[零〇一二两三四五六七八九十])"
+        r"\s*(?:点|时|:)"
+        r"\s*(?P<m>\d{1,2}|[零〇一二三四五六七八九十])?\s*分?"
+    )
+    match = re.search(day_pat, raw, flags=re.IGNORECASE)
+    day_offset: int | None = None
+    clock = None
+    if match:
+        day_key = match.group("day")
+        day_norm = day_key.lower() if day_key.lower() in ("today", "tomorrow") else day_key
+        day_offset = int(_DAY_OFFSETS.get(day_norm, _DAY_OFFSETS.get(day_key, 0)))
+        clock = _parse_clock_tokens(match.group("h"), match.group("m"), match.group("part") or "")
+    if clock is None:
+        bare = re.search(
+            r"(?P<part>上午|早上|凌晨|中午|下午|晚上|傍晚)?\s*"
+            r"(?P<h>\d{1,2}|[零〇一二两三四五六七八九十])\s*"
+            r"(?:点|时|:)\s*"
+            r"(?P<m>\d{1,2}|[零〇一二三四五六七八九十])?\s*分?",
+            raw,
+        )
+        if not bare:
+            return ""
+        # Interval-only phrases without a clock should not become once-at.
+        if re.search(r"(?:每|每隔)\s*\d+\s*分钟", raw) and "点" not in raw and re.search(r"\d{1,2}:\d{2}", raw) is None:
+            return ""
+        clock = _parse_clock_tokens(bare.group("h"), bare.group("m"), bare.group("part") or "")
+        if clock is None:
+            return ""
+        day_offset = 0
+    assert day_offset is not None and clock is not None
+    hour, minute = clock
+    target = (base + timedelta(days=int(day_offset))).replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    )
+    if day_offset == 0 and target <= base:
+        target = target + timedelta(days=1)
+    return target.strftime("%Y-%m-%d %H:%M")
+
+
+def resolve_once_at(
+    at: str,
+    text: str = "",
+    *,
+    now: datetime | None = None,
+    tz: str | None = None,
+) -> str:
+    """Prefer relative phrases in the user/request text over a model-filled date.
+
+    When the user says 今天 HH:mm and that local time is still ahead, the result
+    stays on today's date even if `at` wrongly points at tomorrow.
+    """
+    relative = once_at_from_relative_text(text, now=now, tz=tz)
+    if relative:
+        return relative
+    return str(at or "").strip()
 
 
 def parse_until(value: str) -> str:
@@ -87,7 +261,8 @@ def until_end_ts(until: str) -> float | None:
     if len(text) > 10:
         return parse_local_dt(text[:16])
     day = datetime.strptime(text[:10], "%Y-%m-%d")
-    return day.replace(hour=23, minute=59, second=59).timestamp()
+    zone = schedule_tz()
+    return day.replace(hour=23, minute=59, second=59, tzinfo=zone).timestamp()
 
 
 _CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -110,10 +285,10 @@ def minutes_from_text(text: str) -> int:
     return max(5, min(10080, n))
 
 
-def deadline_from_text(text: str, *, now: datetime | None = None) -> str:
+def deadline_from_text(text: str, *, now: datetime | None = None, tz: str | None = None) -> str:
     """Clock time in '持续到明天上午九点'. Empty when the words do not say one."""
     raw = text or ""
-    base = now or datetime.now()
+    base = local_now(now=now, tz=tz)
     match = re.search(
         r"明天\s*(上午|早上|凌晨|中午|下午|晚上)?\s*(\d{1,2}|[一二两三四五六七八九十])\s*(?:点|时|:)",
         raw,

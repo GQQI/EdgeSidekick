@@ -2,16 +2,23 @@
   "schema": 1,
   "id": "gmail",
   "name": "Gmail",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "EdgeSidekick",
   "description": "按 Gmail 搜索语法查找邮件、阅读邮件与会话、查看标签，并能起草或发送邮件（发送前会请你确认）。",
   "category": "办公沟通",
-  "tags": ["email", "google", "邮件"],
+  "tags": [
+    "email",
+    "google",
+    "邮件"
+  ],
   "homepage": "https://developers.google.com/gmail/api",
   "icon": "icon.svg",
   "entry": "main.py",
   "timeout": 40,
-  "network": ["gmail.googleapis.com", "oauth2.googleapis.com"],
+  "network": [
+    "gmail.googleapis.com",
+    "oauth2.googleapis.com"
+  ],
   "credentials": [
     {
       "name": "client_id",
@@ -19,7 +26,7 @@
       "type": "text",
       "required": true,
       "placeholder": "xxxx.apps.googleusercontent.com",
-      "help": "Google Cloud 控制台 → API 和服务 → 凭据 → 创建 OAuth 客户端 ID，应用类型选「桌面应用」，并启用 Gmail API。",
+      "help": "在 Google Cloud 控制台创建「桌面应用」类型的 OAuth 客户端，并启用 Gmail API。同意屏幕若为「测试中」，必须把你的 Google 账号加成测试用户；应用名称请设为可读名称（浏览器会显示该名称，勿用「1」）。回调用地址由本应用自动使用 http://127.0.0.1:<端口>/api/plugins/oauth/callback（桌面应用类型一般无需手动登记；若误建成「Web 应用」则须登记该 URI）。",
       "url": "https://console.cloud.google.com/apis/credentials"
     },
     {
@@ -32,18 +39,23 @@
       "name": "refresh_token",
       "label": "Refresh token",
       "type": "secret",
-      "required": true,
-      "help": "填好 Client ID/Secret 后点「用 Google 授权」自动获取；也可以从 OAuth Playground 手动粘贴。"
+      "required": false,
+      "help": "不要手填。先保存 Client ID/Secret，再点「用 Google 授权」自动写入。若验证报授权无效，清空后重新授权。也可从 OAuth Playground 粘贴。"
     }
   ],
   "oauth": {
     "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
     "token_url": "https://oauth2.googleapis.com/token",
-    "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.modify"
+    ],
     "client_id_field": "client_id",
     "client_secret_field": "client_secret",
     "token_field": "refresh_token",
-    "extra_params": {"access_type": "offline", "prompt": "consent"},
+    "extra_params": {
+      "access_type": "offline",
+      "prompt": "consent"
+    },
     "label": "用 Google 授权"
   },
   "tools": [
@@ -55,8 +67,14 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "query": {"type": "string", "description": "Gmail search query (empty = latest inbox mail)"},
-          "limit": {"type": "integer", "description": "Max results, 1-25 (default 10)"}
+          "query": {
+            "type": "string",
+            "description": "Gmail search query (empty = latest inbox mail)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results, 1-25 (default 10)"
+          }
         }
       }
     },
@@ -67,8 +85,15 @@
       "description": "Read one message: headers, plain-text body (HTML converted to text) and attachment names.",
       "parameters": {
         "type": "object",
-        "properties": {"id": {"type": "string", "description": "Message id from search_messages"}},
-        "required": ["id"]
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Message id from search_messages"
+          }
+        },
+        "required": [
+          "id"
+        ]
       }
     },
     {
@@ -78,8 +103,14 @@
       "description": "Read a whole conversation thread in order, with each message's sender, date and body.",
       "parameters": {
         "type": "object",
-        "properties": {"thread_id": {"type": "string"}},
-        "required": ["thread_id"]
+        "properties": {
+          "thread_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread_id"
+        ]
       }
     },
     {
@@ -87,7 +118,10 @@
       "label": "标签列表",
       "readonly": true,
       "description": "List mailbox labels with unread counts.",
-      "parameters": {"type": "object", "properties": {}}
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
     },
     {
       "name": "create_draft",
@@ -97,13 +131,29 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "to": {"type": "string", "description": "Comma-separated recipients"},
-          "subject": {"type": "string"},
-          "body": {"type": "string", "description": "Plain-text body"},
-          "cc": {"type": "string"},
-          "reply_to_id": {"type": "string", "description": "Message id being replied to"}
+          "to": {
+            "type": "string",
+            "description": "Comma-separated recipients"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string",
+            "description": "Plain-text body"
+          },
+          "cc": {
+            "type": "string"
+          },
+          "reply_to_id": {
+            "type": "string",
+            "description": "Message id being replied to"
+          }
         },
-        "required": ["to", "body"]
+        "required": [
+          "to",
+          "body"
+        ]
       }
     },
     {
@@ -114,13 +164,29 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "to": {"type": "string", "description": "Comma-separated recipients"},
-          "subject": {"type": "string"},
-          "body": {"type": "string", "description": "Plain-text body"},
-          "cc": {"type": "string"},
-          "reply_to_id": {"type": "string", "description": "Message id being replied to"}
+          "to": {
+            "type": "string",
+            "description": "Comma-separated recipients"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string",
+            "description": "Plain-text body"
+          },
+          "cc": {
+            "type": "string"
+          },
+          "reply_to_id": {
+            "type": "string",
+            "description": "Message id being replied to"
+          }
         },
-        "required": ["to", "body"]
+        "required": [
+          "to",
+          "body"
+        ]
       }
     }
   ]

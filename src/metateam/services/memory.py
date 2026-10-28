@@ -11,12 +11,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from ..core.note_text import compact_note, note_has_body
+
 _LOCK = threading.Lock()
 _DEFAULT_CAT_NAME = "通用"
 _LIBRARY_NAME = "library.json"
 _MAX_INJECT = 8000
 _MAX_TAGS = 16
 _MAX_TITLE = 80
+
+# The injected section is delimited so a long-lived session can replace it
+# exactly. Note text is arbitrary markdown, so "the next ## heading" is not a
+# reliable boundary. The end marker is an HTML comment (invisible in chat).
+MEMORY_BLOCK_HEAD = "## Memory"
+MEMORY_BLOCK_END = "<!-- /memory -->"
 
 
 def _nid(prefix: str) -> str:
@@ -168,6 +176,18 @@ def _legacy_md_to_library(text: str) -> MemoryLibrary:
     return MemoryLibrary(version=1, categories=[cat])
 
 
+def _sanitize_library(lib: MemoryLibrary) -> bool:
+    """Fold stored repetition. Returns True when a note was rewritten."""
+    changed = False
+    for cat in lib.categories:
+        for mem in cat.memories:
+            compacted = compact_note(mem.content)
+            if compacted != mem.content:
+                mem.content = compacted
+                changed = True
+    return changed
+
+
 def load_library(memory_file: Path) -> MemoryLibrary:
     path = library_path(memory_file)
     with _LOCK:
@@ -182,6 +202,10 @@ def load_library(memory_file: Path) -> MemoryLibrary:
                 categories=[_cat_from_dict(c) for c in (cats or []) if isinstance(c, dict)],
             )
             _ensure_ids(lib)
+            if _sanitize_library(lib):
+                # Persist the repair once, so a polluted note cannot keep
+                # coming back through every load.
+                _write_library_unlocked(memory_file, lib)
             return lib
         md = ""
         if memory_file.is_file():
@@ -191,12 +215,14 @@ def load_library(memory_file: Path) -> MemoryLibrary:
                 md = ""
         lib = _legacy_md_to_library(md)
         _ensure_ids(lib)
+        _sanitize_library(lib)
         _write_library_unlocked(memory_file, lib)
         return lib
 
 
 def _write_library_unlocked(memory_file: Path, lib: MemoryLibrary) -> None:
     _ensure_ids(lib)
+    _sanitize_library(lib)
     path = library_path(memory_file)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -227,6 +253,7 @@ def library_from_payload(payload: dict[str, Any] | MemoryLibrary) -> MemoryLibra
             categories=[_cat_from_dict(c) for c in (cats or []) if isinstance(c, dict)],
         )
     _ensure_ids(lib)
+    _sanitize_library(lib)
     return lib
 
 
@@ -234,7 +261,7 @@ def enabled_items(lib: MemoryLibrary) -> list[tuple[MemoryCategory, MemoryItem]]
     out: list[tuple[MemoryCategory, MemoryItem]] = []
     for cat in lib.categories:
         for mem in cat.memories:
-            if mem.enabled and (mem.content or "").strip():
+            if mem.enabled and note_has_body(mem.content):
                 out.append((cat, mem))
     return out
 
@@ -261,11 +288,39 @@ def format_memory_block(memory_file: Path) -> str:
         return ""
     n = len(enabled_items(lib))
     return (
-        "## Memory\n"
+        f"{MEMORY_BLOCK_HEAD}\n"
         f"User-selected long-term notes ({n} active). "
         "Do not store secrets. Use memory_* tools to add/edit; the user toggles which entries are active.\n"
-        + text
+        f"{text}\n{MEMORY_BLOCK_END}"
     )
+
+
+def _join_sections(parts: list[str]) -> str:
+    return "\n\n".join(p.strip() for p in parts if p and p.strip())
+
+
+def merge_memory_block(system: str, memory_file: Path) -> str:
+    """Replace (or append) the memory section of a system message.
+
+    A session's first system message is reused for the whole conversation, so
+    a note edited or deleted later must be swapped out there as well.
+    """
+    block = format_memory_block(memory_file)
+    text = str(system or "")
+    start = text.find(MEMORY_BLOCK_HEAD)
+    if start < 0:
+        return _join_sections([text, block])
+    before = text[:start]
+    end = text.find(MEMORY_BLOCK_END, start)
+    if end >= 0:
+        return _join_sections([before, block, text[end + len(MEMORY_BLOCK_END) :]])
+    # Sessions created before the end marker existed: fall back to the next
+    # runtime section. Any extension block in between is re-added by the same
+    # turn's apply_extensions_block pass.
+    rest = text[start + len(MEMORY_BLOCK_HEAD) :]
+    tail_parts = rest.split("\n## ", 1)
+    after = ("## " + tail_parts[1]) if len(tail_parts) == 2 else ""
+    return _join_sections([before, block, after])
 
 
 def find_category(lib: MemoryLibrary, category: str) -> Optional[MemoryCategory]:
@@ -333,7 +388,7 @@ def read_memory(path: Path, max_chars: int = 4000) -> str:
 def write_memory(path: Path, content: str) -> None:
     """Legacy: replace the first enabled item, or create one in 通用."""
     lib = load_library(path)
-    text = content if content is not None else ""
+    text = compact_note(content if content is not None else "")
     enabled = enabled_items(lib)
     if enabled:
         _cat, mem = enabled[0]
@@ -365,9 +420,11 @@ def append_memory(
     tags: Any = None,
     enabled: bool = True,
 ) -> str:
-    note = (note or "").strip()
+    note = compact_note((note or "").strip())
     if not note:
         return "empty note"
+    if not note_has_body(note):
+        return "note has no content outside its headings"
     lib = load_library(path)
     cat = ensure_category(lib, category)
     for mem in cat.memories:
@@ -408,11 +465,15 @@ def replace_memory(
     title: str = "",
     tags: Any = None,
 ) -> str:
+    raw = content if content is not None else ""
+    compacted = compact_note(str(raw))
+    if str(raw).strip() and not note_has_body(compacted):
+        return "note has no content outside its headings"
     lib = load_library(path)
     hit = find_item(lib, memory_id=memory_id) if memory_id else None
     if hit:
         _cat, mem = hit
-        mem.content = content if content is not None else ""
+        mem.content = compacted
         if title:
             mem.title = title.strip()[:_MAX_TITLE]
         if tags is not None:
@@ -422,7 +483,7 @@ def replace_memory(
         return f"replaced {mem.id}"
     return append_memory(
         path,
-        content or "",
+        compacted,
         category=category,
         title=title,
         tags=tags,

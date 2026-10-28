@@ -439,14 +439,12 @@ def reset_hostinfo_cache() -> None:
 def host_prompt_block() -> str:
     """System-prompt section: OS, time, network, shell dialect."""
     info = get_host_info()
+    # Status only. The tool-usage rules for OFFLINE live once in CORE, next to
+    # web_search / browser_navigate; repeating them here tripled the prompt.
     net = (
         "ONLINE — public internet looks reachable."
         if info.online
-        else (
-            "OFFLINE — no public internet. Do NOT call web_search or "
-            "browser_navigate for public sites. Do not retry them. "
-            "Use search_text / read_file / list_dir on the local workspace."
-        )
+        else "OFFLINE — no public internet."
     )
     lines = [
         "## Host environment (CRITICAL)",
@@ -468,45 +466,20 @@ def host_prompt_block() -> str:
         lines.extend(
             [
                 "Shell executor: Windows PowerShell (resolved by full path, not PATH).",
-                "- Default dialect is PowerShell — pass the script body directly "
-                "(e.g. `Test-Path .\\file.html`). Do NOT wrap with `powershell -Command ...`.",
                 bash_line,
-                "- Create dirs: `New-Item -ItemType Directory -Force -Path path` or `mkdir path` "
-                "(no bash `mkdir -p` unless running under Git Bash).",
-                "- Download/HTTP: `curl.exe ...` or `Invoke-WebRequest` / `iwr` "
-                "(prefer `curl.exe` when you need curl flags).",
-                "- Chain PowerShell with `;` or separate tool calls — avoid bash `&&` unless "
-                "the command is actually running under Git Bash.",
-                "- Paths: prefer workspace-relative paths with forward slashes. "
-                "Do NOT reuse another machine's drive letter (e.g. E:/Project/...). "
-                "Absolute paths only if they exist on THIS host.",
             ]
         )
     else:
         sh = _unix_shell_bin()
         family = "麒麟 / Linux" if info.is_kylin else info.os_name
-        lines.extend(
-            [
-                f"Shell executor: `{sh}` ({info.shell}). Host family: {family}.",
-                "- Prefer portable POSIX commands (`mkdir -p`, `ls`, `curl`, `python3`).",
-                "- Do NOT use PowerShell cmdlets or Windows drive letters (E:/ C:\\).",
-                "- Paths: workspace-relative or POSIX absolute that exist on THIS machine.",
-                "- Local preview URLs: bind IPv4 (`127.0.0.1`).",
-            ]
-        )
+        lines.append(f"Shell executor: `{sh}` ({info.shell}). Host family: {family}.")
         if info.is_kylin:
             lines.append(
                 "- 麒麟: treat as Linux. bash if present, otherwise sh. "
                 "Use the distro's own package manager; do not assume apt/yum blindly."
             )
-    lines.extend(
-        [
-            "- browser_navigate is for http(s) or a workspace-relative HTML file. "
-            "Never pass file://, javascript:, or a script. "
-            "Fill a form with browser_input, then browser_click the submit control.",
-            "- Do NOT open Edge/Chrome via shell for local previews. Tell the user the URL.",
-            "- If run_shell/verify_run returns shell-disabled, tell the user to set "
-            "META_ALLOW_SHELL=1 and restart — do NOT invent OS-specific unavailability.",
-        ]
+    lines.append(
+        "- If run_shell/verify_run returns shell-disabled, tell the user to set "
+        "META_ALLOW_SHELL=1 and restart — do NOT invent OS-specific unavailability."
     )
     return "\n".join(lines)

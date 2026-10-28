@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchUndo, postUndo, type UndoItem } from "../api";
+import { fetchUndo, postUndo, truncateSession, type UndoItem } from "../api";
 import { usePrefs } from "../prefs";
 import { IconRefresh, IconUndo } from "./icons";
 
 type Props = {
   refreshKey?: number;
   sessionId?: string | null;
-  onRestored?: () => void;
+  workspace?: string | null;
+  onRestored?: (info?: { truncated?: boolean }) => void;
+  onToast?: (msg: string) => void;
 };
 
-export function UndoTimeline({ refreshKey = 0, sessionId = null, onRestored }: Props) {
+export function UndoTimeline({
+  refreshKey = 0,
+  sessionId = null,
+  workspace = null,
+  onRestored,
+  onToast,
+}: Props) {
   const { t, locale } = usePrefs();
   const [items, setItems] = useState<UndoItem[]>([]);
   const [count, setCount] = useState(0);
@@ -18,7 +26,7 @@ export function UndoTimeline({ refreshKey = 0, sessionId = null, onRestored }: P
   const [busyId, setBusyId] = useState("");
 
   const load = useCallback(async () => {
-    if (!sessionId) {
+    if (!sessionId && !workspace) {
       setItems([]);
       setCount(0);
       setErr("");
@@ -27,7 +35,7 @@ export function UndoTimeline({ refreshKey = 0, sessionId = null, onRestored }: P
     setLoading(true);
     setErr("");
     try {
-      const res = await fetchUndo(sessionId);
+      const res = await fetchUndo(sessionId, { workspace });
       setItems(res.items || []);
       setCount(res.count || 0);
     } catch (e) {
@@ -35,19 +43,43 @@ export function UndoTimeline({ refreshKey = 0, sessionId = null, onRestored }: P
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, workspace]);
 
   useEffect(() => {
     void load();
   }, [load, refreshKey]);
 
-  async function restore(id?: string) {
-    setBusyId(id || "*");
+  async function restore(item?: UndoItem) {
+    setBusyId(item?.id || "*");
     setErr("");
     try {
-      await postUndo(id, sessionId);
+      const sid = sessionId || item?.session_id || null;
+      const turn = item?.user_turn;
+      // Checkpoint cards: rewind chat + files together via truncate.
+      // File-only / latest: reverse FS stack for this workspace.
+      if (sid && item && item.op === "checkpoint" && typeof turn === "number") {
+        const res = await truncateSession(sid, turn, { restoreFiles: true });
+        const n = res.file_undo?.undone_count ?? 0;
+        await load();
+        onRestored?.({ truncated: true });
+        if (res.file_undo?.partial) {
+          onToast?.(t("undoRestorePartial", String(n)));
+        } else if (n > 0) {
+          onToast?.(t("undoRestoreOk", String(n)));
+        } else {
+          onToast?.(t("undoRestoreChatOnly"));
+        }
+        return;
+      }
+      const res = await postUndo(item?.id, sid, { workspace });
+      const n = res.undone_count ?? 0;
       await load();
-      onRestored?.();
+      onRestored?.({ truncated: false });
+      if (n > 0) {
+        onToast?.(t("undoRestoreFilesOk", String(n)));
+      } else {
+        onToast?.(t("undoRestoreNone"));
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -95,7 +127,7 @@ export function UndoTimeline({ refreshKey = 0, sessionId = null, onRestored }: P
                     type="button"
                     className="undo-card-restore"
                     disabled={Boolean(busyId)}
-                    onClick={() => void restore(item.id)}
+                    onClick={() => void restore(item)}
                   >
                     {t("undoRestoreHere")}
                   </button>
@@ -124,7 +156,7 @@ export function UndoTimeline({ refreshKey = 0, sessionId = null, onRestored }: P
             type="button"
             className="undo-latest"
             disabled={Boolean(busyId)}
-            onClick={() => void restore()}
+            onClick={() => void restore(items[0])}
           >
             {t("undoLatest")}
           </button>

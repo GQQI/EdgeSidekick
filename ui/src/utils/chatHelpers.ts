@@ -9,21 +9,30 @@ import {
   canvasPlaceholderId,
   isEphemeralCanvasId,
   limitCanvasRoots,
+  peakCanvasSlotCount,
 } from "./canvasSlots";
 
 export {
   canvasPlaceholderId,
   isEphemeralCanvasId,
   limitCanvasRoots,
+  peakCanvasSlotCount,
 } from "./canvasSlots";
 
-export type GreetingKey = "greetingMorning" | "greetingAfternoon" | "greetingEvening";
+export type GreetingKey =
+  | "greetingLateNight"
+  | "greetingMorning"
+  | "greetingNoon"
+  | "greetingAfternoon"
+  | "greetingEvening";
 
 /** Local browser time (not UTC / server). */
 export function greetingKey(now = new Date()): GreetingKey {
   const h = now.getHours();
-  if (h >= 5 && h < 12) return "greetingMorning";
-  if (h >= 12 && h < 18) return "greetingAfternoon";
+  if (h < 5) return "greetingLateNight";
+  if (h < 11) return "greetingMorning";
+  if (h < 14) return "greetingNoon";
+  if (h < 18) return "greetingAfternoon";
   return "greetingEvening";
 }
 
@@ -328,6 +337,7 @@ export function sameSubagentSlot(
   if (incoming.id && existing.id === incoming.id) return true;
   const existingId = String(existing.id || "");
   const incomingId = String(incoming.id || "");
+  // Two distinct real workers are never the same slot.
   if (
     incomingId &&
     existingId &&
@@ -336,6 +346,18 @@ export function sameSubagentSlot(
   ) {
     return false;
   }
+  // Two distinct pending/queued placeholders are separate slots even when goals
+  // look alike — otherwise 3 workers collapse to 1 on the canvas.
+  if (
+    incomingId &&
+    existingId &&
+    isEphemeralCanvasId(existingId) &&
+    isEphemeralCanvasId(incomingId) &&
+    existingId !== incomingId
+  ) {
+    return false;
+  }
+  // Ephemeral ↔ real: allow goal match so start events bind onto pending cards.
   if (canvasGoalsMatch(existing.goal, incoming.goal)) return true;
   const role = (incoming.role || "").trim();
   if (
@@ -357,17 +379,18 @@ export function unionCanvasNodes(
   expanded: SubNode[],
   declared?: number,
 ): SubNode[] {
+  // Prefer the longer side as the slot authority so a short tool replay cannot
+  // wipe already-seeded workers (that caused "finished → only 2 robots").
   const preferTree = tree.length >= expanded.length;
-  const aligned = alignCanvasSlots(
-    preferTree ? tree : expanded,
-    preferTree ? expanded : tree,
+  const primary = preferTree ? tree : expanded;
+  const secondary = preferTree ? expanded : tree;
+  const aligned = alignCanvasSlots(primary, secondary);
+  const cap = Math.max(
+    Number(declared) > 0 ? Number(declared) : 0,
+    tree.length,
+    expanded.length,
+    peakCanvasSlotCount(aligned),
   );
-  const cap =
-    declared && declared > 0
-      ? declared
-      : tree.length && expanded.length
-        ? Math.min(tree.length, expanded.length)
-        : Math.max(tree.length, expanded.length);
   return nestHelperAgents(dedupeCanvasNodes(limitCanvasRoots(aligned, cap)));
 }
 
@@ -379,6 +402,24 @@ export function delegateSlotCount(name: string, args: unknown): number {
 }
 
 export function declaredDelegateSlotCount(messages: ChatMsg[], stage: number): number {
+  let fromTools = 0;
+  const nodes: SubNode[] = [];
+  for (const message of messages) {
+    if ((message.stage ?? 0) !== stage) continue;
+    if (message.role === "subagent" && message.subagent) {
+      nodes.push(message.subagent);
+    }
+    if (message.role !== "tool" || !message.tool) continue;
+    if (!DELEGATE_TOOL_NAMES.has(message.tool.name)) continue;
+    fromTools += delegateSlotCount(message.tool.name, message.tool.args);
+  }
+  // Freeze high-water mark: partial tool JSON must not report "1" while three
+  // pending cards are already on the board (that flickered the canvas to 1).
+  return Math.max(fromTools, peakCanvasSlotCount(nodes));
+}
+
+/** Tool-arg count only — used to refuse expanding past the delegated task list. */
+export function toolDeclaredSlotCount(messages: ChatMsg[], stage: number): number {
   let total = 0;
   for (const message of messages) {
     if ((message.stage ?? 0) !== stage || message.role !== "tool" || !message.tool) continue;
@@ -412,11 +453,26 @@ export function groupCanvasRootsByStage(messages: ChatMsg[]): Map<number, SubNod
   }
   const out = new Map<number, SubNode[]>();
   for (const [stage, nodes] of byStage) {
-    const declared = delegateCounts.get(stage) || 0;
-    out.set(
-      stage,
-      nestHelperAgents(dedupeCanvasNodes(limitCanvasRoots(nodes, declared))),
-    );
+    // Cap by max(tool args, already-seeded slots) so streaming never shrinks
+    // the board, while still trimming a true surplus over the delegated list.
+    const fromTools = delegateCounts.get(stage) || 0;
+    const declared = Math.max(fromTools, peakCanvasSlotCount(nodes));
+    const rooted = nestHelperAgents(dedupeCanvasNodes(limitCanvasRoots(nodes, declared)));
+    // Team view: promote nested workers to peers — stripping children used to
+    // hide still-running agents after the first one finished.
+    let flat =
+      rooted.every((n) => !isDialogueParty(n))
+        ? flattenTeamCanvasRoots(rooted)
+        : rooted;
+    // Never paint fewer peers than distinct subagent messages already in the
+    // thread for this stage (guards against nest/dedupe mid-run collapses).
+    if (
+      flat.length < nodes.length &&
+      nodes.every((n) => !isDialogueParty(n))
+    ) {
+      flat = nodes.map((n) => ({ ...n, children: [], parent_id: "" }));
+    }
+    out.set(stage, flat);
   }
   return out;
 }
@@ -482,9 +538,74 @@ function partyOwnsTask(party: SubNode, task: SubNode): boolean {
   return hay.includes(label);
 }
 
+function isDialogueParty(node: SubNode): boolean {
+  return node.kind === "party" || node.kind === "talk";
+}
+
+function isTaskWorker(node: SubNode): boolean {
+  if (isDialogueParty(node)) return false;
+  return node.kind === "task" || !node.kind || node.role === "leaf";
+}
+
+/**
+ * Parallel delegate_task workers must stay as peer roots. A finished agent_tree
+ * often wraps them under one parent — expanding that wrapper prevents the
+ * canvas from briefly showing a single robot, then popping back to N.
+ */
+export function expandParallelCanvasRoots(nodes: SubNode[]): SubNode[] {
+  if (!nodes.length) return nodes;
+  if (
+    nodes.length === 1 &&
+    !isDialogueParty(nodes[0]) &&
+    (nodes[0].children || []).length >= 1
+  ) {
+    const kids = nodes[0].children || [];
+    // One finished parent with nested still-running siblings was painted as a
+    // single card after we stripped children — promote every task child to a peer.
+    if (kids.length >= 1 && kids.every((c) => isTaskWorker(c) || isDialogueParty(c))) {
+      const peers = kids.map((child) => ({
+        ...child,
+        children: [],
+        parent_id: "",
+      }));
+      const parent = nodes[0];
+      const parentGoal = (parent.goal || "").trim();
+      // Empty-goal wrapper → children only. A finished worker that swallowed
+      // still-running siblings must stay visible alongside them.
+      if (!parentGoal) return peers;
+      return [{ ...parent, children: [], parent_id: "" }, ...peers];
+    }
+  }
+  return nodes;
+}
+
+/** Team canvas: never hide nested workers by clearing children. */
+export function flattenTeamCanvasRoots(nodes: SubNode[]): SubNode[] {
+  if (nodes.some((n) => isDialogueParty(n))) return nodes;
+  const expanded = expandParallelCanvasRoots(nodes);
+  const out: SubNode[] = [];
+  const seen = new Set<string>();
+  const push = (n: SubNode) => {
+    if (!n?.id || seen.has(n.id)) return;
+    seen.add(n.id);
+    out.push({ ...n, children: [], parent_id: "" });
+  };
+  for (const n of expanded) {
+    const kids = n.children || [];
+    if (kids.length >= 1 && isTaskWorker(n)) {
+      // Promote nested task workers; drop empty wrappers.
+      if ((n.goal || "").trim() && kids.length < 2) push(n);
+      for (const k of kids) push(k);
+      continue;
+    }
+    push(n);
+  }
+  return out;
+}
+
 /** Dialogue cast stays the roots; nested delegate_task helpers hang off their owner. */
 export function nestHelperAgents(nodes: SubNode[]): SubNode[] {
-  if (nodes.length < 2) return nodes;
+  if (nodes.length < 2) return expandParallelCanvasRoots(nodes);
   const cloned = nodes.map((n) => ({ ...n, children: [...(n.children || [])] }));
   const byId = new Map(cloned.map((n) => [n.id, n]));
   const nested = new Set<string>();
@@ -499,15 +620,20 @@ export function nestHelperAgents(nodes: SubNode[]): SubNode[] {
           ((p.role && p.role === pid) || (p.goal && p.goal === pid)),
       );
     if (!host) continue;
+    // Never tuck a task worker under another task — that collapses a team of
+    // three into one root as soon as parent_id arrives with the final tree.
+    if (isTaskWorker(host) && isTaskWorker(node)) continue;
     if (!(host.children || []).some((c) => c.id === node.id)) {
       host.children = [...(host.children || []), node];
     }
     nested.add(node.id);
   }
   const remaining = cloned.filter((n) => !nested.has(n.id));
-  const parties = remaining.filter((n) => n.kind === "party" || n.kind === "talk");
-  const others = remaining.filter((n) => n.kind !== "party" && n.kind !== "talk");
-  if (parties.length < 2 || !others.length) return remaining;
+  const parties = remaining.filter((n) => isDialogueParty(n));
+  const others = remaining.filter((n) => !isDialogueParty(n));
+  if (parties.length < 2 || !others.length) {
+    return expandParallelCanvasRoots(remaining);
+  }
   const roots = parties.map((p) => ({ ...p, children: [...(p.children || [])] }));
   for (const task of others) {
     const host = roots.find((p) => partyOwnsTask(p, task)) || roots[roots.length - 1];
@@ -708,6 +834,27 @@ export function nodesFromAgentTree(agentTree?: unknown[]): SubNode[] {
   );
 }
 
+function stripCancelControlNotice(text: string): string {
+  if (!text) return text;
+  if (
+    !text.includes("用户已停止本轮生成") &&
+    !text.includes("上一轮生成已中断") &&
+    !text.includes("请等待下一条用户指令")
+  ) {
+    return text;
+  }
+  return text
+    .split("\n")
+    .filter((line) => {
+      const s = line.trim();
+      if (!s) return true;
+      if (s.includes("用户已停止本轮生成") || s.includes("上一轮生成已中断")) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
 export function mapSessionMessages(
   messages: SessionDetailMessage[],
   agentTree?: unknown[],
@@ -735,7 +882,9 @@ export function mapSessionMessages(
       continue;
     }
     if (m.role === "assistant") {
-      const content = stripToolCallMarkup((m.content || "").trim());
+      const content = stripCancelControlNotice(
+        stripToolCallMarkup((m.content || "").trim()),
+      );
       if (!content && !m.reasoning) continue;
       const jobMeta = m.sidekick?.kind === "shell_job_done" ? m.sidekick : null;
       const jobId = String(jobMeta?.job_id || "").trim();
@@ -822,7 +971,11 @@ export function mapSessionMessages(
     const fromTools = expandedByStage.get(treeStage) || [];
     expandedByStage.set(
       treeStage,
-      unionCanvasNodes(treeRoots, fromTools, fromTools.length || treeRoots.length),
+      unionCanvasNodes(
+        treeRoots,
+        fromTools,
+        Math.max(fromTools.length, treeRoots.length, peakCanvasSlotCount(treeRoots)),
+      ),
     );
   }
   let placed = out;
@@ -903,6 +1056,59 @@ export function findSubNode(node: SubNode, id: string): SubNode | null {
   for (const child of node.children || []) {
     const hit = findSubNode(child, id);
     if (hit) return hit;
+  }
+  return null;
+}
+
+/** Walk a forest of top-level subagent messages for an id (incl. nested children). */
+export function findSubNodeInMessages(
+  messages: Array<{ role?: string; subagent?: SubNode | null }>,
+  id: string,
+): SubNode | null {
+  if (!id) return null;
+  for (const m of messages) {
+    if (m.role !== "subagent" || !m.subagent) continue;
+    const hit = findSubNode(m.subagent, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Locate a subagent card for a live child id. Prefer exact id; if missing,
+ * bind onto a running ephemeral slot that matches the same goal/role.
+ */
+export function locateSubagentHost(
+  messages: Array<{ role?: string; subagent?: SubNode | null }>,
+  childId: string,
+  hint?: { goal?: string; role?: string },
+): { root: SubNode; targetId: string } | null {
+  if (!childId) return null;
+  for (const m of messages) {
+    if (m.role !== "subagent" || !m.subagent) continue;
+    if (findSubNode(m.subagent, childId)) {
+      return { root: m.subagent, targetId: childId };
+    }
+  }
+  if (!hint) return null;
+  for (const m of messages) {
+    if (m.role !== "subagent" || !m.subagent) continue;
+    const walk = (node: SubNode): SubNode | null => {
+      if (
+        isEphemeralCanvasId(node.id) &&
+        node.status === "running" &&
+        sameSubagentSlot(node, { id: childId, goal: hint.goal, role: hint.role })
+      ) {
+        return node;
+      }
+      for (const c of node.children || []) {
+        const hit = walk(c);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const slot = walk(m.subagent);
+    if (slot) return { root: m.subagent, targetId: slot.id };
   }
   return null;
 }

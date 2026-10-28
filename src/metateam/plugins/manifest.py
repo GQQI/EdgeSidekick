@@ -97,6 +97,9 @@ class Manifest:
     version: str
     description: str
     author: str = ""
+    # Package-declared provenance (来源): org, repo URL, or human label.
+    # Distinct from install-channel ``source`` stored in plugins.json.
+    source: str = ""
     category: str = "其他"
     tags: list[str] = field(default_factory=list)
     homepage: str = ""
@@ -107,6 +110,8 @@ class Manifest:
     credentials: list[CredentialField] = field(default_factory=list)
     tools: list[ToolSpec] = field(default_factory=list)
     oauth: OAuthSpec | None = None
+    # Optional MCP server this plugin ships (written into mcp.json with source=plugin).
+    mcp: dict[str, Any] | None = None
 
     def tool_name(self, tool: str) -> str:
         return qualified_tool_name(self.id, tool)
@@ -121,6 +126,7 @@ class Manifest:
             "version": self.version,
             "description": self.description,
             "author": self.author,
+            "source": self.source,
             "category": self.category,
             "tags": list(self.tags),
             "homepage": self.homepage,
@@ -238,12 +244,26 @@ def parse_manifest(data: Any) -> Manifest:
         timeout = float(data.get("timeout") or 30)
     except (TypeError, ValueError):
         timeout = 30.0
+    # 来源：prefer ``source``, accept common aliases from package authors.
+    package_source = (
+        _str(data.get("source"), 200)
+        or _str(data.get("origin"), 200)
+        or _str(data.get("repository"), 200)
+        or _str(data.get("publisher"), 200)
+    )
+    # 制作者：prefer ``author``, accept ``maker`` / ``creator``.
+    author = (
+        _str(data.get("author"), 80)
+        or _str(data.get("maker"), 80)
+        or _str(data.get("creator"), 80)
+    )
     return Manifest(
         id=pid,
         name=name,
         version=version,
         description=_str(data.get("description"), 600),
-        author=_str(data.get("author"), 80),
+        author=author,
+        source=package_source,
         category=_str(data.get("category"), 40) or "其他",
         tags=[_str(t, 32) for t in (data.get("tags") or []) if _str(t, 32)][:12],
         homepage=_str(data.get("homepage"), 400),
@@ -254,6 +274,7 @@ def parse_manifest(data: Any) -> Manifest:
         credentials=creds,
         tools=tools,
         oauth=oauth,
+        mcp=_optional_mcp(data.get("mcp")),
     )
 
 
@@ -284,12 +305,22 @@ def _oauth(raw: Any, creds: list[CredentialField]) -> OAuthSpec | None:
     return spec
 
 
+
+def _optional_mcp(raw: Any) -> dict[str, Any] | None:
+    if raw in (None, {}):
+        return None
+    if not isinstance(raw, dict):
+        raise ManifestError("mcp must be an object when present")
+    # Lightweight validation — mcp_config does the rest on sync.
+    return {str(k): v for k, v in raw.items()}
+
 def load_manifest(package_dir: Path) -> Manifest:
     path = package_dir / MANIFEST_FILE
     if not path.is_file():
         raise ManifestError(f"{MANIFEST_FILE} not found")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig tolerates editors/PowerShell that write a BOM.
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as exc:
         raise ManifestError(f"{MANIFEST_FILE} is not valid JSON: {exc}") from exc
     manifest = parse_manifest(data)

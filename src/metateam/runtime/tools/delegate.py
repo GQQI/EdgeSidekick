@@ -41,7 +41,7 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
 
         def ask_user(
             question: str,
-            options: list[str],
+            options: Optional[list[str]] = None,
             allow_custom: bool = True,
             custom_label: str = "其他（请补充）",
             what: str = "",
@@ -104,8 +104,10 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
                             "minItems": 2,
                             "maxItems": 12,
                             "description": (
-                                "2–12 mutually exclusive choices. Each item is one "
-                                "button label, not a paragraph or a finding."
+                                "REQUIRED: 2–12 mutually exclusive choices as a JSON "
+                                "array of short button labels, e.g. "
+                                "[\"方案 A\",\"方案 B\"]. Do not put choices only in "
+                                "why/question — they must be in this options field."
                             ),
                         },
                         "allow_custom": {
@@ -501,8 +503,12 @@ def register_ask_and_delegate(reg: ToolRegistry, ctx: ToolContext) -> None:
         reg.register(
             Tool(
                 "delegate_task",
-                "DEFAULT: spawn isolated subagent(s) for work (search, research, "
-                "edit, gather sources). Parallel: tasks=[{goal,context,role?}]. "
+                "ON DEMAND: spawn isolated subagent(s) only when streams are "
+                "independent and isolation helps (multi-area bug hunt, parallel "
+                "research across unrelated dirs, or the user asks for multiple "
+                "agents). Prefer doing single-focus work yourself with normal "
+                "tools — do NOT spawn for every task. "
+                "Parallel: tasks=[{goal,context,role?}]. "
                 "Each task is wrapped in an AskPacket (what/how/who/when + VisibilitySpec); "
                 "siblings stay isolated by default. Parent receives structured results "
                 "(findings / recommendation / open_questions). "

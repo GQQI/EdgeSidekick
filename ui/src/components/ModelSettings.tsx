@@ -38,23 +38,59 @@ type Props = {
   extra?: ReactNode;
 };
 
-type MarketKind = "custom";
+type MarketKind = "custom" | "openai" | "anthropic" | "ollama";
+type NetFilter = "all" | "offline" | "online";
 
-const MARKET: Array<{
+type MarketItem = {
   id: MarketKind;
   nameZh: string;
   nameEn: string;
   descZh: string;
   descEn: string;
   tags: string[];
-}> = [
+  tagKind?: "official" | "local" | "compat";
+  net: "offline" | "online";
+};
+
+const MARKET: MarketItem[] = [
   {
     id: "custom",
     nameZh: "OpenAI-API-Compatible",
     nameEn: "OpenAI-API-Compatible",
-    descZh: "任意兼容接口 / 网关，模型名称可自由填写",
-    descEn: "Any compatible gateway — type any model name",
+    descZh: "支持自定义 Base URL，兼容任意 OpenAI 协议网关",
+    descEn: "Custom Base URL — any OpenAI-compatible gateway",
+    tags: ["LLM", "OpenAI", "Local"],
+    tagKind: "compat",
+    net: "online",
+  },
+  {
+    id: "openai",
+    nameZh: "OpenAI",
+    nameEn: "OpenAI",
+    descZh: "接入 OpenAI API 模型",
+    descEn: "Connect to OpenAI API models",
     tags: ["LLM"],
+    tagKind: "official",
+    net: "online",
+  },
+  {
+    id: "anthropic",
+    nameZh: "Anthropic",
+    nameEn: "Anthropic",
+    descZh: "接入 Claude 系列模型",
+    descEn: "Connect to Claude models",
+    tags: ["LLM"],
+    net: "online",
+  },
+  {
+    id: "ollama",
+    nameZh: "Ollama",
+    nameEn: "Ollama",
+    descZh: "连接本地运行的开源模型",
+    descEn: "Connect local open-source models",
+    tags: ["LLM"],
+    tagKind: "local",
+    net: "offline",
   },
 ];
 
@@ -74,12 +110,17 @@ function newProvider(
   const market = MARKET.find((m) => m.id === kind);
   const baseName = market ? market.nameZh : tpl?.name || kind;
   const baseUrl = tpl?.base_url || "";
+  const seedNames = (tpl?.models || []).filter(Boolean);
+  const models =
+    seedNames.length > 0
+      ? seedNames.map((n) => newModelEntry(n, { base_url: baseUrl }))
+      : [newModelEntry("", { base_url: baseUrl })];
   return {
     id: `prov_${Math.random().toString(36).slice(2, 10)}`,
     name: uniqueName(baseName, existingNames),
-    vendor: tpl?.vendor || "openai",
+    vendor: tpl?.vendor || kind,
     market_id: kind,
-    models: [newModelEntry("", { base_url: baseUrl })],
+    models,
   };
 }
 
@@ -89,12 +130,45 @@ function setRole(setup: ModelSetup, role: "main" | "subagent", ref: ModelRef): M
   return next;
 }
 
-function badge(kind: string): string {
-  if (kind === "deepseek") return "DS";
-  if (kind === "openai") return "OA";
-  if (kind === "minimax") return "MM";
-  if (kind === "ollama") return "OL";
-  return "API";
+function providerKind(p: ModelProvider): string {
+  return (p.market_id || p.vendor || "custom").toLowerCase();
+}
+
+function iconKind(id: string): string {
+  const k = id.toLowerCase();
+  if (k.includes("anthropic") || k.includes("claude")) return "anthropic";
+  if (k.includes("ollama")) return "ollama";
+  if (k.includes("minimax") || k === "mm") return "minimax";
+  if (k.includes("deepseek")) return "deepseek";
+  if (k === "openai" || k === "oa") return "openai";
+  if (k.includes("compatible") || k === "custom" || k === "api") return "compatible";
+  return k || "compatible";
+}
+
+/** Distinct vendor glyphs — never a shared fallback letter for known vendors. */
+/** Real brand logos from /vendor-icons (Simple Icons / brand paths). */
+const VENDOR_ICON_SRC: Record<string, string> = {
+  openai: "/vendor-icons/openai.svg",
+  compatible: "/vendor-icons/openai-compatible.svg",
+  custom: "/vendor-icons/openai-compatible.svg",
+  anthropic: "/vendor-icons/anthropic.svg",
+  ollama: "/vendor-icons/ollama.svg",
+  minimax: "/vendor-icons/minimax.svg",
+  deepseek: "/vendor-icons/deepseek.svg",
+};
+
+function ProviderIcon({ kind, size = 36 }: { kind: string; size?: number }) {
+  const k = iconKind(kind);
+  const src = VENDOR_ICON_SRC[k] || VENDOR_ICON_SRC.compatible;
+  return (
+    <span
+      className={`rf-logo rf-logo-img v-${k}`}
+      style={{ width: size, height: size }}
+      title={k}
+    >
+      <img src={src} alt="" width={Math.round(size * 0.62)} height={Math.round(size * 0.62)} draggable={false} />
+    </span>
+  );
 }
 
 type RfOption = { value: string; label: string };
@@ -239,7 +313,7 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showKey, setShowKey] = useState(false);
   const [marketQuery, setMarketQuery] = useState("");
-  const [mineQuery, setMineQuery] = useState("");
+  const [netFilter, setNetFilter] = useState<NetFilter>("all");
   const [renamingProv, setRenamingProv] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [confirmProvId, setConfirmProvId] = useState("");
@@ -253,27 +327,25 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
 
   const marketList = useMemo(() => {
     const q = marketQuery.trim().toLowerCase();
-    return MARKET.filter(
-      (m) =>
-        !q ||
+    return MARKET.filter((m) => {
+      if (netFilter === "offline" && m.net !== "offline") return false;
+      if (netFilter === "online" && m.net !== "online") return false;
+      if (!q) return true;
+      return (
         m.nameZh.toLowerCase().includes(q) ||
         m.nameEn.toLowerCase().includes(q) ||
         m.descZh.includes(q) ||
-        m.descEn.toLowerCase().includes(q),
-    );
-  }, [marketQuery]);
+        m.descEn.toLowerCase().includes(q)
+      );
+    });
+  }, [marketQuery, netFilter]);
 
-  const filteredProviders = useMemo(() => {
-    const q = mineQuery.trim().toLowerCase();
-    if (!q) return setup.providers;
-    return setup.providers
-      .map((p) => {
-        const nameHit = p.name.toLowerCase().includes(q);
-        const models = nameHit ? p.models : p.models.filter((m) => m.name.toLowerCase().includes(q));
-        return nameHit || models.length ? { ...p, models } : null;
-      })
-      .filter((p): p is ModelProvider => Boolean(p));
-  }, [setup.providers, mineQuery]);
+  const installedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of setup.providers) ids.add((p.market_id || "custom").toLowerCase());
+    return ids;
+  }, [setup.providers]);
+
 
   function persist(next: ModelSetup) {
     onChange(next);
@@ -283,7 +355,6 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
     providerId: string,
     modelId: string,
     patch: Partial<ModelEntry>,
-    save = false,
   ) {
     const next = {
       ...setup,
@@ -296,9 +367,9 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
             },
       ),
     };
-    if (save) persist(next);
-    else onChange(next);
+    onChange(next);
   }
+
 
   function renameProvider(id: string, name: string) {
     const next = name.trim();
@@ -313,13 +384,8 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
     setRenamingProv("");
   }
 
-  function addFromMarket(kind: MarketKind) {
-    const existing =
-      setup.providers.find((p) => (p.market_id || "custom") === kind) || setup.providers[0];
-    if (existing) {
-      addBlankModel(existing);
-      return;
-    }
+  function installFromMarket(kind: MarketKind) {
+    if (installedIds.has(kind)) return;
     const p = newProvider(
       kind,
       templates,
@@ -327,10 +393,6 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
     );
     persist({ ...setup, providers: [...setup.providers, p] });
     setExpanded((d) => ({ ...d, [p.id]: true }));
-    if (p.models[0]) {
-      setEdit({ providerId: p.id, modelId: p.models[0].id });
-      setShowKey(false);
-    }
   }
 
   function removeProvider(id: string) {
@@ -367,9 +429,9 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
       ),
     });
     setExpanded((d) => ({ ...d, [provider.id]: true }));
-    setEdit({ providerId: provider.id, modelId: entry.id });
-    setShowKey(false);
+    openEdit(provider.id, entry.id );
   }
+
 
   function removeModel(providerId: string, modelId: string) {
     const prov = setup.providers.find((p) => p.id === providerId);
@@ -409,14 +471,17 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
     );
   }
 
-  function openEdit(providerId: string, modelId: string) {
-    setEdit({ providerId, modelId });
-    setShowKey(false);
-    setExpanded((d) => ({ ...d, [providerId]: true }));
+  function setAsDefault(providerId: string, modelId: string) {
+    pickRole("main", refKey({ provider_id: providerId, model_id: modelId }));
   }
 
   function applyNow() {
     onSave(setup, { restartChat: false });
+  }
+
+  function openEdit(providerId: string, modelId: string) {
+    setEdit({ providerId, modelId });
+    setShowKey(false);
   }
 
   function closeEdit() {
@@ -424,25 +489,27 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
     setShowKey(false);
   }
 
-  function handleDone() {
-    closeEdit();
+  const hasModels = setup.providers.some((p) => p.models.length > 0);
+
+  function tagLabel(item: MarketItem): string | null {
+    if (item.tagKind === "official") return t("modelTagOfficial");
+    if (item.tagKind === "local") return t("modelTagLocal");
+    if (item.tagKind === "compat") return t("modelTagCompat");
+    return null;
   }
 
-  const hasModels = setup.providers.some((p) => p.models.length > 0);
 
   return (
     <div className="rf">
       {setup.demo_mode ? <p className="rf-banner">{t("modelDemoHint")}</p> : null}
 
       <div className="rf-toolbar">
-        <p className="hint rf-toolbar-hint">{t("modelHint")}</p>
+        <div className="rf-toolbar-copy">
+          <h3 className="rf-page-title">{t("modelTitle")}</h3>
+          <p className="hint rf-toolbar-hint">{t("modelPageHint")}</p>
+        </div>
         <div className="rf-toolbar-actions">
-          <button
-            type="button"
-            className="primary rf-save"
-            disabled={saving}
-            onClick={applyNow}
-          >
+          <button type="button" className="primary rf-save" disabled={saving} onClick={applyNow}>
             {saving ? t("modelSavingBtn") : t("saveModel")}
           </button>
         </div>
@@ -450,83 +517,77 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
 
       {extra}
 
-      <div className="rf-layout">
-        <div className="rf-main">
-          <section className="rf-block rf-block-defaults">
-            <h3 className="rf-block-title">{t("modelStepAgents")}</h3>
-            <div className="rf-defaults">
-              {(["main", "subagent"] as const).map((role) => {
-                const ref = role === "main" ? setup.main : setup.subagent;
-                const auto = isAutoRef(ref);
-                return (
-                  <label key={role} className={auto ? "rf-default-auto" : undefined}>
-                    <span>
-                      {role === "main" ? t("mainModel") : t("subModel")}
-                      {auto ? <em className="rf-auto-badge">{t("modelAutoBadge")}</em> : null}
-                    </span>
-                    <RfSelect
-                      value={refKey(ref)}
-                      disabled={!hasModels}
-                      placeholder={t("modelPickProviderFirst")}
-                      groups={[
-                        {
-                          label: "",
-                          options: [
-                            { value: refKey(autoRef()), label: `✨ ${t("modelAutoOption")}` },
-                          ],
-                        },
-                        ...setup.providers
-                          .filter((p) => p.models.length > 0)
-                          .map((p) => ({
-                            label: p.name,
-                            options: p.models.map((m) => ({
-                              value: refKey({ provider_id: p.id, model_id: m.id }),
-                              label: m.name || t("modelUnnamed"),
-                            })),
-                          })),
-                      ]}
-                      onChange={(v) => pickRole(role, v)}
-                    />
-                    {auto ? <p className="hint rf-auto-hint">{t("modelAutoDesc")}</p> : null}
-                  </label>
-                );
-              })}
-            </div>
-          </section>
 
-          <section className="rf-block rf-block-mine">
-            <div className="rf-block-head">
-              <h3 className="rf-block-title">{t("modelAddedTitle")}</h3>
-            </div>
-            {setup.providers.length > 0 && (
-              <label className="rf-search">
-                <IconSearch size={14} />
-                <input
-                  value={mineQuery}
-                  onChange={(e) => setMineQuery(e.target.value)}
-                  placeholder={t("modelSearchMine")}
+      <section className="rf-block rf-block-defaults rf-top-defaults">
+        <h3 className="rf-block-title">{t("modelStepAgents")}</h3>
+        <div className="rf-defaults">
+          {(["main", "subagent"] as const).map((role) => {
+            const ref = role === "main" ? setup.main : setup.subagent;
+            const auto = isAutoRef(ref);
+            return (
+              <label key={role} className={auto ? "rf-default-auto" : undefined}>
+                <span>
+                  {role === "main" ? t("mainModel") : t("subModel")}
+                  {auto ? <em className="rf-auto-badge">{t("modelAutoBadge")}</em> : null}
+                </span>
+                <RfSelect
+                  value={refKey(ref)}
+                  disabled={!hasModels}
+                  placeholder={t("modelPickProviderFirst")}
+                  groups={[
+                    {
+                      label: "",
+                      options: [
+                        { value: refKey(autoRef()), label: `✦ ${t("modelAutoOption")}` },
+                      ],
+                    },
+                    ...setup.providers
+                      .filter((prov) => prov.models.length > 0)
+                      .map((prov) => ({
+                        label: prov.name,
+                        options: prov.models.map((m) => ({
+                          value: refKey({ provider_id: prov.id, model_id: m.id }),
+                          label: m.name || t("modelUnnamed"),
+                        })),
+                      })),
+                  ]}
+                  onChange={(v) => pickRole(role, v)}
                 />
               </label>
-            )}
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="rf-layout">
+        <div className="rf-main">
+          {/* Installed providers with nested model lists */}
+          <section className="rf-block rf-block-installed">
+            <div className="rf-block-head">
+              <h3 className="rf-block-title">
+                {t("modelInstalledTitle")}
+                <em className="rf-count-badge">{setup.providers.length}</em>
+              </h3>
+            </div>
 
             {setup.providers.length === 0 ? (
               <p className="rf-empty">{t("modelMarketEmpty")}</p>
-            ) : filteredProviders.length === 0 ? (
-              <p className="rf-empty">{t("modelSearchMine")}</p>
             ) : (
               <ul className="rf-added">
-                {filteredProviders.map((p) => {
-                  const full = setup.providers.find((x) => x.id === p.id) || p;
-                  const kind = p.market_id || p.vendor || "custom";
-                  const show = mineQuery ? true : (expanded[p.id] ?? true);
-                  const readyCount = full.models.filter((m) => m.api_key_set || m.api_key).length;
+                {setup.providers.map((p) => {
+                  const kind = providerKind(p);
+                  const show = expanded[p.id] ?? true;
                   return (
                     <li key={p.id} id={`rf-prov-${p.id}`} className="rf-added-card">
                       {confirmProvId === p.id ? (
                         <div className="rf-inline-confirm">
                           <span>{t("providerDeleteConfirm", p.name)}</span>
                           <div>
-                            <button type="button" className="ghost danger" onClick={() => removeProvider(p.id)}>
+                            <button
+                              type="button"
+                              className="ghost danger"
+                              onClick={() => removeProvider(p.id)}
+                            >
                               {t("providerRemove")}
                             </button>
                             <button type="button" className="ghost" onClick={() => setConfirmProvId("")}>
@@ -536,7 +597,7 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
                         </div>
                       ) : (
                         <div className="rf-added-top">
-                          <span className={`rf-logo v-${kind}`}>{badge(kind)}</span>
+                          <ProviderIcon kind={kind} />
                           {renamingProv === p.id ? (
                             <form
                               className="rf-rename"
@@ -559,11 +620,29 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
                             </form>
                           ) : (
                             <div className="rf-added-info">
-                              <strong>{p.name}</strong>
-                              <span>{t("modelCount", String(full.models.length), String(readyCount))}</span>
+                              <div className="rf-added-name-row">
+                                <strong>{p.name}</strong>
+                                <span className="rf-status ok">{t("modelInstalledBadge")}</span>
+                              </div>
+                              <span className="rf-market-tags">
+                                {(MARKET.find((m) => m.id === kind)?.tags || ["LLM"]).map((tag) => (
+                                  <i key={tag}>{tag}</i>
+                                ))}
+                              </span>
                             </div>
                           )}
                           <div className="rf-added-actions">
+                            <button
+                              type="button"
+                              className="ghost rf-manage-btn"
+                              onClick={() => setExpanded((d) => ({ ...d, [p.id]: !show }))}
+                            >
+                              <IconSettings size={14} />
+                              {t("modelManageModels")}
+                              <span className="rf-chevron" aria-hidden>
+                                {show ? "▴" : "▾"}
+                              </span>
+                            </button>
                             <button
                               type="button"
                               className="rf-icon-btn"
@@ -577,14 +656,6 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
                             </button>
                             <button
                               type="button"
-                              className="rf-icon-btn"
-                              title={t("modelAddModel")}
-                              onClick={() => addBlankModel(full)}
-                            >
-                              <IconPlus size={14} />
-                            </button>
-                            <button
-                              type="button"
                               className="rf-icon-btn danger"
                               title={t("providerRemove")}
                               onClick={() => setConfirmProvId(p.id)}
@@ -595,87 +666,82 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
                         </div>
                       )}
 
-                      <button
-                        type="button"
-                        className="rf-models-toggle"
-                        onClick={() => setExpanded((d) => ({ ...d, [p.id]: !show }))}
-                      >
-                        {show ? t("modelHideList") : t("modelShowList", String(p.models.length))}
-                        <span aria-hidden>{show ? "▴" : "▾"}</span>
-                      </button>
-
                       {show ? (
-                        <div className="rf-model-panel">
-                          {p.models.length === 0 ? (
-                            <p className="hint">{t("modelAddModelsHint")}</p>
-                          ) : (
-                            <ul className="rf-model-rows">
-                              {p.models.map((m) => {
-                                const mainOn =
-                                  setup.main.provider_id === p.id && setup.main.model_id === m.id;
-                                const subOn =
-                                  setup.subagent.provider_id === p.id &&
-                                  setup.subagent.model_id === m.id;
-                                const ready = Boolean(m.api_key_set || m.api_key);
-                                const active = edit?.providerId === p.id && edit?.modelId === m.id;
-                                return (
-                                  <li key={m.id} className={active ? "active" : ""}>
-                                    <button
-                                      type="button"
-                                      className="rf-model-open"
-                                      onClick={() => openEdit(p.id, m.id)}
-                                      title={t("modelConfigure")}
+                        <div className="rf-prov-models">
+                            <div className="rf-prov-models-head">
+                              <span>{t("modelConfiguredTitle")}</span>
+                              <button
+                                type="button"
+                                className="ghost rf-add-model-btn"
+                                onClick={() => addBlankModel(p)}
+                              >
+                                <IconPlus size={14} /> {t("modelAddModel")}
+                              </button>
+                            </div>
+                            {p.models.length === 0 ? (
+                              <p className="hint rf-prov-models-empty">{t("modelAddModelsHint")}</p>
+                            ) : (
+                              <ul className="rf-cfg-rows">
+                                {p.models.map((m) => {
+                                  const mainOn =
+                                    setup.main.provider_id === p.id && setup.main.model_id === m.id;
+                                  const ready = Boolean(m.api_key_set || m.api_key || m.name);
+                                  const iconFor =
+                                    kind === "custom" && m.name.toLowerCase().includes("gpt")
+                                      ? "openai"
+                                      : kind;
+                                  return (
+                                    <li
+                                      key={m.id}
+                                      className={`rf-cfg-row${mainOn ? " is-default" : ""}`}
                                     >
-                                      <code>{m.name || t("modelUnnamed")}</code>
-                                      <span className={`rf-dot${ready ? " ok" : ""}`} />
-                                    </button>
-                                    <div className="rf-model-row-actions">
                                       <button
                                         type="button"
-                                        className={`rf-pill${mainOn ? " on" : ""}`}
+                                        className="rf-cfg-open"
                                         onClick={() =>
-                                          pickRole(
-                                            "main",
-                                            refKey({ provider_id: p.id, model_id: m.id }),
-                                          )
+                                          openEdit(p.id, m.id )
                                         }
-                                      >
-                                        {t("mainModel").slice(0, 1)}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className={`rf-pill${subOn ? " on" : ""}`}
-                                        onClick={() =>
-                                          pickRole(
-                                            "subagent",
-                                            refKey({ provider_id: p.id, model_id: m.id }),
-                                          )
-                                        }
-                                      >
-                                        {t("subModel").slice(0, 1)}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="rf-icon-btn"
                                         title={t("modelConfigure")}
-                                        onClick={() => openEdit(p.id, m.id)}
                                       >
-                                        <IconSettings size={14} />
+                                        <ProviderIcon kind={iconFor} size={28} />
+                                        <code className="rf-cfg-name">
+                                          {m.name || t("modelUnnamed")}
+                                        </code>
+                                        <span
+                                          className={`rf-switch${ready ? " on" : ""}`}
+                                          aria-hidden
+                                        >
+                                          <span className="rf-switch-track" />
+                                          <em>{t("modelEnabled")}</em>
+                                        </span>
                                       </button>
-                                    </div>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                          <button
-                            type="button"
-                            className="rf-add-model-link"
-                            onClick={() => addBlankModel(full)}
-                          >
-                            <IconPlus size={12} /> {t("modelAddModel")}
-                          </button>
-                        </div>
+                                      <button
+                                        type="button"
+                                        className={`ghost rf-default-btn${mainOn ? " on" : ""}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setAsDefault(p.id, m.id);
+                                        }}
+                                      >
+                                        {t("modelSetDefault")}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rf-icon-btn danger"
+                                        title={t("modelDelete")}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeModel(p.id, m.id);
+                                        }}
+                                      >
+                                        <IconTrash size={14} />
+                                      </button>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                          </div>
                       ) : null}
                     </li>
                   );
@@ -686,123 +752,163 @@ export function ModelSettings({ setup, locale, onChange, onSave, saving, t, extr
         </div>
 
         <aside className="rf-side">
-          {editingModel ? (
-            <div className="rf-editor">
-              <div className="rf-side-head">
-                <div>
-                  <h3>{t("modelConfigure")}</h3>
-                  <p>{editingModel.prov.name}</p>
-                </div>
-                <button type="button" className="rf-icon-btn" onClick={closeEdit} title={t("close")}>
-                  <IconX size={14} />
-                </button>
-              </div>
-              <div className="rf-editor-body">
-                <label>
-                  <span>{t("modelNameLocked")}</span>
-                  <input
-                    value={editingModel.model.name}
-                    onChange={(e) =>
-                      patchModel(editingModel.prov.id, editingModel.model.id, {
-                        name: e.target.value,
-                      })
-                    }
-                    placeholder={t("modelNamePlaceholder")}
-                  />
-                </label>
-                <label>
-                  <span>Base URL</span>
-                  <input
-                    value={editingModel.model.base_url}
-                    onChange={(e) =>
-                      patchModel(editingModel.prov.id, editingModel.model.id, {
-                        base_url: e.target.value,
-                      })
-                    }
-                    placeholder="https://api.example.com/v1"
-                  />
-                </label>
-                <label>
-                  <span>API Key</span>
-                  <div className="rf-key-row">
-                    <input
-                      type={showKey ? "text" : "password"}
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder="sk-..."
-                      value={editingModel.model.api_key || ""}
-                      onChange={(e) =>
-                        patchModel(editingModel.prov.id, editingModel.model.id, {
-                          api_key: e.target.value,
-                          api_key_set: Boolean(e.target.value.trim()),
-                        })
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="rf-key-eye"
-                      title={showKey ? t("modelKeyHide") : t("modelKeyShow")}
-                      onClick={() => setShowKey((v) => !v)}
-                    >
-                      {showKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                    </button>
-                  </div>
-                </label>
-              </div>
-              <div className="rf-editor-foot">
+          <div className="rf-market">
+            <h3 className="rf-block-title">{t("modelProviders")}</h3>
+            <p className="hint rf-side-hint">{t("modelMarketSideHint")}</p>
+            <label className="rf-search">
+              <IconSearch size={14} />
+              <input
+                value={marketQuery}
+                onChange={(e) => setMarketQuery(e.target.value)}
+                placeholder={t("modelSearchMarket")}
+              />
+            </label>
+            <div className="rf-filter-chips" role="group" aria-label={t("modelFilterAll")}>
+              {(
+                [
+                  ["all", "modelFilterAll"],
+                  ["offline", "modelFilterOffline"],
+                  ["online", "modelFilterOnline"],
+                ] as const
+              ).map(([id, key]) => (
                 <button
+                  key={id}
                   type="button"
-                  className="ghost danger"
-                  onClick={() => removeModel(editingModel.prov.id, editingModel.model.id)}
+                  className={netFilter === id ? "active" : ""}
+                  onClick={() => setNetFilter(id)}
                 >
-                  <IconTrash size={14} /> {t("modelDelete")}
+                  {t(key)}
                 </button>
-                <button type="button" className="primary" disabled={saving} onClick={handleDone}>
-                  {saving ? t("modelSavingBtn") : t("modelDone")}
-                </button>
-              </div>
+              ))}
             </div>
-          ) : (
-            <div className="rf-market">
-              <h3 className="rf-block-title">{t("modelAvailableTitle")}</h3>
-              <p className="hint rf-side-hint">{t("modelMarketHint")}</p>
-              {MARKET.length > 1 && (
-                <label className="rf-search">
-                  <IconSearch size={14} />
-                  <input
-                    value={marketQuery}
-                    onChange={(e) => setMarketQuery(e.target.value)}
-                    placeholder={t("modelSearchMarket")}
-                  />
-                </label>
-              )}
-              <ul className="rf-market-list">
-                {marketList.map((item) => (
+            <ul className="rf-market-list">
+              {marketList.map((item) => {
+                const installed = installedIds.has(item.id);
+                const tag = tagLabel(item);
+                return (
                   <li key={item.id}>
-                    <button
-                      type="button"
-                      className="rf-market-card"
-                      onClick={() => addFromMarket(item.id)}
-                    >
-                      <span className={`rf-logo v-${item.id}`}>{badge(item.id)}</span>
+                    <div className={`rf-market-card${installed ? " added" : ""}`}>
+                      <ProviderIcon kind={item.id === "custom" ? "compatible" : item.id} />
                       <span className="rf-market-text">
-                        <strong>{locale === "en" ? item.nameEn : item.nameZh}</strong>
+                        <strong>
+                          {locale === "en" ? item.nameEn : item.nameZh}
+                          {tag ? (
+                            <i className={`rf-tag-pill rf-tag-${item.tagKind || "plain"}`}>{tag}</i>
+                          ) : null}
+                        </strong>
                         <em>{locale === "en" ? item.descEn : item.descZh}</em>
-                        <span className="rf-market-tags">
-                          {item.tags.map((tag) => (
-                            <i key={tag}>{tag}</i>
-                          ))}
-                        </span>
                       </span>
-                      <span className="rf-market-add">+</span>
-                    </button>
+                      <button
+                        type="button"
+                        className={`rf-install-btn${installed ? " installed" : ""}`}
+                        disabled={installed}
+                        onClick={() => installFromMarket(item.id)}
+                      >
+                        {installed ? t("modelInstalledBadge") : t("modelInstall")}
+                      </button>
+                    </div>
                   </li>
-                ))}
-              </ul>
-            </div>
-          )}
+                );
+              })}
+            </ul>
+          </div>
+
         </aside>
       </div>
+
+      {editingModel
+        ? createPortal(
+            <div className="rf-drawer-backdrop" onClick={closeEdit}>
+              <div
+                className="rf-drawer"
+                role="dialog"
+                aria-label={t("modelConfigure")}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="rf-drawer-head">
+                  <h3>{t("modelConfigure")}</h3>
+                  <button type="button" className="rf-icon-btn" onClick={closeEdit} title={t("close")}>
+                    <IconX size={14} />
+                  </button>
+                </div>
+                <p className="rf-drawer-sub">{editingModel.prov.name}</p>
+                <div className="rf-drawer-body">
+                  <label>
+                    <span>{t("modelNameLocked")}</span>
+                    <input
+                      value={editingModel.model.name}
+                      onChange={(e) =>
+                        patchModel(editingModel.prov.id, editingModel.model.id, {
+                          name: e.target.value,
+                        })
+                      }
+                      placeholder={t("modelNamePlaceholder")}
+                      autoFocus
+                    />
+                  </label>
+                  <label>
+                    <span>{t("modelBaseUrl")}</span>
+                    <input
+                      value={editingModel.model.base_url}
+                      onChange={(e) =>
+                        patchModel(editingModel.prov.id, editingModel.model.id, {
+                          base_url: e.target.value,
+                        })
+                      }
+                      placeholder="https://api.openai.com/v1"
+                    />
+                  </label>
+                  <label>
+                    <span>API Key</span>
+                    <div className="rf-key-row">
+                      <input
+                        type={showKey ? "text" : "password"}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={
+                          editingModel.model.api_key_set
+                            ? editingModel.model.api_key_masked || "sk-••••••••"
+                            : "sk-..."
+                        }
+                        value={editingModel.model.api_key || ""}
+                        onChange={(e) =>
+                          patchModel(editingModel.prov.id, editingModel.model.id, {
+                            api_key: e.target.value,
+                            api_key_set: Boolean(e.target.value.trim()),
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="rf-key-eye"
+                        title={showKey ? t("modelKeyHide") : t("modelKeyShow")}
+                        onClick={() => setShowKey((v) => !v)}
+                      >
+                        {showKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+                <div className="rf-drawer-foot">
+                  <button
+                    type="button"
+                    className="ghost danger"
+                    onClick={() => {
+                      removeModel(editingModel.prov.id, editingModel.model.id);
+                      closeEdit();
+                    }}
+                  >
+                    <IconTrash size={14} /> {t("modelDelete")}
+                  </button>
+                  <button type="button" className="primary" onClick={closeEdit}>
+                    {t("modelDone")}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

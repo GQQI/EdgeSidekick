@@ -79,6 +79,10 @@ export function displayHttpUrl(href: string): string {
 
 const PREVIEW_FILE_RE = /\.(html?|pdf)([?#]|$)/i;
 
+/** Source / config files that should open in the editor, not the host SPA. */
+const WORKSPACE_FILE_EXT_RE =
+  /\.(?:vue|py|pyi|ts|tsx|js|jsx|mjs|cjs|json|jsonc|md|mdx|css|scss|less|sass|go|rs|java|kt|kts|c|cc|cpp|cxx|h|hh|hpp|hxx|cs|php|rb|swift|sql|yaml|yml|toml|xml|svg|txt|sh|bash|zsh|bat|cmd|ps1|ini|cfg|conf|env|gitignore|dockerfile|makefile|r|lua|dart|zig|ex|exs|erl|hs|clj|scala|proto|graphql|gql|wasm|ipynb)([?#]|$)/i;
+
 /**
  * Workspace-relative, file://, or same-origin path to HTML/PDF — not a remote link.
  */
@@ -97,6 +101,27 @@ export function isLocalPreviewTarget(raw: string): boolean {
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return false;
   return PREVIEW_FILE_RE.test(t);
+}
+
+/**
+ * Workspace-relative (or file:// / same-origin) path to a source file.
+ * Excludes html/pdf — those stay on the browser-preview path.
+ */
+export function isWorkspaceFileTarget(raw: string): boolean {
+  const t = String(raw || "").trim();
+  if (!t || t === "about:blank" || isLocalPreviewTarget(t)) return false;
+  if (/^file:/i.test(t)) return WORKSPACE_FILE_EXT_RE.test(t);
+  if (/^https?:/i.test(t)) {
+    try {
+      const u = new URL(t);
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      return Boolean(origin) && u.origin === origin && WORKSPACE_FILE_EXT_RE.test(u.pathname);
+    } catch {
+      return false;
+    }
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return false;
+  return WORKSPACE_FILE_EXT_RE.test(t);
 }
 
 /** @deprecated use isLocalPreviewTarget */
@@ -118,6 +143,11 @@ export function localPreviewPath(raw: string): string {
     }
   }
   return t.replace(/^\.\//, "").replace(/^\/+/, "");
+}
+
+/** Normalize a workspace file target to a relative path for readFileContent. */
+export function workspaceFilePath(raw: string): string {
+  return localPreviewPath(raw);
 }
 
 /**
@@ -169,7 +199,8 @@ export function prepMarkdownForUrls(src: string): string {
   return src || "";
 }
 
-const FILE_RE = /(^|[\s])((?:\.\/)?[\w./\\\-\u4e00-\u9fff]+\.(?:html?|pdf))(?=$|[\s,，。;；])/gi;
+const FILE_RE =
+  /(^|[\s`("'（【])((?:\.\/)?[\w./\\\-\u4e00-\u9fff]+\.(?:html?|pdf|vue|py|pyi|ts|tsx|js|jsx|mjs|cjs|json|jsonc|md|mdx|css|scss|less|go|rs|java|kt|c|cc|cpp|h|hpp|cs|php|rb|swift|sql|ya?ml|toml|xml|svg|txt|sh|bash|bat|cmd|ps1|ini|cfg|conf|env|proto|graphql))(?=$|[\s`("'），。;；】])/gi;
 
 type MdNode = {
   type: string;

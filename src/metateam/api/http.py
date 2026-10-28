@@ -58,14 +58,10 @@ def workspace_override(workspace: Optional[str]) -> Iterator[None]:
 
     try:
         folder = Path(raw).expanduser().resolve()
-    except Exception:
-        # Soft-fallback like resolve_panel_workspace: a deleted/missing chat
-        # folder must not break the file panel mid-request.
-        yield
-        return
+    except Exception as exc:
+        raise HTTPException(400, f"invalid workspace path: {raw}") from exc
     if not folder.is_dir():
-        yield
-        return
+        raise HTTPException(400, f"workspace is not a folder: {folder}")
     token = bind_active_workspace(folder)
     try:
         yield

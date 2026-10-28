@@ -179,8 +179,6 @@ export function buildSocialBackendMessage(opts: {
     mustAnswer?: boolean;
     /** The user asked for the work itself, not a discussion of it. */
     action?: boolean;
-    /** Orchestrated team turn: this member's role and brief. */
-    collab?: CollabBrief;
   };
 }): string {
   const hist = historyBlock(opts.history, opts.historyLimit ?? (opts.turnRole === "bystander" ? 4 : 12));
@@ -295,159 +293,6 @@ ${opts.groupBrief}
 
 type FreeChat = NonNullable<Parameters<typeof buildSocialBackendMessage>[0]["freeChat"]>;
 
-export type CollabBrief = {
-  role: "greeter" | "lead" | "worker" | "discussant" | "handoff" | "reviewer" | "reviser" | "synthesizer";
-  mode: "chat" | "answer" | "parallel" | "pipeline" | "discuss";
-  goal: string;
-  task: string;
-  expected?: string;
-  peers: Array<{ name: string; task: string }>;
-  upstream: Array<{ name: string; task: string; text: string }>;
-  contributions: Array<{ name: string; task: string; text: string }>;
-  issues?: string;
-  tools: boolean;
-  mustAnswer: boolean;
-  /** Members scheduled after this step (pipeline), so this one stops at its boundary. */
-  downstream?: Array<{ name: string; task: string }>;
-  /** > 0 when the previous attempt returned nothing. */
-  attempt: number;
-};
-
-function deliverableBlock(title: string, rows: Array<{ name: string; task: string; text: string }>, max = 3200): string {
-  if (!rows.length) return "";
-  const body = rows
-    .map((row) => {
-      const text = String(row.text || "").trim();
-      const cut = text.length > max ? `${text.slice(0, max)}\n…（已截断）` : text;
-      return `【${row.name}｜${row.task}】\n${cut}`;
-    })
-    .join("\n\n");
-  return `${title}\n${body}\n\n`;
-}
-
-function collabRules(who: SocialAgent, c: CollabBrief): string[] {
-  const deliver = c.expected ? `交付要求：${c.expected}` : "";
-  const toolHint = c.tools
-    ? "需要时直接使用工具（读写文件、运行命令、浏览网页、插件工具）把事做完，给出可以核对的结果。"
-    : "这一步不需要动手，直接用文字回答。";
-  const askPeer = "确实需要某位同事帮忙时，用「@名字 + 具体请求」提出，他会接着回应；不要泛泛地 @ 别人。";
-  switch (c.role) {
-    case "greeter":
-      return [
-        "用户在寒暄或客套。用你自己的身份回一两句简短自然的话，不要和前面成员说得一样，不要长篇自我介绍，不要展开任务。",
-      ];
-    case "lead":
-      return [
-        `这件事由你一个人负责到底：${c.task}`,
-        deliver,
-        "像独立完成工作的专家一样完整地做完，不要只做开头，也不要把后面的步骤推给别人。",
-        toolHint,
-        askPeer,
-      ];
-    case "worker":
-      return c.mode === "pipeline"
-        ? [
-            `这是接力流水线中你负责的一步：${c.task}`,
-            deliver,
-            c.upstream.length ? "上游的交付已经在下面，直接在它的基础上继续，不要重做上游。" : "",
-            c.downstream?.length
-              ? `做完你这一步就停。后面还有：${c.downstream.map((d) => `${d.name}（${d.task}）`).join("；")}，不要替他们做。`
-              : "你是最后一步，做完后给出完整、可以直接交给用户的结果。",
-            toolHint,
-            askPeer,
-          ]
-        : [
-            `团队把任务拆开并行处理，你负责其中一部分：${c.task}`,
-            deliver,
-            c.peers.length
-              ? `其他成员同时在做：${c.peers.map((p) => `${p.name}（${p.task}）`).join("；")}。不要做他们的部分，也不要等他们。`
-              : "",
-            "只交付你这部分，写得能被直接拿去汇总；最后会有人整合大家的结果。",
-            toolHint,
-          ];
-    case "discussant":
-      return [
-        `这是多视角讨论。请从你的职责角度发表看法：${c.task}`,
-        "只说前面成员没说过的内容：新的论据、不同意见、风险或遗漏。同意某个观点时不要复述它。",
-        "观点要具体，最好给出理由或例子。最后会有人汇总，不需要你总结全场。",
-        c.mustAnswer ? "这次你必须给出自己的观点。" : "如果你没有任何新内容可补充，只输出 PASS。",
-        toolHint,
-      ];
-    case "handoff":
-      return [
-        "同事在最新消息里 @ 了你，请直接回应他的请求或问题。",
-        "能做就做完并给出结果；做不到就说明原因和你的建议。不要把问题再推回去。",
-        toolHint,
-      ];
-    case "reviewer":
-      return [
-        `你是复核者。复核重点：${c.task}`,
-        "认真检查上面「待复核的交付」：是否正确、完整，有没有遗漏、错误或风险。能用工具亲自核实（读文件、跑测试）就核实，不要只凭感觉。",
-        "第一行只写 APPROVE 或 CHANGES。",
-        "APPROVE：后面用一两句说明你核实了什么。",
-        "CHANGES：逐条列出具体问题（在哪里、为什么不对、建议怎么改）。不要重写整个交付，也不要挑无关紧要的措辞。",
-      ];
-    case "reviser":
-      return [
-        "复核者对交付提出了问题，请逐条修正。",
-        `复核意见：\n${c.issues || ""}`,
-        "需要时使用工具实际修改。完成后简要说明每条问题是怎么处理的；你认为不成立的意见，说明理由。",
-      ];
-    case "synthesizer":
-      return [
-        `你负责把团队的成果整合成给用户的最终答复。用户目标：${c.goal || c.task}`,
-        "直接回答用户的目标；合并重复的内容，保留每位成员独到的部分；成员之间有冲突时给出你的判断和理由；需要用户决定的地方明确列出。",
-        "不要再执行任务，不要逐个复述每个人说了什么，不要感谢大家。",
-      ];
-    default:
-      return [c.task];
-  }
-}
-
-function collabMessage(
-  who: SocialAgent,
-  others: SocialAgent[],
-  opts: Parameters<typeof buildSocialBackendMessage>[0],
-  free: FreeChat,
-  c: CollabBrief,
-  shared: string,
-): string {
-  const hist = historyBlock(opts.history, opts.historyLimit ?? 24);
-  const author = free.latest.isUser ? "人类用户" : `智能体·${free.latest.author}`;
-  const modeName = { chat: "闲聊", answer: "单人负责", parallel: "并行分工", pipeline: "接力流水线", discuss: "多视角讨论" }[c.mode];
-  const material =
-    c.role === "reviewer"
-      ? deliverableBlock("待复核的交付：", c.contributions)
-      : c.role === "reviser"
-        ? deliverableBlock("原来的交付：", c.contributions)
-        : c.role === "synthesizer"
-          ? deliverableBlock("各成员的交付：", c.contributions)
-          : deliverableBlock("上游交付：", c.upstream);
-  return lockLanguage(
-    "[社交群聊模式 · 团队协作]\n" +
-      identityBlock(who, opts.userText, "group", opts.rewardNotes || "") +
-      (opts.privateMemory ? opts.privateMemory + "\n" : "") +
-      `群名: ${opts.group?.name || "协作群"}\n` +
-      shared +
-      (others.length ? `其他成员（只供了解，绝不可扮演）:\n${rosterBlock(others)}\n\n` : "") +
-      `之前的对话（从旧到新，包含本轮其他成员的回复）:\n${hist}\n\n` +
-      (opts.boardText ? `群共享记录:\n${opts.boardText}\n\n` : "") +
-      (opts.workSite?.trim() ? `工作现场（谁改过文件、看过哪个目录，可直接引用）：\n${opts.workSite.trim()}\n\n` : "") +
-      (free.latest.isUser || free.latest.text === opts.userText ? "" : `本轮用户的原始消息:\n${opts.userText}\n\n`) +
-      `【最新消息·${author}】:\n${free.latest.text}\n\n` +
-      material +
-      `本轮协作方式：${modeName}。团队目标：${c.goal || opts.userText}\n` +
-      collabRules(who, c).filter(Boolean).join("\n") +
-      (c.attempt > 0 ? "\n上一次你没有给出任何内容。这次必须直接给出回复。" : "") +
-      `\n只输出「${who.name}」自己的话，不要替其他成员发言。不要输出 DECISION、TASK、ASK、FACT 这些协议行。\n` +
-      standingRuleHint() +
-      (opts.scheduleRequest
-        ? "\n这是定时任务。调用 create_scheduled_task 创建，工具返回「已创建」才算成功；返回失败就如实说明。\n"
-        : ""),
-    opts.userText,
-  );
-}
-
 /** Prompt for one member's reply in the free-form group loop. */
 function freeChatMessage(
   who: SocialAgent,
@@ -456,7 +301,6 @@ function freeChatMessage(
   free: FreeChat,
   shared: string,
 ): string {
-  if (free.collab) return collabMessage(who, others, opts, free, free.collab, shared);
   const hist = historyBlock(opts.history, opts.historyLimit ?? 24);
   const author = free.latest.isUser ? "人类用户" : `智能体·${free.latest.author}`;
   const step = free.pipelineStep;

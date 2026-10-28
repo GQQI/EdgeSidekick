@@ -6,6 +6,7 @@ import { FileTypeIcon } from "./FileTypeIcon";
 import { IconAt, IconPlus, IconSend, IconX } from "./icons";
 import { ModelSwitcher } from "./ModelSwitcher";
 import { PlanConfirmDialog } from "./PlanConfirmDialog";
+import { SessionBindingMenu, type SessionBinding } from "./SessionBindingMenu";
 import { SlashMenu } from "./SlashMenu";
 import { TaskPlanPanel } from "./TaskPlanPanel";
 import type { ActivePlan } from "./TaskPlanPanel";
@@ -97,7 +98,10 @@ export type ComposerBarProps = {
   sessionId?: string | null;
   workspace?: string | null;
   onOpenReview?: () => void;
+  sessionBinding: SessionBinding;
+  onSessionBindingChange: (next: SessionBinding) => void;
 };
+
 
 export function ComposerBar({
   t,
@@ -150,6 +154,8 @@ export function ComposerBar({
   sessionId = null,
   workspace = null,
   onOpenReview,
+  sessionBinding,
+  onSessionBindingChange,
 }: ComposerBarProps) {
   const hunkPatchRef = useRef<Record<string, unknown> | null>(null);
   const approvalPatch = () =>
@@ -191,15 +197,21 @@ export function ComposerBar({
       )}
       {activePlan && !planConfirm && activePlan.tasks.length > 0 && (
           <TaskPlanPanel
+            key={`${activePlan.planId}-${activePlan.tasks.map((x) => x.status).join(".")}`}
             plan={activePlan}
             titleLabel={t("taskPlanTitle")}
             subtitle={t(
               "taskPlanProgress",
-              String(activePlan.tasks.filter((x) => x.status === "done").length),
+              String(
+                activePlan.tasks.filter(
+                  (x) => x.status === "done" || x.status === "skipped" || x.status === "cancelled",
+                ).length,
+              ),
               String(activePlan.tasks.length),
             )}
             collapseLabel={t("planCollapse")}
             expandLabel={t("planExpand")}
+            defaultCollapsed={false}
           />
         )}
       {planConfirm && (
@@ -420,6 +432,12 @@ export function ComposerBar({
                       {t("modeAgent")}
                     </button>
                   </div>
+                  <SessionBindingMenu
+                    t={t}
+                    value={sessionBinding}
+                    onChange={onSessionBindingChange}
+                    disabled={busy}
+                  />
                   <button
                     type="button"
                     className="composer-tool"

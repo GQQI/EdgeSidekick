@@ -58,7 +58,7 @@ export type SubTranscriptItem =
 export type SubNode = {
   id: string;
   goal: string;
-  status: "running" | "done" | "error";
+  status: "running" | "pending" | "done" | "error";
   summary?: string;
   role?: string;
   activity?: string;

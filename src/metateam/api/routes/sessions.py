@@ -111,6 +111,22 @@ def delete_session(session_id: str) -> dict[str, Any]:
     return {"status": "ok", "session_id": session_id}
 
 
+def _session_workspace_path(session_id: str):
+    """Folder this chat is pinned to — undo stacks are per-workspace."""
+    from pathlib import Path
+
+    sess = STORE.get(session_id)
+    if not sess:
+        return None
+    raw = getattr(getattr(sess.agent, "settings", None), "workspace", None)
+    if not raw:
+        return None
+    try:
+        return Path(raw).expanduser().resolve()
+    except Exception:
+        return None
+
+
 @router.post("/api/sessions/{session_id}/truncate")
 def truncate_session(session_id: str, body: TruncateBody) -> dict[str, Any]:
     require_session(session_id)
@@ -119,7 +135,11 @@ def truncate_session(session_id: str, body: TruncateBody) -> dict[str, Any]:
         from ...services import fs_undo
 
         try:
-            file_undo = fs_undo.undo_to_turn(session_id, body.keep_user_turns)
+            file_undo = fs_undo.undo_to_turn(
+                session_id,
+                body.keep_user_turns,
+                workspace=_session_workspace_path(session_id),
+            )
         except Exception as exc:
             raise HTTPException(500, f"file restore failed: {exc}") from exc
     try:
@@ -150,11 +170,12 @@ def replay_session(session_id: str, body: ReplayBody) -> dict[str, Any]:
     require_session(session_id)
     from ...services import fs_undo
 
-    user_text = fs_undo.turn_user_text(session_id, body.user_turn)
+    ws = _session_workspace_path(session_id)
+    user_text = fs_undo.turn_user_text(session_id, body.user_turn, workspace=ws)
     file_undo: dict[str, Any] | None = None
     if body.restore_files:
         try:
-            file_undo = fs_undo.undo_to_turn(session_id, body.user_turn)
+            file_undo = fs_undo.undo_to_turn(session_id, body.user_turn, workspace=ws)
         except Exception as exc:
             raise HTTPException(500, f"file restore failed: {exc}") from exc
     try:

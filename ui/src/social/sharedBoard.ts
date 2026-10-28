@@ -140,8 +140,14 @@ export type AgentDecision = {
 
 /** Strip protocol lines so bubbles never show DECISION/FACT/TASK scaffolding. */
 export function cleanDisplayText(raw: string): string {
-  return (
-    String(raw || "")
+  // Protect Markdown hard breaks (two+ spaces before newline) from space collapsing.
+  const hard: string[] = [];
+  const protectedText = String(raw || "").replace(/ {2,}\n/g, (m) => {
+    const key = `\0HB${hard.length}\0`;
+    hard.push(m);
+    return key;
+  });
+  let out = protectedText
       // Hide leaked tool-call markup (must not show in chat bubbles).
       .replace(/\[\s*TOOL[_\s-]?CALL\s*\][\s\S]*?\[\s*\/\s*TOOL[_\s-]?CALL\s*\]/gi, "")
       .replace(/```\s*tool[_\s-]?call[\s\S]*?```/gi, "")
@@ -156,8 +162,11 @@ export function cleanDisplayText(raw: string): string {
       .replace(/[ \t]{2,}/g, " ")
       .replace(/ *\n */g, "\n")
       .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  );
+      .trim();
+  hard.forEach((m, i) => {
+    out = out.replace(`\0HB${i}\0`, m);
+  });
+  return out;
 }
 
 export function parseAgentDecision(raw: string): AgentDecision {

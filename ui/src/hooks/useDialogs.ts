@@ -130,10 +130,24 @@ export function useDialogs(deps: DialogsDeps) {
       try {
         const res = await saveModel({ ...cfg, version: 3 });
         setModel(res.config);
-        setHealth(await fetchHealth());
         setToast(res.note);
-        if (opts?.restartChat) await onNewChat();
-      } finally {
+        // Clear「保存中」before secondary work so a slow /api/health or
+        // onNewChat cannot leave the model pane stuck on saving forever.
+        setModelSaving(false);
+        try {
+          setHealth(await fetchHealth());
+        } catch {
+          /* ignore health refresh errors after a successful save */
+        }
+        if (opts?.restartChat) {
+          try {
+            await onNewChat();
+          } catch (e) {
+            setToast(e instanceof Error ? e.message : String(e));
+          }
+        }
+      } catch (e) {
+        setToast(e instanceof Error ? e.message : String(e));
         setModelSaving(false);
       }
     },

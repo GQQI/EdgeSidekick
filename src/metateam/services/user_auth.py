@@ -242,14 +242,6 @@ def _migrate_legacy_into_tenant(user_id: str) -> None:
     ensure_tenant_knowledge(user_id)
 
 
-def register_account(username: str, password: str, *, email: str) -> tuple[AuthUser, str]:
-    """Open sign-up. The first account initializes the instance; later ones join it."""
-    if needs_setup():
-        return setup_admin(username, password, email=email)
-    user = create_user(username, password, email=email)
-    return user, issue_token(user.id)
-
-
 def setup_admin(username: str, password: str, *, email: str) -> tuple[AuthUser, str]:
     if multi_user_enabled():
         raise ValueError("already set up")
@@ -307,6 +299,14 @@ def create_user(username: str, password: str, *, email: str) -> AuthUser:
     tenant_sessions_dir(user.id)
     ensure_tenant_knowledge(user.id)
     return user
+
+
+def register_account(username: str, password: str, *, email: str) -> tuple[AuthUser, str]:
+    """Open sign-up. The first account initializes the instance; later ones join it."""
+    if needs_setup():
+        return setup_admin(username, password, email=email)
+    user = create_user(username, password, email=email)
+    return user, issue_token(user.id)
 
 
 _AVATAR_RE = re.compile(r"^data:image/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$")

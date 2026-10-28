@@ -38,6 +38,15 @@ async function toAvatarDataUrl(file: File): Promise<string> {
   }
 }
 
+type Draft = {
+  displayName: string;
+  email: string;
+  title: string;
+  bio: string;
+  avatar: string;
+  dirty: boolean;
+};
+
 export function AccountPane({ user, onUserChange, onLogout, onToast }: Props) {
   const { t, locale } = usePrefs();
   const [displayName, setDisplayName] = useState("");
@@ -49,9 +58,23 @@ export function AccountPane({ user, onUserChange, onLogout, onToast }: Props) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const draftRef = useRef<Draft>({
+    displayName: "",
+    email: "",
+    title: "",
+    bio: "",
+    avatar: "",
+    dirty: false,
+  });
+  const userIdRef = useRef<string | null>(null);
+  const onUserChangeRef = useRef(onUserChange);
+  const onToastRef = useRef(onToast);
+  onUserChangeRef.current = onUserChange;
+  onToastRef.current = onToast;
 
   useEffect(() => {
     if (!user) return;
+    userIdRef.current = user.id;
     setDisplayName(user.display_name || user.username);
     setEmail(user.email || "");
     setTitle(user.title || "");
@@ -59,7 +82,52 @@ export function AccountPane({ user, onUserChange, onLogout, onToast }: Props) {
     setAvatar(user.avatar || "");
     setSaved(false);
     setError("");
-  }, [user?.id]);
+    draftRef.current = {
+      displayName: user.display_name || user.username,
+      email: user.email || "",
+      title: user.title || "",
+      bio: user.bio || "",
+      avatar: user.avatar || "",
+      dirty: false,
+    };
+  }, [user?.id, user?.display_name, user?.email, user?.title, user?.bio, user?.avatar]);
+
+  useEffect(() => {
+    draftRef.current = {
+      displayName,
+      email,
+      title,
+      bio,
+      avatar,
+      dirty: draftRef.current.dirty,
+    };
+  }, [displayName, email, title, bio, avatar]);
+
+  // Flush unsaved edits when leaving the account pane / closing settings.
+  useEffect(() => {
+    return () => {
+      const draft = draftRef.current;
+      const uid = userIdRef.current;
+      if (!draft.dirty || !uid) return;
+      const name = draft.displayName.trim();
+      if (!name) return;
+      void updateAccountProfile({
+        display_name: name,
+        email: draft.email.trim(),
+        title: draft.title.trim(),
+        bio: draft.bio.trim(),
+        avatar: draft.avatar,
+      })
+        .then((next) => {
+          draftRef.current.dirty = false;
+          onUserChangeRef.current?.(next);
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          onToastRef.current?.(msg);
+        });
+    };
+  }, []);
 
   if (!user) {
     return (
@@ -78,33 +146,18 @@ export function AccountPane({ user, onUserChange, onLogout, onToast }: Props) {
     : "";
 
   const touch = () => {
+    draftRef.current.dirty = true;
     setSaved(false);
     setError("");
   };
 
   const pickAvatar = () => fileRef.current?.click();
 
-  const onAvatarFile = async (file: File | undefined) => {
-    if (!file) return;
-    try {
-      const next = await toAvatarDataUrl(file);
-      setAvatar(next);
-      touch();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "";
-      const text = msg === "too-large" ? t("acctAvatarTooLarge") : t("acctAvatarBad");
-      setError(text);
-      onToast?.(text);
-    } finally {
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
-
-  const save = async () => {
+  const persist = async (nextAvatar?: string) => {
     const name = displayName.trim();
     if (!name) {
       setError(t("acctEmptyName"));
-      return;
+      return false;
     }
     setSaving(true);
     setError("");
@@ -114,15 +167,38 @@ export function AccountPane({ user, onUserChange, onLogout, onToast }: Props) {
         email: email.trim(),
         title: title.trim(),
         bio: bio.trim(),
-        avatar,
+        avatar: nextAvatar !== undefined ? nextAvatar : avatar,
       });
+      draftRef.current.dirty = false;
       onUserChange?.(next);
       setSaved(true);
+      onToast?.(t("acctSaved"));
+      return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(t("acctSaveFail", msg));
+      onToast?.(t("acctSaveFail", msg));
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onAvatarFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const next = await toAvatarDataUrl(file);
+      setAvatar(next);
+      touch();
+      // Avatar changes should stick even if the user closes settings immediately.
+      await persist(next);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      const text = msg === "too-large" ? t("acctAvatarTooLarge") : t("acctAvatarBad");
+      setError(text);
+      onToast?.(text);
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
@@ -146,16 +222,18 @@ export function AccountPane({ user, onUserChange, onLogout, onToast }: Props) {
           {memberSince ? <em>{t("acctMemberSince", memberSince)}</em> : null}
         </div>
         <div className="account-avatar-actions">
-          <button type="button" className="ghost" onClick={pickAvatar}>
+          <button type="button" className="ghost" disabled={saving} onClick={pickAvatar}>
             {t("acctUpload")}
           </button>
           {avatar ? (
             <button
               type="button"
               className="ghost danger"
+              disabled={saving}
               onClick={() => {
                 setAvatar("");
                 touch();
+                void persist("");
               }}
             >
               {t("acctRemoveAvatar")}
@@ -225,7 +303,7 @@ export function AccountPane({ user, onUserChange, onLogout, onToast }: Props) {
         </div>
         {error ? <div className="side-error account-error">{error}</div> : null}
         <div className="account-actions">
-          <button type="button" className="primary" disabled={saving} onClick={() => void save()}>
+          <button type="button" className="primary" disabled={saving} onClick={() => void persist()}>
             {saving ? t("commonSaving") : t("acctSave")}
           </button>
           {saved ? <span className="account-saved">{t("acctSaved")}</span> : null}

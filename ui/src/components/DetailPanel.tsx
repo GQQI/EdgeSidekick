@@ -7,10 +7,20 @@ import { MarkdownView } from "./MarkdownView";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { IconX } from "./icons";
 import { isFileMutatingTool, type FileDiffPreview } from "../utils/diffPreview";
-import { formatArgs, formatBytes, writeFilePreview, subagentDisplayName, streamPhaseSuffix, stripToolCallMarkup } from "../utils/chatHelpers";
+import {
+  formatArgs,
+  formatBytes,
+  writeFilePreview,
+  subagentDisplayName,
+  streamPhaseSuffix,
+  stripToolCallMarkup,
+  findSubNodeInMessages,
+  isEphemeralCanvasId,
+} from "../utils/chatHelpers";
+import { canvasGoalsMatch } from "../utils/canvasSlots";
 import { sanitizeBrowserUrl } from "../browser/urlDetect";
 import { downloadAuthedFile, fetchAuthedBlob } from "../api";
-import type { DetailView } from "../types/chat";
+import type { ChatMsg, DetailView, SubNode } from "../types/chat";
 import type { Locale, MsgKey } from "../i18n";
 
 type UrlPick = { url: string; x: number; y: number };
@@ -25,12 +35,37 @@ type Props = {
   fsRefresh: number;
   sessionId: string | null;
   workspace?: string | null;
+  /** Live message list so subagent detail tracks transcript updates. */
+  messages?: ChatMsg[];
   onResizeStart: () => void;
   onClose: () => void;
   onChange: (next: NonNullable<DetailView>) => void;
   onSaveFile: () => void;
   onPickUrl: (pick: UrlPick) => void;
 };
+
+function liveSubagent(
+  snapshot: SubNode,
+  messages: ChatMsg[] | undefined,
+): SubNode {
+  if (!messages?.length) return snapshot;
+  const exact = findSubNodeInMessages(messages, snapshot.id);
+  if (exact) return exact;
+  // Click may still hold pending:… while the forest already adopted real child_id.
+  if (!isEphemeralCanvasId(snapshot.id)) return snapshot;
+  for (const m of messages) {
+    if (m.role !== "subagent" || !m.subagent) continue;
+    const stack: SubNode[] = [m.subagent];
+    while (stack.length) {
+      const n = stack.pop()!;
+      if (!isEphemeralCanvasId(n.id) && canvasGoalsMatch(snapshot.goal, n.goal)) {
+        return n;
+      }
+      if (n.children?.length) stack.push(...n.children);
+    }
+  }
+  return snapshot;
+}
 
 function toolStatusLabel(
   t: Props["t"],
@@ -53,6 +88,7 @@ export function DetailPanel({
   fsRefresh,
   sessionId,
   workspace = null,
+  messages,
   onResizeStart,
   onClose,
   onChange,
@@ -63,16 +99,16 @@ export function DetailPanel({
     onPickUrl({ url: sanitizeBrowserUrl(url) || url, x, y });
   };
 
-  const title =
-    detail.type === "tool"
-      ? `${t("detailTool")} · ${detail.tool.name}`
-      : detail.type === "ask"
-        ? "ask"
-        : detail.type === "subagent"
-        ? `${t("detailSubagent")} · ${subagentDisplayName(detail.subagent)}`
-        : detail.type === "changes"
-          ? t("gitReviewList")
-          : detail.path;
+  const subagentLive =
+    detail.type === "subagent" ? liveSubagent(detail.subagent, messages) : null;
+
+  let title = "";
+  if (detail.type === "tool") title = `${t("detailTool")} · ${detail.tool.name}`;
+  else if (detail.type === "ask") title = "ask";
+  else if (detail.type === "subagent") {
+    title = `${t("detailSubagent")} · ${subagentDisplayName(subagentLive || detail.subagent)}`;
+  } else if (detail.type === "changes") title = t("gitReviewList");
+  else title = detail.path;
 
   return (
     <>
@@ -136,8 +172,13 @@ export function DetailPanel({
           />
         ) : detail.type === "ask" ? (
         <AskEdgeDetail t={t} detail={detail} />
-      ) : detail.type === "subagent" ? (
-          <SubagentDetail t={t} detail={detail} onPickUrl={pickUrl} onChange={onChange} />
+      ) : detail.type === "subagent" && subagentLive ? (
+          <SubagentDetail
+            t={t}
+            detail={{ type: "subagent", subagent: subagentLive }}
+            onPickUrl={pickUrl}
+            onChange={onChange}
+          />
         ) : detail.type === "changes" ? (
           <ReviewPanel
             t={t}
@@ -147,9 +188,9 @@ export function DetailPanel({
             selectedPath={detail.selectedPath}
             onSelectPath={(path) => onChange({ type: "changes", selectedPath: path })}
           />
-        ) : (
+        ) : detail.type === "file" ? (
           <FileDetail detail={detail} onChange={onChange} />
-        )}
+        ) : null}
       </aside>
     </>
   );

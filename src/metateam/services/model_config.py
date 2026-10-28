@@ -72,7 +72,25 @@ VENDOR_TEMPLATES: dict[str, dict[str, Any]] = {
     "custom": {
         "name": "OpenAI-API-Compatible",
         "vendor": "openai",
-        "base_url": "",
+        "base_url": "https://api.openai.com/v1",
+        "models": [],
+    },
+    "openai": {
+        "name": "OpenAI",
+        "vendor": "openai",
+        "base_url": "https://api.openai.com/v1",
+        "models": ["gpt-4.1", "gpt-4o"],
+    },
+    "anthropic": {
+        "name": "Anthropic",
+        "vendor": "anthropic",
+        "base_url": "https://api.anthropic.com/v1",
+        "models": ["claude-sonnet-4-5"],
+    },
+    "ollama": {
+        "name": "Ollama",
+        "vendor": "ollama",
+        "base_url": "http://127.0.0.1:11434/v1",
         "models": [],
     },
 }

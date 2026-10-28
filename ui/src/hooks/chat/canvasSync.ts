@@ -4,12 +4,15 @@ import {
   asSubagentMsg,
   canvasTurnFromAgentTree,
   declaredDelegateSlotCount,
+  expandParallelCanvasRoots,
   findSubNode,
+  flattenTeamCanvasRoots,
   isDelegateToolMsg,
   nodesFromAgentTree,
   placeCanvasMessages,
   sameSubagentSlot,
   taskItemsFromDelegateArgs,
+  toolDeclaredSlotCount,
   unionCanvasNodes,
 } from "../../utils/chatHelpers";
 import {
@@ -27,6 +30,13 @@ export type CanvasSyncCtx = {
 
 function mergeSubNode(prev: SubNode | undefined, next: SubNode): SubNode {
   if (!prev) return { ...next, children: [...(next.children || [])] };
+  // A new run must not inherit done/error cards' summaries or transcripts
+  // (edit→resend used to revive the previous team's detail pane).
+  const nextLive = next.status === "running" || next.status === "pending";
+  const prevDone = prev.status === "done" || prev.status === "error";
+  if (nextLive && prevDone) {
+    return { ...next, children: [...(next.children || [])] };
+  }
   const prevKids = prev.children || [];
   const nextKids = next.children || [];
   const kids = unionCanvasNodes(nextKids, prevKids).map((child) => {
@@ -52,8 +62,17 @@ function stageCanvasNodes(live: ChatMsg[], stage: number): SubNode[] {
 }
 
 function capStageNodes(ctx: CanvasSyncCtx, nodes: SubNode[], stage: number): SubNode[] {
-  const declared = declaredDelegateSlotCount(ctx.transcriptRef.current, stage);
-  return limitCanvasRoots(nodes, declared || nodes.length);
+  const live = ctx.transcriptRef.current;
+  const toolCap = toolDeclaredSlotCount(live, stage);
+  const frozen = declaredDelegateSlotCount(live, stage);
+  const liveCount = stageCanvasNodes(live, stage).length;
+  // Trim a true surplus (orphan 4th root) only when the tool already declares
+  // N workers and the board is already at N. Never shrink a seed that is
+  // growing past a stale under-count while the board still has fewer cards.
+  if (toolCap > 0 && nodes.length > toolCap && liveCount >= toolCap) {
+    return limitCanvasRoots(nodes, toolCap);
+  }
+  return limitCanvasRoots(nodes, Math.max(toolCap, frozen, nodes.length));
 }
 
 export function replaceStageSubagents(
@@ -72,13 +91,22 @@ export function replaceStageSubagents(
       ...live.map((m) => m.stage ?? 0),
     );
   const targetStage = inferred || 1;
-  const capped = capStageNodes(ctx, nodes, targetStage);
+  const liveNodes = stageCanvasNodes(live, targetStage);
+  // Hard freeze: a partial tree / short seed must never delete already-painted
+  // peers (that caused "only the last agent" mid-run, then N again at the end).
+  const roster =
+    liveNodes.length > nodes.length
+      ? alignCanvasSlots(liveNodes, nodes)
+      : nodes;
+  const capped = capStageNodes(ctx, roster, targetStage);
   const usedPrev = new Set<string>();
   const merged = capped.map((n) => {
+    const sameStage = (m: ChatMsg) => (m.stage ?? 0) === targetStage;
     const prevMsg =
       live.find(
         (m) =>
           m.role === "subagent" &&
+          sameStage(m) &&
           m.subagent &&
           !usedPrev.has(m.id) &&
           findSubNode(m.subagent, n.id),
@@ -86,9 +114,9 @@ export function replaceStageSubagents(
       live.find(
         (m) =>
           m.role === "subagent" &&
+          sameStage(m) &&
           m.subagent &&
           !usedPrev.has(m.id) &&
-          (m.stage ?? 0) === targetStage &&
           sameSubagentSlot(m.subagent, n),
       );
     if (prevMsg) usedPrev.add(prevMsg.id);
@@ -110,19 +138,44 @@ function canvasStageFromTranscript(live: ChatMsg[], treeTurn = 0): number {
 }
 
 export function applyCanvasTree(ctx: CanvasSyncCtx, tree: unknown, turn?: number) {
-  const incoming = nodesFromAgentTree(Array.isArray(tree) ? tree : []);
+  const incoming = flattenTeamCanvasRoots(
+    expandParallelCanvasRoots(nodesFromAgentTree(Array.isArray(tree) ? tree : [])),
+  );
   if (!incoming.length) return;
   const live = ctx.transcriptRef.current;
   const treeTurn = Number(turn) || canvasTurnFromAgentTree(Array.isArray(tree) ? tree : []);
   const targetStage = canvasStageFromTranscript(live, treeTurn);
-  const existing = stageCanvasNodes(live, targetStage);
-  const declared = declaredDelegateSlotCount(live, targetStage) || incoming.length;
+  let existing = flattenTeamCanvasRoots(stageCanvasNodes(live, targetStage));
+  // Finished leftover cards on this stage (edit→resend) must not pin the
+  // roster or feed old summaries into a fresh running tree.
+  if (
+    existing.length > 0 &&
+    existing.every((n) => n.status === "done" || n.status === "error") &&
+    incoming.some((n) => n.status === "running" || n.status === "pending")
+  ) {
+    existing = [];
+  }
+  // Never shrink the roster mid-run: a tree that only carries the finished
+  // worker (others nested/omitted) must bind onto existing slots, not replace.
+  if (existing.length > 0 && incoming.length < existing.length) {
+    replaceStageSubagents(
+      ctx,
+      alignCanvasSlots(existing, incoming),
+      targetStage,
+    );
+    return;
+  }
+  const primary = existing.length >= incoming.length ? existing : incoming;
+  const secondary = existing.length >= incoming.length ? incoming : existing;
+  const declared = Math.max(
+    declaredDelegateSlotCount(live, targetStage),
+    existing.length,
+    incoming.length,
+    primary.length,
+  );
   replaceStageSubagents(
     ctx,
-    limitCanvasRoots(alignCanvasSlots(
-      incoming.length >= existing.length ? incoming : existing,
-      incoming.length >= existing.length ? existing : incoming,
-    ), declared),
+    limitCanvasRoots(alignCanvasSlots(primary, secondary), declared),
     targetStage,
   );
 }
@@ -141,10 +194,44 @@ export function seedDelegateCanvas(
   const items = taskItemsFromDelegateArgs(rec);
   if (!items.length) return;
   const live = ctx.transcriptRef.current;
-  const stage = Math.max(0, ...live.map((m) => m.stage ?? 0));
-  const existing = stageCanvasNodes(live, stage);
+  // Match replaceStageSubagents: stage 0 collapses to 1 so seed/lookup agree.
+  const stage = Math.max(0, ...live.map((m) => m.stage ?? 0)) || 1;
+  const existingRaw = stageCanvasNodes(live, stage);
+  // Edit→resend can leave finished cards on this stage; never inherit their
+  // summaries/transcripts into a new delegate_task call.
+  const existing =
+    existingRaw.length > 0 &&
+    existingRaw.every((n) => n.status === "done" || n.status === "error")
+      ? []
+      : existingRaw;
   // A partial stream of arguments must not wipe slots already painted.
-  if (running && existing.length > items.length) return;
+  if (existing.length > items.length) {
+    // Also covers tool-complete with a short result array — bind summaries
+    // onto the frozen roster instead of collapsing to one card.
+    if (!running && result) {
+      const patched = existing.map((n) => ({ ...n }));
+      try {
+        const parsed = JSON.parse(result);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((row, i) => {
+            if (!row || typeof row !== "object" || !patched[i]) return;
+            const summary = String((row as { summary?: string }).summary || "").trim();
+            if (!summary) return;
+            patched[i] = {
+              ...patched[i],
+              summary,
+              status: summary.startsWith("ERROR") ? "error" : "done",
+              activity: undefined,
+            };
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+      replaceStageSubagents(ctx, patched, stage, true);
+    }
+    return;
+  }
   // Same slot count: JSON is still growing character-by-character — skip
   // rebuilding the whole forest until a new task appears or the call ends.
   if (running && existing.length === items.length && existing.length > 0) return;

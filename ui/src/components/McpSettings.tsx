@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   fetchMcp,
+  fetchMcpTools,
+  fetchPrefs,
   saveMcp,
+  savePrefs,
   testMcpServer,
   type McpServer,
   type McpSetup,
+  type McpToolInfo,
 } from "../api";
 import { usePrefs } from "../prefs";
 import type { MsgKey } from "../i18n";
@@ -107,13 +111,33 @@ export function McpSettings({ onToast }: Props) {
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{
+    id: string;
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [catalogDetailOpen, setCatalogDetailOpen] = useState(false);
+  const [mcpInChat, setMcpInChat] = useState(true);
+  const [bindingBusy, setBindingBusy] = useState(false);
+  const [toolPreview, setToolPreview] = useState<McpToolInfo[] | null>(null);
 
   const reload = async () => {
     setLoadError("");
     const data = await fetchMcp();
     setSetup(data);
+    try {
+      const prefs = await fetchPrefs();
+      if (typeof prefs.mcp_in_chat === "boolean") setMcpInChat(prefs.mcp_in_chat);
+    } catch {
+      /* prefs optional */
+    }
+    try {
+      const tools = await fetchMcpTools();
+      setToolPreview(tools.tools || []);
+    } catch {
+      setToolPreview([]);
+    }
   };
 
   // Load once on mount. `onToast` is an inline callback that changes identity
@@ -233,12 +257,23 @@ export function McpSettings({ onToast }: Props) {
 
   const runTest = async (s: McpServer) => {
     setTesting(s.id);
+    setTestResult(null);
     try {
       const res = await testMcpServer(s);
-      if (res.ok) onToast?.(t("mcpConnected", String(res.tool_count ?? 0)));
-      else onToast?.(res.error || t("mcpConnectFailed"));
+      if (res.ok) {
+        const message = t("mcpTestResultOk", String(res.tool_count ?? 0));
+        setTestResult({ id: s.id, ok: true, message });
+        onToast?.(t("mcpConnected", String(res.tool_count ?? 0)));
+      } else {
+        const message = res.error || t("mcpConnectFailed");
+        setTestResult({ id: s.id, ok: false, message });
+        onToast?.(message);
+      }
+      await reload().catch(() => undefined);
     } catch (e) {
-      onToast?.(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setTestResult({ id: s.id, ok: false, message });
+      onToast?.(message);
     } finally {
       setTesting(null);
     }
@@ -300,12 +335,30 @@ export function McpSettings({ onToast }: Props) {
           <button
             type="button"
             className="ghost plugin-back"
-            onClick={() => setSelectedId(null)}
+            onClick={() => {
+              setSelectedId(null);
+              setTestResult(null);
+            }}
           >
             {t("mcpBackToList")}
           </button>
 
           <div className="mcp-card">
+            {selected.ok === false || (testResult && testResult.id === selected.id && !testResult.ok) ? (
+              <div className="mcp-test-result fail" role="alert">
+                {(testResult && testResult.id === selected.id
+                  ? testResult.message
+                  : selected.error) || t("mcpHealthBad")}
+              </div>
+            ) : null}
+            {testResult && testResult.id === selected.id && testResult.ok ? (
+              <div className="mcp-test-result ok" role="status">
+                {testResult.message}
+              </div>
+            ) : null}
+            {testing === selected.id ? (
+              <p className="mcp-test-hint">{t("mcpTestHint")}</p>
+            ) : null}
             <div className="mcp-card-head">
               <label className="mcp-field grow">
                 <span>{t("mcpName")}</span>
@@ -444,6 +497,31 @@ export function McpSettings({ onToast }: Props) {
         <header className="settings-pane-intro">
           <h3>MCP</h3>
           <p className="hint">{t("mcpIntro")}</p>
+          <label className="mcp-check mcp-chat-bind">
+            <input
+              type="checkbox"
+              checked={mcpInChat}
+              disabled={bindingBusy}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setMcpInChat(on);
+                setBindingBusy(true);
+                void savePrefs({ mcp_in_chat: on })
+                  .then(() => onToast?.(on ? t("mcpInChatOn") : t("mcpInChatOff")))
+                  .catch((err) =>
+                    onToast?.(err instanceof Error ? err.message : String(err)),
+                  )
+                  .finally(() => setBindingBusy(false));
+              }}
+            />
+            {t("mcpInChat")}
+          </label>
+          <p className="hint">{t("mcpInChatHint")}</p>
+          {toolPreview && toolPreview.length > 0 ? (
+            <p className="hint">
+              {t("mcpToolsReady", String(toolPreview.length))}
+            </p>
+          ) : null}
         </header>
       ) : null}
 
@@ -488,6 +566,13 @@ export function McpSettings({ onToast }: Props) {
                       ) : (
                         <span className="plugin-badge off">{t("mcpDisabledBadge")}</span>
                       )}
+                      {s.enabled && s.ok === false ? (
+                        <span className="plugin-badge off" title={s.error || undefined}>
+                          {t("mcpHealthBad")}
+                        </span>
+                      ) : s.enabled && s.ok !== false ? (
+                        <span className="plugin-badge ok">{t("mcpHealthOk")}</span>
+                      ) : null}
                       <span className="mcp-list-row-meta" title={serverOneLiner(s, t)}>
                         {serverOneLiner(s, t)}
                       </span>

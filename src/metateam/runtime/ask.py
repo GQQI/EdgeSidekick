@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -11,32 +10,6 @@ from typing import Any, Optional
 CUSTOM_CHOICE_KEY = "custom"
 MIN_ASK_OPTIONS = 2
 MAX_ASK_OPTIONS = 12
-
-# 1. / 1) / A. / A) / A、 / A：option text
-_OPTION_LINE_RE = re.compile(
-    r"^\s*(\d+|[A-Za-z])[\.\)、:：]\s*(.+?)\s*$",
-    re.MULTILINE,
-)
-_TRAILING_PROMPT_RE = re.compile(r"(你是想|请选择|你想|你想要|请选)[：:]\s*$")
-
-# Must look like the model is asking the user to pick, not listing facts/tasks.
-# Keep this tight: words like 还是 / 哪个 appear in ordinary 要点 and must NOT
-# open the Ask UI.
-_CHOICE_CUE_RE = re.compile(
-    r"(请选择|请选一个|请选一下|请从中选|请任选|选一个吧|"
-    r"你想要哪[一种个项]|你更倾向|"
-    r"which\s+(one|option)|please\s+choose|pick\s+(one|an?\s+option)|"
-    r"would\s+you\s+rather)",
-    re.IGNORECASE,
-)
-
-# Numbered lists that are answers/summaries/要点, not clarifications.
-_SUMMARY_CUE_RE = re.compile(
-    r"(要点|关键点|如下|以下|包括|提出了|提到了|总结|回顾|任务有|任务是|"
-    r"做过|完成了|已经|本轮|本次对话|当前对话|历史|步骤|清单|结论|"
-    r"as\s+follows|here\s+are|the\s+tasks|you\s+asked|key\s+points?)",
-    re.IGNORECASE,
-)
 
 
 @dataclass
@@ -212,11 +185,7 @@ def build_ask_options(labels: list[str]) -> list[dict[str, str]]:
 
 
 def _options_look_like_keypoints(labels: list[str]) -> bool:
-    """Report prose and markdown headings are 要点, not button labels.
-
-    Length alone is not enough. A real fork often names the files or the
-    outcome of each choice, and those labels run well past a short button.
-    """
+    """Report prose and markdown headings are 要点, not button labels."""
     if not labels:
         return False
     if any("**" in x or x.lstrip().startswith("#") for x in labels):
@@ -229,78 +198,20 @@ def _options_look_like_keypoints(labels: list[str]) -> bool:
 
 
 def should_keep_as_markdown(question: str, labels: list[str] | None = None) -> bool:
-    """True when ask_user was misused to present 要点 / a report."""
-    q = (question or "").strip()
+    """True when ask_user was misused to present 要点 / a report.
+
+    Only looks at option shape (markdown / long prose). Question wording is not
+    keyword-matched — the model already chose ask_user.
+    """
+    del question  # kept for call-site compatibility
     opts = [str(x).strip() for x in (labels or []) if str(x).strip()]
-    if _options_look_like_keypoints(opts):
-        return True
-    if _SUMMARY_CUE_RE.search(q) and not _CHOICE_CUE_RE.search(q):
-        if "？" not in q and "?" not in q:
-            return True
-    return False
+    return _options_look_like_keypoints(opts)
 
 
 def try_parse_inline_ask(text: str) -> Optional[dict[str, Any]]:
-    """If the model wrote a real multiple-choice clarification in plain text, parse it.
-
-    Enumerations of 要点 / past tasks / facts must NOT become an ask_user dialog.
-    Prefer the native ask_user tool; this is only a last-resort rescue for a
-    short "请选择 + 1. 2. 3." block.
-    """
-    raw = (text or "").strip()
-    if not raw or len(raw) < 8:
-        return None
-    matches = _OPTION_LINE_RE.findall(raw)
-    if len(matches) < MIN_ASK_OPTIONS:
-        return None
-
-    ordered: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for key, label in matches:
-        token = key.strip()
-        if token in seen:
-            continue
-        seen.add(token)
-        ordered.append((token, label.strip()))
-    if len(ordered) < MIN_ASK_OPTIONS:
-        return None
-
-    first = re.search(
-        r"^\s*(?:\d+|[A-Za-z])[\.\)、:：]",
-        raw,
-        re.MULTILINE,
-    )
-    # Long report / plan before the list → markdown, not a quiz.
-    if first and first.start() > 280:
-        return None
-    question = raw[: first.start()].strip() if first else raw
-    question = _TRAILING_PROMPT_RE.sub("", question).strip()
-    question = re.sub(r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF]+", "", question).strip()
-    if not question:
-        question = "请选择一个选项"
-
-    labels = [label for _, label in ordered[:MAX_ASK_OPTIONS]]
-    if _options_look_like_keypoints(labels):
-        return None
-
-    probe = f"{question}\n{raw[:400]}"
-    # Summaries / 要点 never become clickable choices, even if a weak cue appears.
-    if _SUMMARY_CUE_RE.search(probe):
-        return None
-    if not _CHOICE_CUE_RE.search(probe):
-        return None
-    if "？" not in question and "?" not in question and not _CHOICE_CUE_RE.search(question):
-        # Choice cue only in a later 要点 line, not in the question itself.
-        return None
-
-    allow_custom = any(k.upper() == "D" for k, _ in ordered) or any(
-        "其他" in lbl or "自定义" in lbl for _, lbl in ordered
-    )
-    return {
-        "question": question,
-        "options": labels,
-        "allow_custom": allow_custom,
-    }
+    """Inline MCQ rescue disabled — prefer the native ask_user tool."""
+    del text
+    return None
 
 
 # Backward-compatible alias

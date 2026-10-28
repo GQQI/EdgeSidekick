@@ -29,6 +29,10 @@ class ChatSession:
     stop_requested: bool = False
     agent_tree: list[Any] = field(default_factory=list)
     pending_job_notices: list[dict[str, Any]] = field(default_factory=list)
+    # Per-conversation MCP / plugin binding (empty = auto all enabled).
+    mcp_server_ids: list[str] = field(default_factory=list)
+    plugin_ids: list[str] = field(default_factory=list)
+    recent_tool_successes: list[str] = field(default_factory=list)
     # Social (会话版) one-shot session: excluded from the workbench history list.
     hidden: bool = False
 
@@ -636,6 +640,12 @@ class SessionStore:
         agent._archived_messages = list(archived)
         mtime = path.stat().st_mtime
         title = _prefer_title(meta.title, _title_from_messages(messages, ""), fallback=meta.id)
+        def _str_list(key: str) -> list[str]:
+            raw = extra.get(key)
+            if not isinstance(raw, list):
+                return []
+            return [str(x).strip() for x in raw if str(x).strip()]
+
         sess = ChatSession(
             id=meta.id or session_id,
             agent=agent,
@@ -645,7 +655,16 @@ class SessionStore:
             user_id=meta.user_id or uid,
             hidden=bool(meta.hidden),
             agent_tree=list(extra.get("agent_tree") or []) if isinstance(extra.get("agent_tree"), list) else [],
+            mcp_server_ids=_str_list("mcp_server_ids"),
+            plugin_ids=_str_list("plugin_ids"),
+            recent_tool_successes=_str_list("recent_tool_successes"),
         )
+        try:
+            setattr(agent.settings, "mcp_bound_ids", list(sess.mcp_server_ids))
+            setattr(agent.settings, "plugin_bound_ids", list(sess.plugin_ids))
+            setattr(agent.settings, "recent_tool_successes", list(sess.recent_tool_successes))
+        except Exception:
+            pass
         agent.session_id = sess.id
         with self._lock:
             self._sessions[sess.id] = sess
@@ -847,6 +866,21 @@ class SessionStore:
                 count += 1
         sess.agent.messages = msgs[:cut]
         sess.agent._archived_messages = []
+        # Truncate used to leave _canvas_index / agent_tree intact, so edit→resend
+        # immediately painted the previous multi-agent board with old summaries.
+        try:
+            clearer = getattr(sess.agent, "clear_canvas_forest", None)
+            if callable(clearer):
+                clearer()
+            elif hasattr(sess.agent, "_canvas_index"):
+                sess.agent._canvas_index.clear()
+                if hasattr(sess.agent, "_ask_edges"):
+                    sess.agent._ask_edges.clear()
+            if hasattr(sess.agent, "_canvas_turn"):
+                sess.agent._canvas_turn = 0
+        except Exception as exc:
+            log_exception(_log, f"clear canvas after truncate failed for {session_id}", exc)
+        sess.agent_tree = []
         sess.updated_at = time.time()
         try:
             self.persist(session_id)

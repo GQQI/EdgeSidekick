@@ -188,6 +188,15 @@ class Settings:
     shell_timeout: int = int(os.getenv("META_SHELL_TIMEOUT", "20"))
     # Enable MCP tool discovery when mcp package + mcp.json servers are present
     mcp_enabled: bool = field(default_factory=lambda: _bool("META_MCP_ENABLED", True))
+    # Session/agent binding: optional subset of enabled MCP server ids.
+    # None or [] = auto all enabled; non-empty = those only (composer filter).
+    mcp_bound_ids: list | None = None
+    # Session binding for local plugins (plugin_*). Same empty = auto semantics.
+    plugin_bound_ids: list | None = None
+    # Recently successful extension tool names (mcp_*/plugin_*) for this session.
+    recent_tool_successes: list | None = None
+    # When mcp_+plugin_ schemas exceed this, expose search_tools instead of all full schemas.
+    tool_schema_threshold: int = 20
 
     host: str = field(default_factory=lambda: os.getenv("META_HOST", "127.0.0.1"))
     port: int = int(os.getenv("META_PORT", "8787"))

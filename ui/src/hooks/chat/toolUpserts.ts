@@ -78,14 +78,18 @@ function mergeDelegateArgs(current: unknown, incoming: unknown): unknown {
   return { ...prior, ...next, ...(tasks.length ? { tasks } : {}) };
 }
 
-/** Auto-open / refresh write_file preview only when it won't steal focus. */
+/**
+ * Refresh write_file (or any streaming tool) detail only if the user already
+ * has that tool open. Never auto-open after they dismissed the panel — stream
+ * chunks must not bring the right detail back.
+ */
 function revealWriteFileDetail(
   ctx: ToolUpsertCtx,
   tool: ToolCard,
   immediate = true,
 ) {
   ctx.queueDetail((d) => {
-    if (d == null) return { type: "tool", tool };
+    if (d == null) return d;
     if (d.type !== "tool") return d;
     const same =
       d.tool.id === tool.id ||
@@ -97,7 +101,7 @@ function revealWriteFileDetail(
 export function upsertToolStart(ev: RuntimeEvent, ctx: ToolUpsertCtx) {
   // Seal thinking/text that already arrived, but never wipe a reasoning bubble
   // that was mid-stream (sealStreamBubbleIfContent keeps empty openers for late
-  // reasoning; sealStreamBubble would delete them and the "思考" vanishes).
+  // reasoning; sealStreamBubble would delete them and thinking vanishes).
   ctx.sealStreamBubbleIfContent();
   const callId = String(ev.data.call_id || uid());
   const name = String(ev.data.name || "tool");
@@ -174,7 +178,7 @@ export function upsertToolDelta(ev: RuntimeEvent, ctx: ToolUpsertCtx) {
   // Seal the assistant bubble only once when tool streaming *starts*, and
   // only if it already holds text/reasoning. Sealing an EMPTY bubble removed
   // it, and reasoning that streamed after the first arg delta then re-opened
-  // a new bubble BELOW the tool chip (or was lost) — "thinking not shown".
+  // a new bubble BELOW the tool chip (or was lost) -- "thinking not shown".
   if (!active?.tool) {
     ctx.sealStreamBubbleIfContent();
   }

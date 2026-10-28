@@ -25,6 +25,12 @@ class ChatRequest(BaseModel):
     block_delegate: bool = False
     # One-shot classification (who the message is for). No tools, no plan, one reply.
     classify: bool = False
+    # Session binding: optional subset of enabled MCP server ids.
+    # Omit = use session-persisted binding; empty = auto all enabled.
+    # Non-empty list = only those servers (composer filter).
+    mcp_server_ids: list[str] | None = None
+    # Session binding for local plugins (plugin_*). Same semantics as mcp_server_ids.
+    plugin_ids: list[str] | None = None
 
 
 class SessionCreate(BaseModel):
@@ -108,6 +114,7 @@ class FileReveal(BaseModel):
 class UndoBody(BaseModel):
     id: str | None = None
     session_id: str | None = None
+    workspace: str | None = None
 
 
 class GitPathsBody(BaseModel):
@@ -163,6 +170,8 @@ class AuthProfileBody(BaseModel):
 class McpUpdateBody(BaseModel):
     version: int | None = 1
     servers: list[dict[str, Any]] = Field(default_factory=list)
+    # Community Claude Desktop / Cursor shape (merged on save).
+    mcpServers: dict[str, Any] | None = None
 
 
 class McpTestBody(BaseModel):
@@ -237,6 +246,8 @@ class ApprovalDecision(BaseModel):
 
 class PrefsUpdate(BaseModel):
     auto_approve_tools: bool | None = None
+    mcp_in_chat: bool | None = None
+    plugins_in_chat: bool | None = None
     systemone_url: str | None = None
     systemone_model: str | None = None
     systemone_key: str | None = None

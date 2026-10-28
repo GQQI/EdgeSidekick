@@ -25,9 +25,12 @@ from ...plugins.store import (
     install_from_zip,
     invoke_tool,
     list_installed,
+    list_version_records,
+    set_active_version,
     set_credentials,
     set_enabled,
     uninstall,
+    uninstall_version,
     verify_credentials,
 )
 
@@ -62,17 +65,31 @@ class InvokeBody(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class ActiveVersionBody(BaseModel):
+    version: str = ""
+
+
 def _fail(exc: PluginError) -> HTTPException:
     return HTTPException(exc.status, str(exc))
 
 
 def _public(plugin: InstalledPlugin, *, detail: bool = False) -> dict[str, Any]:
     offline = marketplace.is_offline_manifest(plugin.manifest)
+    versions = list_version_records(plugin.id)
     out = {
         **plugin.manifest.public(),
         "enabled": plugin.enabled,
+        # Install channel (upload / url / marketplace) — not package provenance.
+        "install_source": plugin.state.get("source", ""),
         "source": plugin.state.get("source", ""),
         "origin": plugin.state.get("origin", ""),
+        # Package-declared provenance (来源) mirrored for clients that expect it
+        # beside install_source; also present as manifest.public()["source"].
+        "package_source": plugin.manifest.source,
+        "author": plugin.manifest.author,
+        "active_version": plugin.active_version,
+        "versions": versions,
+        "version_count": len(versions),
         "installed_at": plugin.state.get("installed_at"),
         "updated_at": plugin.state.get("updated_at"),
         "icon": icon_data_uri(plugin.path, plugin.manifest),
@@ -172,14 +189,19 @@ def api_plugin_guide():
 
 
 @router.get("/oauth/callback", response_class=HTMLResponse)
-def api_oauth_callback(state: str = "", code: str = "", error: str = "") -> HTMLResponse:
+def api_oauth_callback(
+    state: str = "",
+    code: str = "",
+    error: str = "",
+    error_description: str = "",
+) -> HTMLResponse:
     ok = False
     try:
         if error:
-            raise PluginError(f"授权未完成：{error}")
+            raise PluginError(oauth.explain_provider_error(error, error_description))
         result = oauth.complete(state, code)
         ok = True
-        message = f"「{result['name']}」授权成功，可以关闭这个窗口回到 EdgeSidekick。"
+        message = f"「{result['name']}」授权成功，可以关闭这个窗口回到 EdgeSidekick。点「验证」确认即可。"
     except PluginError as exc:
         message = str(exc)
     color = "#16a34a" if ok else "#dc2626"
@@ -217,6 +239,43 @@ def api_plugin_delete(plugin_id: str) -> dict[str, Any]:
     except PluginError as exc:
         raise _fail(exc) from exc
     return {"status": "ok"}
+
+
+@router.get("/{plugin_id}/versions")
+def api_plugin_versions(plugin_id: str) -> dict[str, Any]:
+    try:
+        plugin = get_installed(plugin_id)
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    return {
+        "id": plugin.id,
+        "active_version": plugin.active_version,
+        "versions": list_version_records(plugin_id),
+    }
+
+
+@router.put("/{plugin_id}/version")
+def api_plugin_set_version(plugin_id: str, body: ActiveVersionBody) -> dict[str, Any]:
+    try:
+        plugin = set_active_version(plugin_id, body.version.strip())
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    return _public(plugin, detail=True)
+
+
+@router.delete("/{plugin_id}/versions/{version}")
+def api_plugin_delete_version(plugin_id: str, version: str) -> dict[str, Any]:
+    try:
+        result = uninstall_version(plugin_id, version)
+    except PluginError as exc:
+        raise _fail(exc) from exc
+    if result.get("removed_plugin"):
+        return result
+    try:
+        plugin = get_installed(plugin_id)
+        return {**result, "plugin": _public(plugin, detail=True)}
+    except PluginError:
+        return result
 
 
 @router.put("/{plugin_id}/credentials")

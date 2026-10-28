@@ -31,7 +31,17 @@ import {
 } from "../types/chat";
 import type { PlanConfirmState, PlanTask } from "../types/plan";
 import { ThinkTagSplitter, splitThinkTags } from "../utils/thinkTags";
-import { mapSessionMessages, uid, findSubNode, mapSubNode } from "../utils/chatHelpers";
+import {
+  absorbReasoningChunk,
+  absorbReasoningStream,
+} from "../utils/streamRepeats";
+import { setAskEdges } from "../state/askEdgesStore";
+import {
+  mapSessionMessages,
+  uid,
+  findSubNode,
+  mapSubNode,
+} from "../utils/chatHelpers";
 import type { MsgKey } from "../i18n";
 import { handleRuntimeEvent } from "./chat/handleRuntimeEvent";
 import { replaceStageSubagents } from "./chat/canvasSync";
@@ -42,9 +52,54 @@ import {
   type ToolUpsertCtx,
 } from "./chat/toolUpserts";
 
-export type { ChatStreamDeps } from "./chatStreamTypes";
-import type { ChatStreamDeps } from "./chatStreamTypes";
-
+export type ChatStreamDeps = {
+  t: (key: MsgKey, ...args: string[]) => string;
+  locale: string;
+  sessionId: string | null;
+  sessionIdRef: React.MutableRefObject<string | null>;
+  activeWs: { path: string; name: string; id?: string } | null;
+  chatMode: "plan" | "agent";
+  setMessages: React.Dispatch<React.SetStateAction<ChatMsg[]>>;
+  setInput: React.Dispatch<React.SetStateAction<string>>;
+  setBusy: React.Dispatch<React.SetStateAction<boolean>>;
+  setLive: React.Dispatch<React.SetStateAction<LiveLine[]>>;
+  setSubs: React.Dispatch<React.SetStateAction<SubNode[]>>;
+  setDetail: React.Dispatch<React.SetStateAction<DetailView>>;
+  setCtx: React.Dispatch<React.SetStateAction<{ tokens: number; limit: number }>>;
+  setCompressState: React.Dispatch<
+    React.SetStateAction<{
+      active: boolean;
+      message: string;
+      attempt: number;
+      maxAttempts: number;
+      before: number;
+      after?: number;
+    } | null>
+  >;
+  setActivePlan: React.Dispatch<React.SetStateAction<ActivePlan | null>>;
+  setPlanConfirm: React.Dispatch<React.SetStateAction<PlanConfirmState | null>>;
+  setApproval: React.Dispatch<React.SetStateAction<ApprovalPrompt | null>>;
+  setAskPrompt: React.Dispatch<React.SetStateAction<AskPrompt | null>>;
+  setAskChoice: React.Dispatch<React.SetStateAction<string>>;
+  setAskOtherText: React.Dispatch<React.SetStateAction<string>>;
+  setFsRefresh: React.Dispatch<React.SetStateAction<number>>;
+  setToast: React.Dispatch<React.SetStateAction<string>>;
+  setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
+  setStats: React.Dispatch<React.SetStateAction<{ tokens: number; iters: number }>>;
+  setSkills: React.Dispatch<React.SetStateAction<SkillItem[]>>;
+  setMemory: React.Dispatch<React.SetStateAction<string>>;
+  setSettingsTab: (tab: SettingsTab) => void;
+  setSettingsOpen: (v: boolean) => void;
+  setQueued: React.Dispatch<React.SetStateAction<QueuedMsg[]>>;
+  approval: ApprovalPrompt | null;
+  askPrompt: AskPrompt | null;
+  planConfirm: PlanConfirmState | null;
+  stickBottomRef: React.MutableRefObject<boolean>;
+  askPendingRef: React.MutableRefObject<boolean>;
+  planPendingRef: React.MutableRefObject<boolean>;
+  executingPlanIdRef: React.MutableRefObject<string | null>;
+  refreshSessionsRef: React.MutableRefObject<(page?: number) => Promise<void>>;
+};
 
 export function useChatStream(deps: ChatStreamDeps) {
   const {
@@ -93,6 +148,8 @@ export function useChatStream(deps: ChatStreamDeps) {
   };
 
   const transcriptRef = useRef<ChatMsg[]>([]);
+  /** pending:… ↔ real child_id so live deltas still find the canvas card. */
+  const subagentAliasRef = useRef<Map<string, string>>(new Map());
   const messagesFlushTimerRef = useRef<number | null>(null);
   const detailFlushTimerRef = useRef<number | null>(null);
   const pendingDetailRef = useRef<((d: DetailView) => DetailView) | null>(null);
@@ -107,6 +164,16 @@ export function useChatStream(deps: ChatStreamDeps) {
   const stoppingRef = useRef(false);
   const turnDoneRef = useRef(false);
   const queuedRef = useRef<QueuedMsg[]>([]);
+  const bindingRef = useRef<{ mcpServerIds: string[]; pluginIds: string[] }>({
+    mcpServerIds: [],
+    pluginIds: [],
+  });
+  const setSessionBinding = (next: { mcpServerIds: string[]; pluginIds: string[] }) => {
+    bindingRef.current = {
+      mcpServerIds: [...(next.mcpServerIds || [])],
+      pluginIds: [...(next.pluginIds || [])],
+    };
+  };
   const busyRef = useRef(false);
   const runningSinceRef = useRef<Record<string, number>>({});
   const [runningSessionIds, setRunningSessionIds] = useState<string[]>([]);
@@ -175,6 +242,17 @@ export function useChatStream(deps: ChatStreamDeps) {
     }, 50);
   }
 
+
+  /** User closed the detail panel: drop coalesced stream updates so the next
+   * chunk cannot reopen it, then clear selection. */
+  function dismissDetail() {
+    if (detailFlushTimerRef.current != null) {
+      window.clearTimeout(detailFlushTimerRef.current);
+      detailFlushTimerRef.current = null;
+    }
+    pendingDetailRef.current = null;
+    setDetail(null);
+  }
   function flushMessagesNow() {
     if (messagesFlushTimerRef.current != null) {
       window.clearTimeout(messagesFlushTimerRef.current);
@@ -200,6 +278,10 @@ export function useChatStream(deps: ChatStreamDeps) {
     if (immediate) flushMessagesNow();
     else scheduleMessagesFlush();
   }
+
+  useEffect(() => {
+    subagentAliasRef.current.clear();
+  }, [sessionId]);
 
   useEffect(
     () => () => {
@@ -327,6 +409,19 @@ function clearQueued() {
   setQueuedState([]);
 }
 
+function rememberSubagentAlias(a: string, b: string) {
+  if (!a || !b || a === b) return;
+  subagentAliasRef.current.set(a, b);
+  subagentAliasRef.current.set(b, a);
+}
+
+function lookupSubagentIds(id: string): string[] {
+  const out = [id];
+  const alt = subagentAliasRef.current.get(id);
+  if (alt && alt !== id) out.push(alt);
+  return out;
+}
+
 function updateSubagentMsg(childId: string, patch: Partial<SubNode>) {
   patchSubagent(childId, (s) => ({ ...s, ...patch }));
 }
@@ -337,20 +432,41 @@ function patchSubagent(
   immediate = false,
 ) {
   if (!childId) return;
-  const hitMsg = transcriptRef.current.find(
-    (m) => m.role === "subagent" && m.subagent && findSubNode(m.subagent, childId),
-  );
+  const candidates = lookupSubagentIds(childId);
+  let hitMsg: ChatMsg | undefined;
+  let targetId = childId;
+  for (const id of candidates) {
+    const msg = transcriptRef.current.find(
+      (m) => m.role === "subagent" && m.subagent && findSubNode(m.subagent, id),
+    );
+    if (msg?.subagent) {
+      hitMsg = msg;
+      targetId = id;
+      break;
+    }
+  }
   if (!hitMsg?.subagent) {
     // Do not invent a nameless robot for a tool/step event that arrived
     // before subagent_start — those stubs looked like extra agents.
     return;
   }
+  const prevId = targetId;
   const mappedRoot =
-    hitMsg.subagent.id === childId
+    hitMsg.subagent.id === targetId
       ? fn(hitMsg.subagent)
-      : mapSubNode(hitMsg.subagent, childId, fn);
+      : mapSubNode(hitMsg.subagent, targetId, fn);
   if (!mappedRoot) return;
-  const patched = findSubNode(mappedRoot, childId) || mappedRoot;
+  const patched =
+    findSubNode(mappedRoot, targetId) ||
+    findSubNode(mappedRoot, childId) ||
+    (mappedRoot.id !== hitMsg.subagent.id ? mappedRoot : null) ||
+    mappedRoot;
+  if (patched.id && patched.id !== prevId) {
+    rememberSubagentAlias(prevId, patched.id);
+  }
+  if (patched.id && patched.id !== childId) {
+    rememberSubagentAlias(childId, patched.id);
+  }
   updateMsg(
     hitMsg.id,
     {
@@ -359,15 +475,24 @@ function patchSubagent(
     },
     immediate,
   );
-  queueDetail(
-    (d) =>
-      d?.type === "subagent" && d.subagent.id === childId
-        ? { type: "subagent", subagent: patched }
-        : d?.type === "subagent" && d.subagent.id === mappedRoot.id
-          ? { type: "subagent", subagent: mappedRoot }
-          : d,
-    immediate,
-  );
+  queueDetail((d) => {
+    if (d?.type !== "subagent") return d;
+    const openId = d.subagent.id;
+    const openSet = new Set(lookupSubagentIds(openId));
+    openSet.add(openId);
+    const touchesOpen =
+      openSet.has(childId) ||
+      openSet.has(targetId) ||
+      openSet.has(patched.id) ||
+      openSet.has(mappedRoot.id) ||
+      Boolean(findSubNode(mappedRoot, openId));
+    if (!touchesOpen) return d;
+    const live =
+      findSubNode(mappedRoot, patched.id) ||
+      findSubNode(mappedRoot, openId) ||
+      patched;
+    return { type: "subagent", subagent: live };
+  }, immediate);
 }
 
 function sealSubassistant(transcript: SubTranscriptItem[]): SubTranscriptItem[] {
@@ -561,32 +686,88 @@ function appendStreamChunk(chunk: string, reset = false, discard = false) {
     else sealStreamBubble();
   }
   if (!chunk) {
-    // Pass reset through so a reset:true opener creates a *new* bubble
-    // instead of reconnecting to an older sealed assistant message.
-    if (!discard) ensureStreamBubble(reset);
+    // Empty reset only seals the previous bubble. Opening a blank streaming
+    // bubble here would wipe plan-prep thinking or leave an empty card.
     return;
   }
-  ensureStreamBubble(reset);
+  ensureStreamBubble(false);
   // Peel <think>…</think> out of content (models that embed thinking in content).
   // Skip tagged pieces once native reasoning_content has started this turn.
   for (const p of thinkSplitRef.current.feed(chunk)) {
     if (p.kind === "reasoning") {
       if (nativeReasoningRef.current) continue;
-      streamReasoningRef.current += p.text;
+      streamReasoningRef.current = absorbReasoningStream(
+        streamReasoningRef.current,
+        p.text,
+      );
     } else {
-      streamTextRef.current += p.text;
+      streamTextRef.current = absorbReasoningChunk(streamTextRef.current, p.text);
     }
   }
   syncStreamBubble();
 }
 
 function appendReasoningChunk(chunk: string, reset = false) {
-  ensureStreamBubble(reset);
-  if (!chunk) return;
+  if (reset) {
+    sealStreamBubble();
+    if (!chunk) return;
+  }
+  ensureStreamBubble(false);
   // Native reasoning_content / reasoning field
   nativeReasoningRef.current = true;
-  streamReasoningRef.current += chunk;
+  // Merge cumulative snapshots + collapse tape-recorder tails so the
+  // thinking bubble never paints the same paragraph endlessly.
+  streamReasoningRef.current = absorbReasoningStream(
+    streamReasoningRef.current,
+    chunk,
+  );
   syncStreamBubble();
+}
+
+function stripCancelControlNotice(text: string): string {
+  if (!text) return text;
+  if (
+    !text.includes("用户已停止本轮生成") &&
+    !text.includes("上一轮生成已中断") &&
+    !text.includes("请等待下一条用户指令")
+  ) {
+    return text;
+  }
+  const lines = text.split("\n");
+  const kept: string[] = [];
+  for (const line of lines) {
+    const stripped = line.trim();
+    if (!stripped) {
+      kept.push(line);
+      continue;
+    }
+    if (
+      (stripped.startsWith("（") && stripped.endsWith("）") &&
+        (stripped.includes("用户已停止本轮生成") || stripped.includes("上一轮生成已中断"))) ||
+      stripped.includes("用户已停止本轮生成") ||
+      stripped.includes("上一轮生成已中断")
+    ) {
+      const markers = [
+        "（用户已停止本轮生成",
+        "用户已停止本轮生成",
+        "（上一轮生成已中断",
+        "上一轮生成已中断",
+      ];
+      let cut = stripped;
+      for (const marker of markers) {
+        const idx = cut.indexOf(marker);
+        if (idx >= 0) {
+          cut = cut.slice(0, idx).replace(/[\s（(]+$/u, "");
+          break;
+        }
+      }
+      if (cut) kept.push(cut);
+      continue;
+    }
+    kept.push(line);
+  }
+  while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
+  return kept.join("\n").trim();
 }
 
 function finalizeAssistant(text: string, opts?: { stopped?: boolean; reasoning?: string }) {
@@ -631,6 +812,8 @@ function finalizeAssistant(text: string, opts?: { stopped?: boolean; reasoning?:
   if (!body && !opts?.stopped) {
     body = t("emptyRoundOutput");
   }
+  // Never show the internal stop-control parenthetical as if the model said it.
+  body = stripCancelControlNotice(body);
   if (id && transcriptRef.current.some((m) => m.id === id)) {
     updateMsg(id, {
       content: body,
@@ -658,6 +841,9 @@ function isLiveListener(gen: number) {
 
 /** `final` carries the post-turn window usage; settle the meter on it. */
 function syncCtxFromFinal(meta: Record<string, unknown>) {
+  const metaSid = String(meta.session_id || "");
+  const activeSid = String(sessionIdRef.current || sessionId || "");
+  if (metaSid && activeSid && metaSid !== activeSid) return;
   const tokens = Number(meta.context_tokens);
   const limit = Number(meta.context_limit);
   if (!Number.isFinite(tokens) || tokens < 0) return;
@@ -816,6 +1002,8 @@ async function sendChat(
     userDisplay?: string;
     attachments?: MsgAttachment[];
     mode?: "plan" | "agent";
+    mcpServerIds?: string[];
+    pluginIds?: string[];
   },
 ) {
   if (!msg || busyRef.current) return;
@@ -841,6 +1029,7 @@ async function sendChat(
   streamReasoningRef.current = "";
   nativeReasoningRef.current = false;
   thinkSplitRef.current.reset();
+  setAskEdges([]);
   bumpStage();
   if (showUser) {
     const displayText =
@@ -856,6 +1045,8 @@ async function sendChat(
   const { gen, ac } = beginUiListener();
 
   const runMode = opts?.mode ?? chatMode;
+  const boundMcp = opts?.mcpServerIds ?? bindingRef.current?.mcpServerIds;
+  const boundPlugins = opts?.pluginIds ?? bindingRef.current?.pluginIds;
   const eventCtx = {
     ...toolUpsertCtx,
     t,
@@ -962,6 +1153,12 @@ async function sendChat(
       runMode,
       displayForApi,
       activeWs?.path || null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      boundMcp,
+      boundPlugins,
     );
     if (isLiveListener(gen) && sid) setSessionId(sid);
     // streamChat resolves after the turn ends (final / abort / error).
@@ -1287,6 +1484,7 @@ function resumeFromSnapshot(detail: SessionDetail) {
     appendMsg,
     updateMsg,
     syncToolPanel,
+    dismissDetail,
     findToolMsg,
     setBusyState,
     setQueuedState,
@@ -1311,6 +1509,9 @@ function resumeFromSnapshot(detail: SessionDetail) {
     upsertToolEnd: (ev: RuntimeEvent) => upsertToolEnd(ev, toolUpsertCtx),
     drainQueueSoon,
     sendChat,
+    setSessionBinding,
+    bindingRef,
+
     resumeFromSnapshot,
     runningSessionIds,
     reconcileRunningSessions,

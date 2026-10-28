@@ -498,13 +498,24 @@ export function msgFingerprint(agentId: string, text: string): string {
  * and what earlier members already said, then answers speak or silent.
  * That word is not a chat bubble.
  */
-/** Join wrapped sentences. Keep list items, headings, and code fences. */
+/** Join soft-wrapped mid-sentence lines. Keep lists, headings, tables, fences. */
 export function tightenMarkdownFlow(raw: string): string {
   const lines = String(raw || "").replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let fence = false;
   const item = (s: string) => /^(?:[-*+]|\d+[.)])\s+\S/.test(s);
-  const structural = (s: string) => /^(?:#{1,6}\s|>\s|\|)/.test(s) || item(s);
+  /** GFM table row / separator, with or without a leading pipe. */
+  const tableLine = (s: string) => {
+    if (/^\|/.test(s)) return true;
+    if (/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(s)) return true;
+    if (!item(s) && !/^(?:#{1,6}\s|>\s)/.test(s) && /\|/.test(s)) {
+      const cells = s.split("|").map((p) => p.trim()).filter((p) => p.length > 0);
+      if (cells.length >= 2 && cells.every((p) => p.length <= 48)) return true;
+    }
+    return false;
+  };
+  const structural = (s: string) => /^(?:#{1,6}\s|>\s)/.test(s) || item(s) || tableLine(s);
+  const terminal = (s: string) => /[。！？.!?;；…]["'”“’）\]]*$/.test(s);
   const gap = (prev: string, next: string) => {
     if (/[\u4e00-\u9fff。！？，、；：]$/.test(prev) || /^[\u4e00-\u9fff]/.test(next)) return "";
     if (/[.!?,;:]$/.test(prev)) return " ";
@@ -527,15 +538,28 @@ export function tightenMarkdownFlow(raw: string): string {
     }
     const prev = out.length ? out[out.length - 1] : "";
     const prevTrim = prev.trim();
-    if (
+    // List items may absorb a following continuation line even after 。
+    // Finished prose sentences must stay separate so Markdown can break lines.
+    const canJoin =
       prevTrim &&
       prev !== "" &&
       !structural(trimmed) &&
       !prevTrim.startsWith("```") &&
-      (!structural(prevTrim) || item(prevTrim))
-    ) {
+      (!structural(prevTrim) || item(prevTrim)) &&
+      (item(prevTrim) || !terminal(prevTrim));
+    if (canJoin) {
       out[out.length - 1] = prev.replace(/\s+$/, "") + gap(prevTrim, trimmed) + trimmed;
       continue;
+    }
+    if (
+      prevTrim &&
+      prev !== "" &&
+      terminal(prevTrim) &&
+      !item(prevTrim) &&
+      !structural(trimmed) &&
+      out[out.length - 1] !== ""
+    ) {
+      out.push("");
     }
     out.push(trimmed);
   }
@@ -627,9 +651,10 @@ const SILENCE_ONLY =
 
 /** After the judge already said speak, a later silence token is not a reply. */
 export function visibleReplyAfterJudge(raw: string): string {
-  const text = cleanDisplayText(raw).trim();
-  const flat = text.replace(/\s+/g, " ").replace(/[。.!！]+$/, "").trim();
-  if (!flat || SILENCE_ONLY.test(flat)) return "";
+  // Keep Markdown structure (newlines / tables). Only flatten for silence checks.
+  const text = cleanDisplayText(raw).replace(/\n{3,}/g, "\n\n").trim();
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (!flat || SILENCE_ONLY.test(flat) || SILENCE_ONLY.test(text)) return "";
   return text;
 }
 

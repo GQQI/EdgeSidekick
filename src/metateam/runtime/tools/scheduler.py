@@ -25,7 +25,7 @@ def register_scheduler_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
         until: str = "",
         month_day: int = 0,
     ) -> str:
-        from ...services.scheduler import SCHEDULES, align_schedule_request, parse_local_dt
+        from ...services.scheduler import SCHEDULES, align_schedule_request, parse_local_dt, resolve_once_at
         from ...services.store import STORE
         from ...services.tenant_context import get_session_id, get_user_id
 
@@ -52,6 +52,8 @@ def register_scheduler_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
         )
         month_span = any(s in span for s in ("定时一个月", "持续一个月", "这一个月", "整月", "一个月内"))
         near = False
+        if kind == "once":
+            at = resolve_once_at(at, span)
         if kind == "once" and at:
             try:
                 near = parse_local_dt(at) - _time.time() < 36 * 3600
@@ -145,7 +147,7 @@ def register_scheduler_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
             "After the tool returns 已创建, confirm that and point to 侧边栏「日程」. "
             "If it returns 创建失败, report the failure. Never reverse the tool result "
             "using group memory. "
-            "kind: once(at='YYYY-MM-DD HH:MM', a future instant) | "
+            "kind: once(at='YYYY-MM-DD HH:MM' in the user's local timezone from Host Local time; 「今天 HH:MM」stays today unless that local time already passed) | "
             "daily(time='HH:MM') | weekly(time, weekdays=[0=Mon..6=Sun]) | "
             "interval(interval_minutes>=5) | monthly(time, month_day=1-31). "
             "Repeating kinds may set until='YYYY-MM-DD' (inclusive last day). "

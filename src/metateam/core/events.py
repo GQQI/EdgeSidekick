@@ -65,9 +65,13 @@ class Event:
     parent_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        # Deep-copy data so async SSE consumers cannot see later in-place
+        # mutations (e.g. plan task status flipping after emit).
+        import copy
+
         return {
             "type": self.type,
-            "data": self.data,
+            "data": copy.deepcopy(self.data),
             "ts": self.ts,
             "agent_id": self.agent_id,
             "parent_id": self.parent_id,

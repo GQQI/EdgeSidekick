@@ -136,32 +136,76 @@ export function resolveSpeakerName(
   return inferSpeakerFromContent(m.content || "", knownNames);
 }
 
+type ExpandCache = {
+  content: string;
+  streaming: boolean;
+  reasoning?: string;
+  reasoningStreaming?: boolean;
+  namesKey: string;
+  result: ChatMsg[];
+};
+
+const _expandCache = new WeakMap<ChatMsg, ExpandCache>();
+
 export function expandAssistantMessages(
   m: ChatMsg,
   knownNames?: string[] | null,
 ): ChatMsg[] {
   if (m.role !== "assistant") return [m];
-  const blocks = splitAgentSpeechBlocks(m.content || "");
-  if (blocks.length >= 1) {
-    return blocks.map((b, i) => ({
+  const namesKey = (knownNames || []).join("\0");
+  const content = m.content || "";
+  const streaming = Boolean(m.streaming);
+  const reasoning = m.reasoning;
+  const reasoningStreaming = Boolean(m.reasoningStreaming);
+  const hit = _expandCache.get(m);
+  if (
+    hit &&
+    hit.content === content &&
+    hit.streaming === streaming &&
+    hit.reasoning === reasoning &&
+    hit.reasoningStreaming === reasoningStreaming &&
+    hit.namesKey === namesKey
+  ) {
+    return hit.result;
+  }
+  const blocks = splitAgentSpeechBlocks(content);
+  let result: ChatMsg[];
+  // Only split into per-speaker bubbles when a roster is present (dialogue /
+  // social). Otherwise strip protocol tags into one bubble so parallel
+  // worker reports stay in AgentCanvas detail instead of flooding the chat.
+  const canSplitSpeakers = Boolean(knownNames && knownNames.length > 0);
+  if (canSplitSpeakers && blocks.length >= 1) {
+    result = blocks.map((b, i) => ({
       ...m,
       id: blocks.length === 1 ? m.id : `${m.id}#speak-${i}`,
       agent_id: b.name,
       speaker_name: b.name,
       content: b.text || "",
-      streaming: Boolean(m.streaming) && i === blocks.length - 1,
-      reasoning: i === 0 ? m.reasoning : undefined,
-      reasoningStreaming: i === 0 ? m.reasoningStreaming : undefined,
+      streaming: streaming && i === blocks.length - 1,
+      reasoning: i === 0 ? reasoning : undefined,
+      reasoningStreaming: i === 0 ? reasoningStreaming : undefined,
     }));
+  } else {
+    const inferred =
+      (m as { speaker_name?: string }).speaker_name ||
+      inferSpeakerFromContent(content, knownNames);
+    result = [
+      {
+        ...m,
+        speaker_name: inferred || (m as { speaker_name?: string }).speaker_name,
+        content: formatAssistantDisplay(content),
+      },
+    ];
   }
-  const inferred =
-    (m as { speaker_name?: string }).speaker_name ||
-    inferSpeakerFromContent(m.content || "", knownNames);
-  return [{
-    ...m,
-    speaker_name: inferred || (m as { speaker_name?: string }).speaker_name,
-    content: formatAssistantDisplay(m.content || ""),
-  }];
+  _expandCache.set(m, {
+    content,
+    streaming,
+    reasoning,
+    reasoningStreaming,
+    namesKey,
+    result,
+  });
+  return result;
 }
 
 export function collectSpeakerRoster(

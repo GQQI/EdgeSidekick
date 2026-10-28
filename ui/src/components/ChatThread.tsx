@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AgentCanvas } from "./AgentCanvas";
 import {
   expandAssistantMessages,
@@ -107,7 +107,11 @@ export const ChatThread = memo(function ChatThread({
   onOpenJobs,
   knownSpeakers = [],
 }: ChatThreadProps) {
-  const displayMessages = messages.flatMap((m) => expandAssistantMessages(m, knownSpeakers));
+  // Cache expand so typing in the composer does not rebuild every bubble identity.
+  const displayMessages = useMemo(
+    () => messages.flatMap((m) => expandAssistantMessages(m, knownSpeakers)),
+    [messages, knownSpeakers],
+  );
   const canvasByStage = useCanvasByStage(messages);
   const canvasShown = new Set<number>();
   let hasStreaming = false;
@@ -182,7 +186,8 @@ export const ChatThread = memo(function ChatThread({
                 <span className="empty-hero-icon">
                   <IconRobotCube size={40} />
                 </span>
-                <h3 className="empty-greeting">{t(greetingKey())}</h3>
+                <h3>{t(greetingKey())}</h3>
+                <p>{t("tagline")}</p>
               </div>
               <div className="suggestions">
                 {buildSuggestions(t).map((s) => (
@@ -214,7 +219,7 @@ export const ChatThread = memo(function ChatThread({
               const group = canvasByStage.get(stage) || [];
               return (
                 <AgentCanvas
-                  key={`canvas-${stage}-${m.id}`}
+                  key={`canvas-${stage}`}
                   nodes={group}
                   t={t}
                   detail={detail}

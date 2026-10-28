@@ -98,15 +98,9 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
   const refreshStatus = useCallback(async () => {
     if (live && desktop) {
       setAvailable(true);
-      try {
-        const cur = await desktop.browser.getUrl();
-        if (cur && cur !== "about:blank") {
-          setSessionUrl(cur);
-          setUrl(cur);
-        }
-      } catch {
-        /* ignore */
-      }
+      // Do NOT seed sessionUrl from the process-global BrowserView on mount.
+      // That guest may still show another conversation's page after a tab
+      // switch; URL ownership comes from openRequest / onNavigated / user Go.
       return;
     }
     try {
@@ -144,6 +138,12 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
   useEffect(() => {
     if (!live || !desktop) return;
     if (suspended) {
+      void desktop.browser.hide();
+      return;
+    }
+    // Keep the shared guest hidden until this conversation actually has a page
+    // (or an openRequest drives one). Otherwise a remount after A→B re-shows A's URL.
+    if (!sessionUrlRef.current) {
       void desktop.browser.hide();
       return;
     }
@@ -186,7 +186,9 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
       // sidebar. Hide only; do not navigate, so coming back keeps the page.
       void desktop.browser.hide();
     };
-  }, [live, desktop, showLive, syncBounds, t, suspended]);
+    // Re-run when sessionUrl appears so a post-remount openRequest can showLive
+    // after we initially hid the shared guest for an empty conversation.
+  }, [live, desktop, showLive, syncBounds, t, suspended, sessionUrl]);
 
   // Non-live (no Electron BrowserView): poll screenshots on a fixed cadence,
   // skipping ticks while a fetch is still in flight so jobs never pile up.
@@ -337,6 +339,23 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
     if (openRequest.alreadyDriven) {
       void (async () => {
         try {
+          const want = String(openRequest.url || "").trim();
+          // Conversation switch / reset: force blank and do not re-adopt the
+          // previous session's page from the shared native guest.
+          if (!want || want === "about:blank") {
+            setSessionUrl("");
+            setUrl("");
+            setMessage("");
+            if (desktop) {
+              try {
+                await desktop.browser.navigate("about:blank");
+              } catch {
+                /* ignore */
+              }
+              await desktop.browser.hide();
+            }
+            return;
+          }
           // Modal host may still be 0x0 on first paint — retry show.
           for (const ms of [0, 50, 150, 400]) {
             if (ms) await new Promise((r) => window.setTimeout(r, ms));
@@ -345,16 +364,16 @@ export function BrowserPanel({ onPickElement, openRequest, suspended = false }: 
           }
           if (desktop) {
             const cur = await desktop.browser.getUrl();
-            if (cur && cur !== "about:blank") {
+            if (cur && cur !== "about:blank" && (sameHttpUrl(cur, want) || isShallowSiteRewind(cur, want))) {
               setSessionUrl(cur);
               setUrl(cur);
-            } else if (openRequest.url && openRequest.url !== "about:blank") {
-              setSessionUrl(openRequest.url);
-              setUrl(openRequest.url);
+            } else {
+              setSessionUrl(want);
+              setUrl(want);
             }
           } else {
-            setSessionUrl(openRequest.url);
-            setUrl(openRequest.url);
+            setSessionUrl(want);
+            setUrl(want);
           }
           setMessage("");
           await syncBounds();

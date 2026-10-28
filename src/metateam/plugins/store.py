@@ -2,8 +2,16 @@
 
 Layout (per tenant)::
 
-    data/tenants/<user>/plugins/<id>/     unpacked package
-    data/tenants/<user>/plugins.json      {"plugins": {id: {enabled, version, source, installed_at, credentials}}}
+    data/tenants/<user>/plugins/<id>/versions/<version>/   one unpacked package per version
+    data/tenants/<user>/plugins.json
+        {"plugins": {id: {
+            enabled, active_version, version, source, origin,
+            installed_at, updated_at, credentials,
+            versions: {ver: {source, origin, author, package_source, installed_at, updated_at}}
+        }}}
+
+Legacy flat layout ``plugins/<id>/manifest.json`` is migrated into
+``versions/<version>/`` on first access.
 
 Secret credentials are stored Fernet-encrypted (services/secret_store).
 """
@@ -13,6 +21,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,6 +92,15 @@ class InstalledPlugin:
     def enabled(self) -> bool:
         return bool(self.state.get("enabled", True))
 
+    @property
+    def active_version(self) -> str:
+        return str(
+            self.state.get("active_version")
+            or self.state.get("version")
+            or self.manifest.version
+            or ""
+        )
+
 
 # ── paths & state ─────────────────────────────────────────────────────────
 
@@ -125,17 +143,176 @@ def _entry(state: dict[str, Any], plugin_id: str) -> dict[str, Any]:
     return state.setdefault("plugins", {}).setdefault(plugin_id, {})
 
 
-def list_installed(user_id: Optional[str] = None) -> list[InstalledPlugin]:
+def version_slug(version: str) -> str:
+    """Filesystem-safe directory name for a semver-like string."""
+    raw = str(version or "").strip() or "0.0.0"
+    cleaned = re.sub(r"[^\w.\-+]", "_", raw)
+    return cleaned[:64] or "0.0.0"
+
+
+def plugin_home(plugin_id: str, user_id: Optional[str] = None) -> Path:
+    return packages_dir(user_id) / plugin_id
+
+
+def version_dir(plugin_id: str, version: str, user_id: Optional[str] = None) -> Path:
+    return plugin_home(plugin_id, user_id) / "versions" / version_slug(version)
+
+
+def _legacy_flat_package(home: Path) -> bool:
+    return (home / MANIFEST_FILE).is_file() and not (home / "versions").is_dir()
+
+
+def _migrate_legacy_flat(plugin_id: str, user_id: Optional[str] = None) -> None:
+    """Move ``plugins/<id>/*`` into ``plugins/<id>/versions/<ver>/`` once."""
+    home = plugin_home(plugin_id, user_id)
+    if not _legacy_flat_package(home):
+        return
+    try:
+        manifest = load_manifest(home)
+    except ManifestError:
+        return
+    ver = manifest.version or "0.0.0"
+    dest = version_dir(plugin_id, ver, user_id)
+    if dest.exists():
+        return
+    staging = Path(tempfile.mkdtemp(prefix=f".migrate-{plugin_id}-", dir=packages_dir(user_id)))
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        # Move everything except versions/ into the version folder.
+        dest.mkdir(parents=True, exist_ok=True)
+        for child in list(home.iterdir()):
+            if child.name in {"versions"} or child.name.startswith("."):
+                continue
+            os.replace(str(child), str(dest / child.name))
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    with _lock:
+        state = load_state(user_id)
+        entry = _entry(state, plugin_id)
+        entry["active_version"] = ver
+        entry["version"] = ver
+        versions = entry.setdefault("versions", {})
+        if not isinstance(versions, dict):
+            versions = {}
+            entry["versions"] = versions
+        versions.setdefault(
+            ver,
+            {
+                "source": entry.get("source") or "migrated",
+                "origin": entry.get("origin") or "",
+                "author": manifest.author,
+                "package_source": manifest.source,
+                "installed_at": entry.get("installed_at") or time.time(),
+                "updated_at": entry.get("updated_at") or time.time(),
+            },
+        )
+        save_state(state, user_id)
+
+
+def _resolve_active_path(
+    plugin_id: str,
+    entry: dict[str, Any],
+    user_id: Optional[str] = None,
+) -> tuple[Path, str] | None:
+    """Return (package_dir, active_version) for the installed plugin."""
+    home = plugin_home(plugin_id, user_id)
+    if not home.exists():
+        return None
+    if _legacy_flat_package(home):
+        _migrate_legacy_flat(plugin_id, user_id)
+    versions_root = home / "versions"
+    active = str(entry.get("active_version") or entry.get("version") or "").strip()
+    if active:
+        path = version_dir(plugin_id, active, user_id)
+        if (path / MANIFEST_FILE).is_file():
+            return path, active
+    if versions_root.is_dir():
+        candidates = sorted(
+            (p for p in versions_root.iterdir() if p.is_dir() and (p / MANIFEST_FILE).is_file()),
+            key=lambda p: p.name,
+        )
+        if candidates:
+            path = candidates[-1]
+            return path, path.name
+    if (home / MANIFEST_FILE).is_file():
+        try:
+            ver = load_manifest(home).version
+        except ManifestError:
+            ver = "0.0.0"
+        return home, ver
+    return None
+
+
+def list_version_records(
+    plugin_id: str,
+    user_id: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Public version rows for API/UI (active flagged)."""
     state = load_state(user_id)
-    root = packages_dir(user_id)
-    out: list[InstalledPlugin] = []
-    for pid, entry in sorted(state.get("plugins", {}).items()):
-        path = root / pid
+    entry = state.get("plugins", {}).get(plugin_id)
+    if not isinstance(entry, dict):
+        return []
+    resolved = _resolve_active_path(plugin_id, entry, user_id)
+    if not resolved:
+        return []
+    _path, active = resolved
+    versions_meta = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
+    home = plugin_home(plugin_id, user_id)
+    versions_root = home / "versions"
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    dirs: list[Path] = []
+    if versions_root.is_dir():
+        dirs = [p for p in versions_root.iterdir() if p.is_dir() and (p / MANIFEST_FILE).is_file()]
+    elif (home / MANIFEST_FILE).is_file():
+        dirs = [home]
+    for path in sorted(dirs, key=lambda p: p.name):
         try:
             manifest = load_manifest(path)
         except ManifestError:
             continue
-        out.append(InstalledPlugin(manifest, path, entry if isinstance(entry, dict) else {}))
+        ver = manifest.version
+        key = version_slug(ver)
+        if key in seen:
+            continue
+        seen.add(key)
+        meta = versions_meta.get(ver) or versions_meta.get(key) or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        rows.append(
+            {
+                "version": ver,
+                "active": version_slug(ver) == version_slug(active) or ver == active,
+                "author": manifest.author or str(meta.get("author") or ""),
+                "package_source": manifest.source or str(meta.get("package_source") or ""),
+                "source": str(meta.get("source") or entry.get("source") or ""),
+                "origin": str(meta.get("origin") or entry.get("origin") or ""),
+                "installed_at": meta.get("installed_at") or entry.get("installed_at"),
+                "updated_at": meta.get("updated_at") or entry.get("updated_at"),
+            }
+        )
+    return rows
+
+
+def list_installed(user_id: Optional[str] = None) -> list[InstalledPlugin]:
+    state = load_state(user_id)
+    out: list[InstalledPlugin] = []
+    for pid, entry in sorted(state.get("plugins", {}).items()):
+        if not isinstance(entry, dict):
+            continue
+        resolved = _resolve_active_path(pid, entry, user_id)
+        if not resolved:
+            continue
+        path, active = resolved
+        try:
+            manifest = load_manifest(path)
+        except ManifestError:
+            continue
+        # Keep entry mirrors fresh for callers that read version/source.
+        merged = dict(entry)
+        merged["active_version"] = active
+        merged["version"] = manifest.version
+        out.append(InstalledPlugin(manifest, path, merged))
     return out
 
 
@@ -190,7 +367,13 @@ def install_from_dir(
     user_id: Optional[str] = None,
     origin: str = "",
     expected_id: str = "",
+    activate: bool = True,
 ) -> InstalledPlugin:
+    """Install or replace one version of a plugin; other versions stay on disk.
+
+    ``activate`` (default True) switches the active version to the package just
+    installed. Pass False to stage a version without switching the running one.
+    """
     try:
         manifest = load_manifest(source_dir)
     except ManifestError as exc:
@@ -198,7 +381,11 @@ def install_from_dir(
     if expected_id and manifest.id != expected_id:
         raise PluginError(f"插件包 id 是 {manifest.id}，与市场条目 {expected_id} 不一致")
     root = packages_dir(user_id)
-    target = root / manifest.id
+    home = plugin_home(manifest.id, user_id)
+    # Migrate legacy flat package before writing a new version beside it.
+    if home.exists() and _legacy_flat_package(home):
+        _migrate_legacy_flat(manifest.id, user_id)
+    target = version_dir(manifest.id, manifest.version, user_id)
     with _lock:
         staging = Path(tempfile.mkdtemp(prefix=f".{manifest.id}-", dir=root))
         try:
@@ -207,9 +394,10 @@ def install_from_dir(
                 staging / "pkg",
                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git", ".DS_Store"),
             )
+            target.parent.mkdir(parents=True, exist_ok=True)
             backup = None
             if target.exists():
-                backup = root / f".{manifest.id}.old-{int(time.time() * 1000)}"
+                backup = root / f".{manifest.id}-{version_slug(manifest.version)}.old-{int(time.time() * 1000)}"
                 os.replace(target, backup)
             os.replace(staging / "pkg", target)
             if backup is not None:
@@ -219,24 +407,164 @@ def install_from_dir(
         state = load_state(user_id)
         entry = _entry(state, manifest.id)
         is_upgrade = bool(entry.get("installed_at"))
+        now = time.time()
+        versions = entry.setdefault("versions", {})
+        if not isinstance(versions, dict):
+            versions = {}
+            entry["versions"] = versions
+        prev_meta = versions.get(manifest.version) if isinstance(versions.get(manifest.version), dict) else {}
+        versions[manifest.version] = {
+            "source": source,
+            "origin": origin,
+            "author": manifest.author,
+            "package_source": manifest.source,
+            "installed_at": prev_meta.get("installed_at") or now,
+            "updated_at": now,
+        }
         entry.update(
             {
-                "version": manifest.version,
                 "source": source,
                 "origin": origin,
-                "installed_at": entry.get("installed_at") or time.time(),
-                "updated_at": time.time(),
+                "installed_at": entry.get("installed_at") or now,
+                "updated_at": now,
             }
         )
+        if activate or not entry.get("active_version"):
+            entry["active_version"] = manifest.version
+            entry["version"] = manifest.version
+        else:
+            entry.setdefault("version", entry.get("active_version") or manifest.version)
         entry.setdefault("enabled", True)
         entry.setdefault("credentials", {})
-        # Credentials the new version no longer declares are dropped on upgrade.
-        if is_upgrade:
+        # When activating a new version, drop credentials the new manifest
+        # no longer declares (same as previous single-version upgrade).
+        if activate and is_upgrade:
             names = {c.name for c in manifest.credentials}
-            entry["credentials"] = {k: v for k, v in entry["credentials"].items() if k in names}
+            entry["credentials"] = {
+                k: v for k, v in (entry.get("credentials") or {}).items() if k in names
+            }
         save_state(state, user_id)
-    return get_installed(manifest.id, user_id)
+        plugin = get_installed(manifest.id, user_id)
+    try:
+        from .mcp_bridge import sync_plugin_mcp
 
+        sync_plugin_mcp(plugin.id, plugin.manifest, enabled=plugin.enabled, user_id=user_id)
+    except Exception:
+        pass
+    return plugin
+
+
+def set_active_version(
+    plugin_id: str,
+    version: str,
+    *,
+    user_id: Optional[str] = None,
+) -> InstalledPlugin:
+    """Switch which installed version is active for tool registration."""
+    ver = str(version or "").strip()
+    if not ver:
+        raise PluginError("需要指定版本号")
+    path = version_dir(plugin_id, ver, user_id)
+    if not (path / MANIFEST_FILE).is_file():
+        # Also accept exact folder name match under versions/
+        home = plugin_home(plugin_id, user_id) / "versions"
+        alt = home / version_slug(ver)
+        if (alt / MANIFEST_FILE).is_file():
+            path = alt
+        else:
+            raise PluginError(f"插件 {plugin_id} 没有已安装版本 {ver}", 404)
+    try:
+        manifest = load_manifest(path)
+    except ManifestError as exc:
+        raise PluginError(f"插件清单无效：{exc}") from exc
+    with _lock:
+        state = load_state(user_id)
+        if plugin_id not in state.get("plugins", {}):
+            raise PluginError(f"插件 {plugin_id} 未安装", 404)
+        entry = _entry(state, plugin_id)
+        entry["active_version"] = manifest.version
+        entry["version"] = manifest.version
+        entry["updated_at"] = time.time()
+        # Align credentials with the newly active manifest.
+        names = {c.name for c in manifest.credentials}
+        entry["credentials"] = {
+            k: v for k, v in (entry.get("credentials") or {}).items() if k in names
+        }
+        save_state(state, user_id)
+    plugin = get_installed(plugin_id, user_id)
+    try:
+        from .mcp_bridge import sync_plugin_mcp
+
+        sync_plugin_mcp(plugin.id, plugin.manifest, enabled=plugin.enabled, user_id=user_id)
+    except Exception:
+        pass
+    return plugin
+
+
+def uninstall_version(
+    plugin_id: str,
+    version: str,
+    *,
+    user_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Remove one version. If it was the last, uninstall the whole plugin."""
+    ver = str(version or "").strip()
+    if not ver:
+        raise PluginError("需要指定版本号")
+    rows = list_version_records(plugin_id, user_id)
+    if not rows:
+        raise PluginError(f"插件 {plugin_id} 未安装", 404)
+    match = next(
+        (r for r in rows if r["version"] == ver or version_slug(r["version"]) == version_slug(ver)),
+        None,
+    )
+    if match is None:
+        raise PluginError(f"插件 {plugin_id} 没有已安装版本 {ver}", 404)
+    if len(rows) <= 1:
+        uninstall(plugin_id, user_id=user_id)
+        return {"status": "ok", "removed_plugin": True, "version": match["version"]}
+    path = version_dir(plugin_id, match["version"], user_id)
+    was_active = bool(match.get("active"))
+    with _lock:
+        shutil.rmtree(path, ignore_errors=True)
+        state = load_state(user_id)
+        entry = _entry(state, plugin_id)
+        versions = entry.get("versions") if isinstance(entry.get("versions"), dict) else {}
+        versions.pop(match["version"], None)
+        versions.pop(version_slug(match["version"]), None)
+        entry["versions"] = versions
+        if was_active or entry.get("active_version") == match["version"]:
+            home = plugin_home(plugin_id, user_id) / "versions"
+            leftovers = sorted(
+                (
+                    p
+                    for p in (home.iterdir() if home.is_dir() else [])
+                    if p.is_dir() and (p / MANIFEST_FILE).is_file()
+                ),
+                key=lambda p: p.name,
+            )
+            if leftovers:
+                try:
+                    nxt = load_manifest(leftovers[-1]).version
+                except ManifestError:
+                    nxt = leftovers[-1].name
+                entry["active_version"] = nxt
+                entry["version"] = nxt
+        entry["updated_at"] = time.time()
+        save_state(state, user_id)
+    plugin = get_installed(plugin_id, user_id)
+    try:
+        from .mcp_bridge import sync_plugin_mcp
+
+        sync_plugin_mcp(plugin.id, plugin.manifest, enabled=plugin.enabled, user_id=user_id)
+    except Exception:
+        pass
+    return {
+        "status": "ok",
+        "removed_plugin": False,
+        "version": match["version"],
+        "active_version": plugin.active_version,
+    }
 
 def install_from_zip(
     raw: bytes,
@@ -285,13 +613,19 @@ def download_package(url: str, *, http: Any = None) -> bytes:
 
 
 def uninstall(plugin_id: str, user_id: Optional[str] = None) -> None:
+    try:
+        from .mcp_bridge import remove_plugin_mcp
+
+        remove_plugin_mcp(plugin_id, user_id=user_id)
+    except Exception:
+        pass
     with _lock:
         state = load_state(user_id)
         if plugin_id not in state.get("plugins", {}):
             raise PluginError(f"插件 {plugin_id} 未安装", 404)
         state["plugins"].pop(plugin_id, None)
         save_state(state, user_id)
-        shutil.rmtree(packages_dir(user_id) / plugin_id, ignore_errors=True)
+        shutil.rmtree(plugin_home(plugin_id, user_id), ignore_errors=True)
 
 
 def set_enabled(plugin_id: str, enabled: bool, user_id: Optional[str] = None) -> InstalledPlugin:
@@ -300,7 +634,14 @@ def set_enabled(plugin_id: str, enabled: bool, user_id: Optional[str] = None) ->
         state = load_state(user_id)
         _entry(state, plugin_id)["enabled"] = bool(enabled)
         save_state(state, user_id)
-    return get_installed(plugin_id, user_id)
+    plugin = get_installed(plugin_id, user_id)
+    try:
+        from .mcp_bridge import sync_plugin_mcp
+
+        sync_plugin_mcp(plugin.id, plugin.manifest, enabled=bool(enabled), user_id=user_id)
+    except Exception:
+        pass
+    return plugin
 
 
 # ── credentials ──────────────────────────────────────────────────────────
@@ -427,8 +768,6 @@ def _request(plugin: InstalledPlugin, **extra: Any) -> dict[str, Any]:
 
 def invoke_tool(plugin_id: str, tool: str, params: dict[str, Any], *, user_id: Optional[str] = None) -> dict[str, Any]:
     plugin = get_installed(plugin_id, user_id)
-    if not plugin.enabled:
-        return {"ok": False, "error": f"插件「{plugin.manifest.name}」已停用"}
     if not any(t.name == tool for t in plugin.manifest.tools):
         return {"ok": False, "error": f"插件「{plugin.manifest.name}」没有工具 {tool}"}
     status = credential_status(plugin)

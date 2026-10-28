@@ -102,20 +102,7 @@ export type SocialChatMsg = {
   score?: number;
   /** Transient coordination status. Dropped on reload. */
   collaboration?: boolean;
-  /** The orchestrator's plan for this turn, shown as a card above the replies. */
-  planCard?: SocialPlanCard;
   at: number;
-};
-
-export type SocialPlanCard = {
-  mode: string;
-  label: string;
-  goal: string;
-  reason?: string;
-  steps: Array<{ id: string; name: string; task: string; expected?: string }>;
-  review?: string;
-  synthesizer?: string;
-  source?: "model" | "fallback";
 };
 
 /** Scores the user gave to replies. High scores are kept as style, low scores as things to avoid. */

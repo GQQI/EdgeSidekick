@@ -19,6 +19,12 @@ def _access_token(ctx: PluginContext) -> str:
     cached = getattr(ctx, "_gmail_token", "")
     if cached:
         return cached
+    if not (ctx.credential("refresh_token") or "").strip():
+        raise ToolError(
+            "尚未完成 Google 授权（没有 Refresh token）。"
+            "请先保存 Client ID 与 Client Secret，点「用 Google 授权」；"
+            "若浏览器报 403 access_denied，到 Google Cloud → OAuth 同意屏幕 → 测试用户添加当前账号后再试。"
+        )
     r = ctx.http.post(
         TOKEN_URL,
         data={
@@ -34,7 +40,21 @@ def _access_token(ctx: PluginContext) -> str:
         except Exception:  # noqa: BLE001
             err = ""
         if err == "invalid_grant":
-            raise ToolError("Google 授权已失效或被撤销，请在「设置 → 插件 → Gmail」重新授权。")
+            raise ToolError(
+                "Google 授权无效、已过期或被撤销。"
+                "请先确认：① OAuth 同意屏幕若为「测试中」，已把你的 Google 账号加入测试用户；"
+                "② Client ID/Secret 与授权时用的是同一套；③ 点「用 Google 授权」重新完成授权后再验证。"
+                "（若浏览器出现 403 access_denied，就是测试用户未添加或账号不一致。）"
+            )
+        if err == "unauthorized_client":
+            raise ToolError(
+                "OAuth 客户端不被允许刷新令牌。请确认在 Google Cloud 创建的是「桌面应用」类型客户端，"
+                "且 Client ID/Secret 填写正确，然后重新「用 Google 授权」。"
+            )
+        if err == "invalid_client":
+            raise ToolError(
+                "Client ID 或 Client Secret 不正确。请到 Google Cloud 控制台核对后重新保存，再「用 Google 授权」。"
+            )
         ctx.raise_for_status(r, "刷新 Google 授权")
     token = str(r.json().get("access_token") or "")
     if not token:

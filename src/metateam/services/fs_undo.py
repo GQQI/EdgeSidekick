@@ -15,7 +15,9 @@ from typing import Any, Optional
 
 from ..core.config import get_settings
 
-MAX_UNDO = 40
+# Keep enough records for long conversations so the composer review bar can
+# show the whole-session net diff (not just the last few tool writes).
+MAX_UNDO = 400
 _lock = threading.Lock()
 
 # Bound to the active top-level chat turn so FS mutations can be restored on edit.
@@ -102,7 +104,13 @@ def _workspace_key(workspace: Path) -> str:
 
 def _undo_root(workspace: Optional[Path] = None) -> Path:
     settings = get_settings()
-    ws = (workspace or settings.workspace).resolve()
+    if workspace is not None:
+        ws = Path(workspace).resolve()
+    else:
+        # Honor bind_active_workspace / workspace_override from panel API calls.
+        from .fs_api import workspace_root
+
+        ws = workspace_root()
     root = settings.root / "data" / "fs_undo" / _workspace_key(ws)
     root.mkdir(parents=True, exist_ok=True)
     (root / "blobs").mkdir(exist_ok=True)
@@ -294,8 +302,9 @@ def push_before_rename(
 
 def _resolve_in_workspace(rel: str, workspace: Optional[Path] = None) -> Path:
     from ..core.pathutil import is_relative_to, resolve_path
+    from .fs_api import workspace_root
 
-    ws = (workspace or get_settings().workspace).resolve()
+    ws = Path(workspace).resolve() if workspace is not None else workspace_root()
     raw = str(rel or "").replace("\\", "/").strip().lstrip("/")
     if not raw or raw.startswith("-"):
         raise ValueError("invalid path")

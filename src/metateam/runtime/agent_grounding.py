@@ -40,14 +40,35 @@ def minimal_grounding(workspace: Path) -> str:
 
 
 class AgentGroundingMixin:
-    def _ingest_workspace_fact(self, name: str, args: dict[str, Any], content: str) -> None:
-        """Pin layout discoveries so later turns don't invent paths.
+    _FS_MUTATION_TOOLS = frozenset({"write_file", "str_replace", "delete_file"})
 
-        Keep this small and static-ish (Claude/Cursor: system context is
-        project truth from disk, not a growing action diary).
+    def _ingest_workspace_fact(self, name: str, args: dict[str, Any], content: str) -> None:
+        """Pin layout discoveries and successful FS mutations for the model.
+
+        Layout notes stay small. Mutations are a durable ledger (path + action
+        + success) refreshed into the system message so early deletes remain
+        visible after squeeze/park — no product-specific hardcoding.
         """
         if self.is_subagent and not getattr(self, "full_agent", False):
             return
+        # Successful FS mutations: durable pin, refreshed immediately.
+        if name in self._FS_MUTATION_TOOLS:
+            body = (content or "").strip()
+            if not body or body.upper().startswith("ERROR"):
+                return
+            path = str(args.get("path") or "").strip() or "?"
+            first = body.split("\n", 1)[0][:160]
+            note = f"OK {name}({path}): {first}"
+            prefix = f"OK {name}({path}):"
+            self.workspace_facts = [
+                f for f in self.workspace_facts if not str(f).startswith(prefix)
+            ]
+            self.workspace_facts.append(note)
+            if len(self.workspace_facts) > 16:
+                self.workspace_facts = self.workspace_facts[-16:]
+            self._refresh_mutation_ledger()
+            return
+
         key_tools = {
             "list_dir",
             "codebase_overview",
@@ -62,14 +83,34 @@ class AgentGroundingMixin:
                 return
         else:
             preview = content.strip().replace("\r\n", "\n")
-            if len(preview) > 400:
-                preview = preview[:400] + "…"
+            if len(preview) > 240:
+                preview = preview[:240] + "…"
             path_hint = str(args.get("path") or args.get("query") or args.get("symbol_or_path") or ".")
             note = f"{name}({path_hint}): {preview}"
 
         self.workspace_facts.append(note)
-        if len(self.workspace_facts) > 8:
-            self.workspace_facts = self.workspace_facts[-8:]
+        if len(self.workspace_facts) > 16:
+            self.workspace_facts = self.workspace_facts[-16:]
+
+    def _refresh_mutation_ledger(self) -> None:
+        """Diff-style FS mutation pin in the system message (not a full tree reprint)."""
+        if self.is_subagent and not getattr(self, "full_agent", False):
+            return
+        if not self.messages or self.messages[0].get("role") != "system":
+            return
+        marker = "## FS mutations (this session)"
+        content = str(self.messages[0].get("content") or "")
+        if marker in content:
+            head, _, rest = content.partition(marker)
+            next_sec = rest.find("\n## ")
+            tail = rest[next_sec:] if next_sec >= 0 else ""
+            content = (head.rstrip() + ("\n" + tail.lstrip("\n") if tail else "")).rstrip()
+        facts = [f for f in (self.workspace_facts or []) if str(f).startswith("OK ")]
+        if not facts:
+            self.messages[0]["content"] = content.strip()
+            return
+        block = marker + "\n" + "\n".join(f"- {f}" for f in facts[-12:])
+        self.messages[0]["content"] = (content.rstrip() + "\n\n" + block).strip()
 
     def _refresh_workspace_grounding(self) -> None:
         """Rewrite pinned ground-truth in the system message each user turn."""
@@ -83,6 +124,7 @@ class AgentGroundingMixin:
             "## Workspace ground truth (authoritative)",
             f"Root: {ws}",
         ]
+        indexed_paths: list[str] = []
         if not getattr(self, "social", False):
             lines.append(
                 "Do NOT invent paths like src/, app/, components/ unless listed below or just confirmed by a tool this turn."
@@ -94,10 +136,10 @@ class AgentGroundingMixin:
                 from ..services import codebase_memory as cbm
 
                 idx = cbm.get_or_build_index(ws)
-                paths = [fe.path for fe in idx.files[:20]]
+                indexed_paths = [fe.path for fe in idx.files[:12]]
                 lines.append(f"Indexed files ({len(idx.files)}; use codebase_overview / search_text for the rest):")
-                if paths:
-                    lines.extend(f"- {p}" for p in paths)
+                if indexed_paths:
+                    lines.extend(f"- {p}" for p in indexed_paths)
                 else:
                     lines.append("- (none)")
             except Exception as exc:  # noqa: BLE001
@@ -108,11 +150,21 @@ class AgentGroundingMixin:
         try:
             entries = sorted(ws.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
             shown = []
-            for e in entries[:40]:
+            # The index already names the directories its files live in; repeating
+            # them as top-level entries is the same bytes twice in every turn.
+            covered = {
+                str(p).replace("\\", "/").split("/", 1)[0]
+                for p in indexed_paths
+            }
+            for e in entries:
+                if len(shown) >= 24:
+                    break
                 if e.name.startswith(".") and e.name not in {
                     ".sidekick",
                     ".edgesidekick",
                 }:
+                    continue
+                if e.is_dir() and e.name in covered:
                     continue
                 shown.append(f"{'dir' if e.is_dir() else 'file'}:{e.name}")
             if shown:
@@ -122,9 +174,12 @@ class AgentGroundingMixin:
         except OSError:
             pass
 
-        if self.workspace_facts:
+        layout_facts = [
+            f for f in (self.workspace_facts or []) if not str(f).startswith("OK ")
+        ]
+        if layout_facts:
             lines.append("Session discoveries (from tools):")
-            lines.extend(f"- {f}" for f in self.workspace_facts[-6:])
+            lines.extend(f"- {f}" for f in layout_facts[-4:])
 
         try:
             from ..services.workspace_rules import load_workspace_rules
@@ -188,6 +243,7 @@ class AgentGroundingMixin:
             content = ws_line
 
         self.messages[0]["content"] = (content.rstrip() + "\n\n" + block).strip()
+        self._refresh_mutation_ledger()
 
     def _refresh_memory_block(self) -> None:
         """Replace the ## Memory section with the current MEMORY.md contents."""
@@ -195,22 +251,12 @@ class AgentGroundingMixin:
             return
         if not self.messages or self.messages[0].get("role") != "system":
             return
-        from ..services.memory import format_memory_block
+        from ..services.memory import merge_memory_block
 
-        new_block = format_memory_block(self.settings.memory_file)
-        content = str(self.messages[0].get("content") or "")
-        marker = "## Memory"
-        if marker in content:
-            head, _, rest = content.partition(marker)
-            tail_parts = rest.split("\n## ", 1)
-            after = ("\n## " + tail_parts[1]) if len(tail_parts) == 2 else ""
-            body = head.rstrip()
-            if new_block.strip():
-                body = (body + "\n\n" + new_block.strip()).strip()
-            self.messages[0]["content"] = (body + after).strip()
-            return
-        if new_block.strip():
-            self.messages[0]["content"] = (content.rstrip() + "\n\n" + new_block.strip()).strip()
+        self.messages[0]["content"] = merge_memory_block(
+            str(self.messages[0].get("content") or ""),
+            self.settings.memory_file,
+        )
 
     def _apply_turn_coherence_policy(self, user_text: str) -> None:
         """Pin per-turn Anti-Piling policy (align/contract/pile) into system message."""

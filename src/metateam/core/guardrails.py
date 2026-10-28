@@ -213,6 +213,9 @@ _IDEMPOTENT_TOOLS = _BROWSER_LIVE_TOOLS | frozenset({"web_search"})
 # Explore tools that may be called again with the same args (Claude: re-fetch
 # if you still need the bytes). Identical list_dir/search is still blocked.
 _REREAD_OK = frozenset({"read_file"})
+
+# Successful identical FS deletes must not be re-fired the same turn.
+_REPEAT_BLOCK_MUTATIONS = frozenset({"delete_file"})
 _RANGE_TOOLS = frozenset({"read_file"})
 _RANGE_META_RE = re.compile(r"lines (\d+)-(\d+) of (\d+)")
 _VISIBLE_LINE_RE = re.compile(r"(?m)^(\d+)\|")
@@ -483,10 +486,18 @@ class Guardrails:
         with self._lock:
             if sig in self.blocked or self.fails.get(sig, 0) >= self.same_call_fail_limit:
                 self.blocked.add(sig)
-                return (
+                tip = (
                     f"ERROR: blocked repeated failing call `{name}` with identical args "
-                    f"({self.same_call_fail_limit}x). Change strategy or explain the blocker."
+                    f"({self.same_call_fail_limit}x). Change strategy — do not stop the "
+                    "whole task. Use a different URL/args or another tool."
                 )
+                if str(name or "").startswith("browser_"):
+                    tip += (
+                        " For localhost connection refused: start the static/dev server "
+                        "(bind 127.0.0.1), confirm the port, or open a workspace .html "
+                        "by relative path; then navigate with the new target."
+                    )
+                return tip
 
             ok_n = self.ok_counts.get(sig, 0)
             # Only block after a completed success. In-flight (pending) duplicates
@@ -555,10 +566,13 @@ class Guardrails:
                 elif name not in _BROWSER_LIVE_TOOLS:
                     # A write invalidates file listings. Browser observations
                     # are not counted here — the page can be read again.
+                    # Keep successful delete_file digests so same_call_ok still
+                    # blocks an identical re-delete after other mutations.
                     stale = [
                         sig_key
                         for sig_key, tool_name in self.ok_names.items()
                         if tool_name not in _IDEMPOTENT_TOOLS
+                        and tool_name not in _REPEAT_BLOCK_MUTATIONS
                     ]
                     for sig_key in stale:
                         self.ok_counts.pop(sig_key, None)
@@ -567,6 +581,9 @@ class Guardrails:
                     self.read_ranges.clear()
                     self.read_totals.clear()
                     self.stub_serves.clear()
+                    if name in _REPEAT_BLOCK_MUTATIONS:
+                        self.ok_counts[sig] = self.ok_counts.get(sig, 0) + 1
+                        self.ok_names[sig] = name
                 if name in _RANGE_TOOLS:
                     self._record_range(args, content)
 

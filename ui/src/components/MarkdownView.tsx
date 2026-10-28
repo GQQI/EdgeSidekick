@@ -4,7 +4,16 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import mermaid from "mermaid";
 import "highlight.js/styles/github.css";
-import { isLocalPreviewTarget, localPreviewPath, remarkLinkifyLiteral, sandboxUrlGesture, sanitizeBrowserUrl, splitTextWithUrls } from "../browser/urlDetect";
+import {
+  isLocalPreviewTarget,
+  isWorkspaceFileTarget,
+  localPreviewPath,
+  remarkLinkifyLiteral,
+  sandboxUrlGesture,
+  sanitizeBrowserUrl,
+  splitTextWithUrls,
+  workspaceFilePath,
+} from "../browser/urlDetect";
 import { tightenMarkdownFlow } from "../social/turnLogic";
 
 mermaid.initialize({
@@ -21,9 +30,12 @@ type Props = {
   onCtrlClickUrl?: (url: string, clientX: number, clientY: number) => void;
   /** When true, a normal click also opens the sandbox (social chat). */
   openSandboxOnClick?: boolean;
+  /** Open a workspace-relative source path in the file detail panel. */
+  onOpenWorkspaceFile?: (path: string) => void;
 };
 
 const LINK_TITLE = "右键或 Ctrl+单击：在浏览器沙盒打开";
+const FILE_LINK_TITLE = "单击打开工作区文件";
 
 function nodeText(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
@@ -144,7 +156,13 @@ const HIGHLIGHT_PLUGINS = [
   [rehypeHighlight, { ignoreMissing: true, detect: false, plainText: ["mermaid"] }],
 ] as const;
 
-export const MarkdownView = memo(function MarkdownView({ content, streaming, onCtrlClickUrl, openSandboxOnClick }: Props) {
+export const MarkdownView = memo(function MarkdownView({
+  content,
+  streaming,
+  onCtrlClickUrl,
+  openSandboxOnClick,
+  onOpenWorkspaceFile,
+}: Props) {
   const body = tightenMarkdownFlow(content || "");
 
   const components = useMemo(
@@ -163,6 +181,32 @@ export const MarkdownView = memo(function MarkdownView({ content, streaming, onC
         const isBlock =
           Boolean(className?.includes("language-")) || String(children).includes("\n");
         if (!isBlock) {
+          const text = nodeText(children).trim();
+          if (onOpenWorkspaceFile && isWorkspaceFileTarget(text)) {
+            const path = workspaceFilePath(text);
+            return (
+              <code
+                {...rest}
+                className="inline-code workspace-file-link"
+                role="link"
+                tabIndex={0}
+                title={FILE_LINK_TITLE}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onOpenWorkspaceFile(path);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpenWorkspaceFile(path);
+                  }
+                }}
+              >
+                {children}
+              </code>
+            );
+          }
           return (
             <code className="inline-code" {...rest}>
               {children}
@@ -183,10 +227,49 @@ export const MarkdownView = memo(function MarkdownView({ content, streaming, onC
         const childStr = nodeText(children);
         const localRaw = [href || "", childStr].find((x) => isLocalPreviewTarget(x)) || "";
         const local = localRaw ? localPreviewPath(localRaw) : "";
+        const fileRaw =
+          [href || "", childStr].find((x) => isWorkspaceFileTarget(x)) || "";
+        const filePath = fileRaw ? workspaceFilePath(fileRaw) : "";
         const http = sanitizeBrowserUrl(href || "") || sanitizeBrowserUrl(childStr);
-        const target = local || http;
+        // Same-origin http URLs that are actually workspace files → open editor.
+        const sameOriginFile =
+          !filePath && http
+            ? (() => {
+                try {
+                  const u = new URL(http);
+                  if (
+                    typeof window !== "undefined" &&
+                    u.origin === window.location.origin &&
+                    isWorkspaceFileTarget(u.pathname)
+                  ) {
+                    return workspaceFilePath(u.pathname);
+                  }
+                } catch {
+                  /* ignore */
+                }
+                return "";
+              })()
+            : "";
+        const openPath = filePath || sameOriginFile;
+        const target = local || (!openPath ? http : "");
 
-        const intercept = (e: { ctrlKey: boolean; metaKey: boolean; clientX: number; clientY: number; preventDefault: () => void; stopPropagation: () => void }, mode: "click" | "contextmenu") => {
+        const intercept = (
+          e: {
+            ctrlKey: boolean;
+            metaKey: boolean;
+            clientX: number;
+            clientY: number;
+            preventDefault: () => void;
+            stopPropagation: () => void;
+          },
+          mode: "click" | "contextmenu",
+        ) => {
+          if (openPath && onOpenWorkspaceFile && mode === "click") {
+            e.preventDefault();
+            e.stopPropagation();
+            onOpenWorkspaceFile(openPath);
+            return;
+          }
           if (openSandboxOnClick && target && onCtrlClickUrl && mode === "click") {
             e.preventDefault();
             e.stopPropagation();
@@ -194,21 +277,23 @@ export const MarkdownView = memo(function MarkdownView({ content, streaming, onC
             return;
           }
           if (target && sandboxUrlGesture(target, e, onCtrlClickUrl, { mode })) return;
-          // Relative report.html must never navigate the host SPA.
-          if (local || (href && !/^https?:\/\//i.test(href))) {
+          // Relative workspace / preview paths must never navigate the host SPA.
+          if (openPath || local || (href && !/^https?:\/\//i.test(href))) {
             e.preventDefault();
             e.stopPropagation();
-            if (local && onCtrlClickUrl) onCtrlClickUrl(local, e.clientX, e.clientY);
+            if (openPath && onOpenWorkspaceFile) onOpenWorkspaceFile(openPath);
+            else if (local && onCtrlClickUrl) onCtrlClickUrl(local, e.clientX, e.clientY);
           }
         };
 
+        const isFileLink = Boolean(openPath);
         return (
           <a
-            href={http || "#"}
-            target="_blank"
-            rel="noreferrer"
-            className={target ? "sandbox-hot-link" : undefined}
-            title={target ? LINK_TITLE : undefined}
+            href={http && !openPath ? http : "#"}
+            target={http && !openPath ? "_blank" : undefined}
+            rel={http && !openPath ? "noreferrer" : undefined}
+            className={isFileLink ? "workspace-file-link" : target ? "sandbox-hot-link" : undefined}
+            title={isFileLink ? FILE_LINK_TITLE : target ? LINK_TITLE : undefined}
             onClick={(e) => intercept(e, "click")}
             onContextMenu={(e) => intercept(e, "contextmenu")}
           >
@@ -224,7 +309,7 @@ export const MarkdownView = memo(function MarkdownView({ content, streaming, onC
         );
       },
     }),
-    [streaming, onCtrlClickUrl, openSandboxOnClick],
+    [streaming, onCtrlClickUrl, openSandboxOnClick, onOpenWorkspaceFile],
   );
 
   return (

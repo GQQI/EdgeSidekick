@@ -65,8 +65,9 @@ def run_review(
     for note in data.get("memory_notes") or []:
         note = str(note).strip()
         if note:
-            append_memory(settings.memory_file, note)
-            saved["memory"].append(note)
+            status = append_memory(settings.memory_file, note)
+            if status.startswith("saved"):
+                saved["memory"].append(note)
 
     skill = data.get("skill")
     if isinstance(skill, dict) and skill.get("name") and skill.get("content"):

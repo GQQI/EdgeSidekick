@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
+from ..core.repetition import normalize_content_text
+
 if TYPE_CHECKING:
     from .llm import LLM
 
@@ -109,7 +111,7 @@ Write ONLY these sections, in the user's language:
 
 Rules:
 - Keep every user request, named decision, file path (with line ranges if read), URL, command, error, and ID that still matters.
-- ## Files: list paths already read/written/listed this session (e.g. report.md lines 1-136). The agent can re-read them; do not invent paths.
+- ## Files: list paths already read/written/listed/deleted this session (e.g. report.md lines 1-136; deleted: old.txt). Keep deleted paths so the agent does not recreate or re-delete them. The agent can re-read surviving files; do not invent paths.
 - Never invent files, folders, or APIs that were not observed.
 - Drop raw tool dumps, screenshots, HTML, and chit-chat.
 - If a previous working-memory block is provided, UPDATE it — do not shrink it into a vague recap.
@@ -194,6 +196,23 @@ def _browser_digest(text: str) -> str:
     return "; ".join(bit for bit in bits if bit)[:180]
 
 
+# FS mutations must remain attributable after clearing/parking (path + outcome).
+_MUTATION_TOOLS = frozenset({"write_file", "str_replace", "delete_file"})
+
+
+def is_successful_mutation(msg: dict[str, Any]) -> bool:
+    """True for a successful write_file / str_replace / delete_file tool result."""
+    if msg.get("role") != "tool":
+        return False
+    name = str(msg.get("name") or "")
+    if name not in _MUTATION_TOOLS:
+        return False
+    text = _content_text(msg).strip()
+    if not text:
+        return False
+    return not text.upper().startswith("ERROR")
+
+
 def _tool_result_stub(msg: dict[str, Any]) -> str:
     """Claude-style clear_tool_uses: keep the call, drop the bulky payload."""
     name = str(msg.get("name") or "tool")
@@ -202,6 +221,11 @@ def _tool_result_stub(msg: dict[str, Any]) -> str:
     m = _RANGE_TRAILER_RE.search(text)
     if m:
         extra = f" lines {m.group(1)}-{m.group(2)} of {m.group(3)}"
+    elif name in _MUTATION_TOOLS:
+        # Keep path + first outcome line so early deletes survive squeeze/park.
+        first = text.strip().split("\n", 1)[0][:160]
+        if first:
+            extra = f" ({first})"
     elif name == "read_file":
         first = text.strip().split("\n", 1)[0][:80]
         if first and not first.startswith("ERROR"):
@@ -230,6 +254,79 @@ def current_turn_start(messages: list[dict[str, Any]]) -> int:
             continue
         return i
     return len(messages)
+
+
+def dedupe_repeated_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Shrink exact repeats in the model payload without breaking tool chains.
+
+    A retry loop can return the same file dump dozens of times. Every copy is
+    sent back to the provider on every round, which is both expensive and a
+    strong repetition cue for the model. Tool rows stay (one is required per
+    ``tool_call_id``); a repeat's body becomes a back-reference to the earlier
+    identical result. Repeated tool-call narration keeps the call and drops the
+    retold lead-in; adjacent identical assistant finals collapse to one.
+    """
+    out: list[dict[str, Any]] = []
+    seen_tools: set[tuple[str, str]] = set()
+    seen_narration: set[str] = set()
+    for msg in messages:
+        role = msg.get("role")
+        if role == "user":
+            # Within one turn a repeated result is noise. Across turns — and
+            # across plan steps — the same file/command result can be the fresh
+            # answer to a new request. Internal nudges do not start a new scope.
+            meta = msg.get("sidekick") if isinstance(msg.get("sidekick"), dict) else {}
+            kind = str((meta or {}).get("kind") or "")
+            internal = bool(msg.get("sidekick_internal") or msg.get("internal"))
+            if not internal or kind == "plan_step":
+                seen_tools.clear()
+                seen_narration.clear()
+            out.append(msg)
+            continue
+        if role == "assistant" and msg.get("tool_calls"):
+            # Keep the call, drop a repeated lead-in. Models often say the same
+            # "let me check X：" before every retry; the retold narration is a
+            # strong repetition cue even though each tool call is real. Compare
+            # content, not layout: a rephrased comma or line wrap is still the
+            # same lead-in, and leaving it in trains the loop.
+            text = str(msg.get("content") or "").strip()
+            key = normalize_content_text(text)
+            if key and key in seen_narration:
+                clone = dict(msg)
+                clone["content"] = ""
+                out.append(clone)
+                continue
+            if key:
+                seen_narration.add(key)
+            out.append(msg)
+            continue
+        if role == "tool":
+            content = str(msg.get("content") or "")
+            name = str(msg.get("name") or "tool")
+            key = (name, content)
+            if content and key in seen_tools:
+                clone = dict(msg)
+                clone["content"] = f"[same {name} result as an earlier call]"
+                out.append(clone)
+                continue
+            if content:
+                seen_tools.add(key)
+            out.append(msg)
+            continue
+        if role == "assistant" and not msg.get("tool_calls"):
+            text = str(msg.get("content") or "").strip()
+            prev = out[-1] if out else None
+            if (
+                text
+                and prev is not None
+                and prev.get("role") == "assistant"
+                and not prev.get("tool_calls")
+                and normalize_content_text(str(prev.get("content") or ""))
+                == normalize_content_text(text)
+            ):
+                continue
+        out.append(msg)
+    return out
 
 
 def cheap_compact(
@@ -518,6 +615,7 @@ def park_overflow(
     *,
     context_limit: int,
     keep_recent_tokens: int,
+    protect_from: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Keep a working set; return older messages unchanged for the archive.
 
@@ -526,6 +624,11 @@ def park_overflow(
     the same file again. The archived prefix is not summarized here — display
     code stitches it back. Only the live tail is shortened, and only when that
     tail alone is still over the limit.
+
+    Successful FS mutations that would leave the live window are kept as
+    one-line stubs (path + action). When ``protect_from`` is set (usually
+    ``current_turn_start``), messages at/after that index are never archived
+    wholesale — bulky ones may be stubbed instead.
     """
     if not messages:
         return [], []
@@ -533,22 +636,99 @@ def park_overflow(
     if messages_tokens(messages) <= limit:
         return list(messages), []
     system = messages[0] if messages[0].get("role") == "system" else None
+    sys_off = 1 if system else 0
     body = list(messages[1:] if system else messages)
     keep = max(2000, min(int(keep_recent_tokens or 0) or limit, limit))
     head, tail = _split_keep_recent(body, keep)
-    live = ([system] if system else []) + tail
+    tail_ids = {id(m) for m in tail}
+    archived: list[dict[str, Any]] = []
+    retained: list[dict[str, Any]] = []
+    protect_body = (
+        max(0, int(protect_from) - sys_off) if protect_from is not None else None
+    )
+    for i, m in enumerate(body):
+        if id(m) in tail_ids:
+            continue
+        abs_i = i + sys_off
+        protected = protect_body is not None and abs_i >= protect_body
+        if protected or is_successful_mutation(m):
+            text = _content_text(m) if m.get("role") == "tool" else ""
+            if m.get("role") == "tool" and isinstance(m.get("content"), str):
+                if is_successful_mutation(m) and len(text) <= 240:
+                    retained.append(m)
+                elif is_successful_mutation(m) or len(text) > 400:
+                    nm = dict(m)
+                    nm["content"] = _tool_result_stub(m)
+                    retained.append(nm)
+                else:
+                    retained.append(m)
+            else:
+                retained.append(m)
+            continue
+        archived.append(m)
+    live = ([system] if system else []) + retained + tail
     if messages_tokens(live) > limit:
-        live, _did = cheap_compact(live)
-    return live, head
+        live_protect = (1 if system else 0) if protect_from is not None else None
+        live, _did = cheap_compact(live, protect_from=live_protect)
+    return live, archived
+
+
+# Shown inside the compaction stub. Must never read like a user saying the
+# assistant reply was truncated — that caused models to apologize and stop.
+_COMPACTION_CONTINUE_NOTE = (
+    "Internal session memory refresh only. "
+    "This is NOT a user message and NOT a truncated assistant reply — "
+    "do not apologize about truncation or stop. "
+    "Continue the same unfinished user goal using Progress/Next and pinned "
+    "facts below. Call tools if work remains; answer only when the goal is "
+    "met or blocked on the user."
+)
+
+
+def obligation_from_compaction(text: str) -> str:
+    """Pull durable user requests out of a compaction stub for goal checks."""
+    raw = (text or "").strip()
+    if not raw.startswith(COMPACTION_MARK):
+        return ""
+    body = raw[len(COMPACTION_MARK) :].lstrip("\n")
+    # Prefer explicit user-request bullets under pins.
+    if "### User requests" in body:
+        section = body.split("### User requests", 1)[1]
+        for stop in ("### Artifacts", "### URLs", "### Errors", _MEMORY_MARK, "## "):
+            if stop in section:
+                section = section.split(stop, 1)[0]
+        bullets: list[str] = []
+        for line in section.splitlines():
+            s = line.strip()
+            if s.startswith("- "):
+                bullets.append(s[2:].strip())
+        if bullets:
+            # Latest ask matters most; keep a little history.
+            keep = bullets[-3:] if len(bullets) > 3 else bullets
+            return " | ".join(keep)
+    if _PIN_MARK in body:
+        pin = body.split(_PIN_MARK, 1)[1]
+        if _MEMORY_MARK in pin:
+            pin = pin.split(_MEMORY_MARK, 1)[0]
+        pin = pin.strip()
+        if pin:
+            return pin[:2000]
+    return ""
 
 
 def _build_compaction_message(pins: str, memory: str) -> dict[str, Any]:
-    parts = [COMPACTION_MARK]
+    parts = [COMPACTION_MARK, _COMPACTION_CONTINUE_NOTE]
     if pins.strip():
         parts.append(pins.strip())
     if memory.strip():
         parts.append(f"{_MEMORY_MARK}\n{memory.strip()}")
-    return {"role": "user", "content": "\n\n".join(parts)}
+    return {
+        "role": "user",
+        "content": "\n\n".join(parts),
+        # Internal: never treat as a fresh user turn / truncation complaint.
+        "sidekick_internal": True,
+        "sidekick": {"internal": True, "kind": "compaction"},
+    }
 
 
 def compress_messages(
@@ -732,6 +912,74 @@ def ensure_fit(
     meta["compressed"] = True
     meta["dropped_messages"] = dropped
     return out, meta
+
+
+
+
+def repair_incomplete_tool_chains(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Make post-compaction history safe for the next provider call.
+
+    Compaction / park can leave an assistant ``tool_calls`` row without every
+    matching tool result (or orphan tool rows). Providers then 400, the loop
+    sees ``assistant is None``, and the UI shows an empty round. Stub any
+    missing results and drop orphan tool messages so the same user task can
+    continue.
+    """
+    if not messages:
+        return messages
+    out: list[dict[str, Any]] = []
+    i = 0
+    n = len(messages)
+    while i < n:
+        m = messages[i]
+        calls = m.get("tool_calls") if m.get("role") == "assistant" else None
+        if isinstance(calls, list) and calls:
+            ids = [
+                str(tc.get("id") or "")
+                for tc in calls
+                if isinstance(tc, dict) and str(tc.get("id") or "")
+            ]
+            names = {
+                str(tc.get("id") or ""): str(
+                    ((tc.get("function") or {}) if isinstance(tc, dict) else {}).get("name")
+                    or "tool"
+                )
+                for tc in calls
+                if isinstance(tc, dict)
+            }
+            j = i + 1
+            found: dict[str, dict[str, Any]] = {}
+            while j < n and messages[j].get("role") == "tool":
+                tid = str(messages[j].get("tool_call_id") or "")
+                if tid and tid in ids and tid not in found:
+                    found[tid] = messages[j]
+                j += 1
+            out.append(m)
+            for tid in ids:
+                if tid in found:
+                    out.append(found[tid])
+                else:
+                    out.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tid,
+                            "name": names.get(tid) or "tool",
+                            "content": (
+                                f"{_CLEARED_PREFIX} {names.get(tid) or 'tool'}. "
+                                "Payload unavailable after context compaction; "
+                                "re-call the tool if you still need it.]"
+                            ),
+                        }
+                    )
+            i = j
+            continue
+        if m.get("role") == "tool":
+            # Orphan tool row (no preceding assistant call in the rebuilt set).
+            i += 1
+            continue
+        out.append(m)
+        i += 1
+    return out
 
 
 def debug_dump_budget(messages: list[dict[str, Any]]) -> str:

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import inspect
+import json
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 
 @dataclass
@@ -33,9 +34,25 @@ class Tool:
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
+        # When set, schemas() only exposes these names (execution still uses _tools).
+        self._schema_focus: Optional[set[str]] = None
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
+
+    def unregister(self, name: str) -> None:
+        self._tools.pop(str(name or ""), None)
+
+    def set_schema_focus(self, names: Optional[set[str]]) -> None:
+        self._schema_focus = None if names is None else set(names)
+
+    def expand_schema_focus(self, names: Iterable[str]) -> None:
+        if self._schema_focus is None:
+            return
+        for n in names or []:
+            s = str(n or "").strip()
+            if s:
+                self._schema_focus.add(s)
 
     def drop_skill_tools(self) -> None:
         for name in list(self._tools):
@@ -52,9 +69,16 @@ class ToolRegistry:
 
     def schemas(self, *, allow_mutating: bool = True) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
+        # Coordination tools stay available during plan-prep: they do not mutate
+        # the workspace themselves (child agents have their own approval gates).
+        _COORDINATION = frozenset({"delegate_task", "delegate_dialogue", "ask_agent", "ask_user"})
         for tool in self._tools.values():
-            if not allow_mutating and (
-                tool.requires_approval or tool.name in ("delegate_task", "delegate_dialogue")
+            if self._schema_focus is not None and tool.name not in self._schema_focus:
+                continue
+            if (
+                not allow_mutating
+                and tool.requires_approval
+                and tool.name not in _COORDINATION
             ):
                 continue
             out.append(tool.openai_schema())
@@ -212,6 +236,22 @@ _ARG_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
         "description": ("description", "desc", "summary"),
         "name": ("name", "skill", "skill_name", "title"),
     },
+    "ask_user": {
+        "question": ("question", "prompt", "ask", "query", "message"),
+        "options": (
+            "options",
+            "choices",
+            "choice",
+            "answers",
+            "labels",
+            "items",
+            "option_list",
+            "candidates",
+            "alternatives",
+        ),
+        "allow_custom": ("allow_custom", "custom", "allow_other"),
+        "custom_label": ("custom_label", "other_label"),
+    },
 }
 
 _NESTED_ARG_KEYS = ("file", "payload", "params", "arguments", "input", "data")
@@ -334,10 +374,97 @@ def missing_required_args(handler: Callable[..., Any], args: dict[str, Any] | No
     return missing
 
 
+def _coerce_option_list(raw: Any) -> list[str]:
+    """Normalize ask_user option payloads (list / JSON string / newline list)."""
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        if text[0] in "[{":
+            try:
+                parsed = json.loads(text)
+                return _coerce_option_list(parsed)
+            except Exception:
+                pass
+        lines = [ln.strip() for ln in re.split(r"[\n\r;|]+", text) if ln.strip()]
+        return lines
+    if isinstance(raw, dict):
+        out: list[str] = []
+        for value in raw.values():
+            if isinstance(value, dict):
+                label = str(
+                    value.get("label") or value.get("text") or value.get("value") or ""
+                ).strip()
+            else:
+                label = str(value or "").strip()
+            if label:
+                out.append(label)
+        return out
+    if isinstance(raw, (list, tuple)):
+        out = []
+        for item in raw:
+            if isinstance(item, dict):
+                label = str(
+                    item.get("label") or item.get("text") or item.get("value") or ""
+                ).strip()
+            else:
+                label = str(item or "").strip()
+            if label:
+                out.append(label)
+        return out
+    return [str(raw).strip()] if str(raw).strip() else []
+
+
+def _options_from_prose(*texts: str) -> list[str]:
+    """Pull numbered / lettered choices out of question/why when options omitted."""
+    line_re = re.compile(r"^\s*(?:\d+|[A-Za-z])[\.\)、:：]\s*(.+?)\s*$", re.MULTILINE)
+    found: list[str] = []
+    seen: set[str] = set()
+    for text in texts:
+        raw = str(text or "")
+        if not raw.strip():
+            continue
+        for label in line_re.findall(raw):
+            item = str(label or "").strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            found.append(item)
+    return found
+
+
+def normalize_ask_user_args(args: dict[str, Any]) -> dict[str, Any]:
+    """Fill ask_user.options from aliases or prose when the model omits it."""
+    out = dict(args)
+    options = _coerce_option_list(out.get("options"))
+    if len(options) < 2:
+        options = _options_from_prose(
+            str(out.get("question") or ""),
+            str(out.get("why") or ""),
+            str(out.get("constraints") or ""),
+            str(out.get("stop") or ""),
+        )
+    if len(options) < 2 and str(out.get("how") or "").strip().lower() in (
+        "options",
+        "choice",
+        "choose",
+        "",
+    ):
+        # Last-resort binary fork so the gate opens instead of hard-failing.
+        options = ["是 / 继续", "否 / 取消"]
+    if options:
+        out["options"] = options
+    return out
+
+
 def prepare_tool_args(
     name: str, handler: Callable[..., Any], args: dict[str, Any] | None
 ) -> dict[str, Any]:
     aliased = alias_tool_args(name, args)
+    if (name or "").strip() == "ask_user":
+        aliased = normalize_ask_user_args(aliased)
     bound = bind_tool_args(handler, aliased)
     return coerce_bound_args(handler, bound)
 

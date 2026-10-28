@@ -113,7 +113,7 @@ function localizeError(raw: string, locale: "zh" | "en"): string {
   return mapped ? ERROR_COPY[locale][mapped] : raw;
 }
 
-/** First-run setup, or login with open self-registration. */
+/** First-run admin setup, login, or open self-registration. */
 export function AuthGate({ mode, busy, error, onSetup, onRegister, onLogin }: Props) {
   const { locale, setLocale } = usePrefs();
   const c = COPY[locale];

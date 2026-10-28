@@ -121,3 +121,6 @@ scripts/screenshot-logo-style.mjs
 /landing.html
 *.bak
 scripts/verify_group_chat/
+
+*.edgebak
+

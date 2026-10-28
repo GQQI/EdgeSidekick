@@ -54,23 +54,14 @@ def api_auth_setup(body: AuthSetupBody, request: Request) -> dict[str, Any]:
     }
 
 
-_REGISTER_MSG = {
-    "username too short": "显示名至少 2 个字符",
-    "password must be at least 6 characters": "密码至少 6 位",
-    "username taken": "这个显示名已被使用",
-    "email already registered": "这个邮箱已经注册",
-    "invalid email": "请输入有效邮箱",
-}
-
-
 @router.post("/register")
 def api_auth_register(body: AuthSetupBody, request: Request) -> dict[str, Any]:
-    """Open registration. No existing login is required."""
+    """Open sign-up. The first account initializes the instance; later ones join it."""
     require_loopback(request)
     try:
         user, token = register_account(body.username, body.password, email=body.email)
     except ValueError as exc:
-        raise HTTPException(400, _REGISTER_MSG.get(str(exc), str(exc))) from exc
+        raise HTTPException(400, str(exc)) from exc
     STORE.refresh_settings(rebind_llm=True, rebind_workspace=True)
     return {
         "status": "ok",

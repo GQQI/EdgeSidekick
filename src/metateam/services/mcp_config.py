@@ -35,6 +35,8 @@ class McpServerConfig:
     url: str = ""
     headers: dict[str, str] = field(default_factory=dict)
     enabled: bool = True
+    # "user" | "catalog" | "plugin" — plugins that ship MCP write source=plugin
+    source: str = "user"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +49,7 @@ class McpServerConfig:
             "url": self.url,
             "headers": dict(self.headers),
             "enabled": self.enabled,
+            "source": self.source or "user",
         }
 
     def is_remote(self) -> bool:
@@ -70,9 +73,31 @@ class McpSetup:
     servers: list[McpServerConfig] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        servers = [s.to_dict() for s in self.servers]
+        mcp_servers: dict[str, Any] = {}
+        for s in self.servers:
+            entry: dict[str, Any] = {}
+            transport = s.normalized_transport()
+            if transport == "stdio":
+                entry["command"] = s.command
+                if s.args:
+                    entry["args"] = list(s.args)
+                if s.env:
+                    entry["env"] = dict(s.env)
+            else:
+                entry["type"] = transport
+                entry["url"] = s.url
+                if s.headers:
+                    entry["headers"] = dict(s.headers)
+            # Sidekick extras (ignored by Claude Desktop)
+            entry["disabled"] = not bool(s.enabled)
+            if s.source and s.source != "user":
+                entry["source"] = s.source
+            mcp_servers[s.id] = entry
         return {
             "version": self.version,
-            "servers": [s.to_dict() for s in self.servers],
+            "servers": servers,
+            "mcpServers": mcp_servers,
         }
 
     def public_dict(self) -> dict[str, Any]:
@@ -115,6 +140,9 @@ def _parse_server(raw: dict[str, Any]) -> Optional[McpServerConfig]:
     args = raw.get("args") if isinstance(raw.get("args"), list) else []
     env_raw = raw.get("env") if isinstance(raw.get("env"), dict) else {}
     hdr_raw = raw.get("headers") if isinstance(raw.get("headers"), dict) else {}
+    source = str(raw.get("source") or "user").strip().lower() or "user"
+    if source not in ("user", "catalog", "plugin"):
+        source = "user"
     return McpServerConfig(
         id=sid,
         name=name,
@@ -125,17 +153,48 @@ def _parse_server(raw: dict[str, Any]) -> Optional[McpServerConfig]:
         url=url,
         headers={str(k): str(v) for k, v in hdr_raw.items()},
         enabled=bool(raw.get("enabled", True)),
+        source=source,
     )
+
+
+def _community_servers(raw: Any) -> list[dict[str, Any]]:
+    """Claude Desktop / Cursor style ``mcpServers`` map → list of server dicts."""
+    if not isinstance(raw, dict):
+        return []
+    out: list[dict[str, Any]] = []
+    for key, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        item = dict(entry)
+        item.setdefault("id", str(key))
+        item.setdefault("name", str(key))
+        # Community configs often use ``type`` instead of ``transport``.
+        if "transport" not in item and "type" in item:
+            item["transport"] = item.get("type")
+        # Map community ``disabled`` → Sidekick ``enabled``.
+        if "enabled" not in item and "disabled" in item:
+            item["enabled"] = not bool(item.get("disabled"))
+        item.setdefault("enabled", True)
+        out.append(item)
+    return out
 
 
 def _parse(data: dict[str, Any]) -> McpSetup:
     servers: list[McpServerConfig] = []
-    for raw in data.get("servers") or []:
+    seen: set[str] = set()
+    # Prefer explicit servers list; also merge community mcpServers (list wins on id clash).
+    raw_list: list[Any] = []
+    if isinstance(data.get("servers"), list):
+        raw_list.extend(data.get("servers") or [])
+    raw_list.extend(_community_servers(data.get("mcpServers")))
+    for raw in raw_list:
         if not isinstance(raw, dict):
             continue
         parsed = _parse_server(raw)
-        if parsed:
-            servers.append(parsed)
+        if not parsed or parsed.id in seen:
+            continue
+        seen.add(parsed.id)
+        servers.append(parsed)
     return McpSetup(version=int(data.get("version") or 2), servers=servers)
 
 

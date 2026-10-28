@@ -50,7 +50,7 @@ class PluginContext:
             self._http = httpx.Client(
                 timeout=self._timeout,
                 follow_redirects=True,
-                headers={"User-Agent": f"EdgeSidekick-Plugin/{self.plugin_id or 'unknown'}"},
+                headers={"User-Agent": f"Sidekick-Plugin/{self.plugin_id or 'unknown'}"},
             )
         return self._http
 

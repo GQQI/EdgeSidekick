@@ -17,7 +17,15 @@ import {
 import type { PlanConfirmState, ShapeContract } from "../../types/plan";
 import { formatToolSummary } from "../../utils/toolSummary";
 import { isFileMutatingTool } from "../../utils/diffPreview";
-import { declaredDelegateSlotCount, findSubNode, isEphemeralCanvasId, sameSubagentSlot, softParseToolArgs, uid } from "../../utils/chatHelpers";
+import {
+  declaredDelegateSlotCount,
+  findSubNode,
+  isEphemeralCanvasId,
+  sameSubagentSlot,
+  softParseToolArgs,
+  toolDeclaredSlotCount,
+  uid,
+} from "../../utils/chatHelpers";
 import { canvasGoalsMatch } from "../../utils/canvasSlots";
 import type { MsgKey } from "../../i18n";
 import { upsertToolDelta, upsertToolEnd, upsertToolStart, type ToolUpsertCtx } from "./toolUpserts";
@@ -29,6 +37,31 @@ function argsLookEmpty(args: unknown): boolean {
   if (typeof args !== "object" || Array.isArray(args)) return false;
   const rec = args as Record<string, unknown>;
   return Object.keys(rec).every((k) => k.startsWith("_"));
+}
+
+/** Prefer human-readable status/judge text over the raw event type name. */
+function liveEventLabel(type: string, data: Record<string, unknown> | undefined): string {
+  const d = data || {};
+  const text = String(d.text || d.message || "").trim();
+  if (type === "assistant_status" && text) return text;
+  if (type === "goal_judge") {
+    const state = String(d.state || "?").trim();
+    const reason = String(d.reason || "").trim();
+    const ev = d.evidence_present === true ? "有证据" : d.evidence_present === false ? "无证据" : "";
+    const bits = [`判定 ${state}`, ev, reason].filter(Boolean);
+    return bits.join(" · ");
+  }
+  if (type === "goal_settled") {
+    if (text) return text;
+    if (d.stalled) return "未完成且无新进展，已停止";
+    if (d.blocked) return "等待你的决定";
+    if (d.satisfied === true) return "目标已完成";
+    if (d.satisfied === false) return "目标未完成";
+    const reason = String(d.reason || "").trim();
+    return reason ? `目标结算 · ${reason}` : "目标结算";
+  }
+  if (text) return text;
+  return `${type}${d.name ? " " + d.name : ""}`;
 }
 
 function sealStreamingTools(transcript: SubTranscriptItem[]): SubTranscriptItem[] {
@@ -108,26 +141,50 @@ function pickPendingCanvasHost(messages: ChatMsg[], goal: string): ChatMsg | und
   );
 }
 
+function bindOntoCanvasHost(
+  ctx: RuntimeEventHandlerCtx,
+  hostId: string,
+  node: SubNode,
+) {
+  const nextId =
+    node.id && !isEphemeralCanvasId(node.id) ? node.id : hostId;
+  ctx.patchSubagent(hostId, (s) => ({
+    ...s,
+    ...node,
+    id: nextId,
+    children: s.children,
+    transcript:
+      s.transcript?.length && !node.transcript.length ? s.transcript : node.transcript,
+  }));
+}
+
 function appendTopLevelSubagent(
   ctx: RuntimeEventHandlerCtx,
   node: SubNode,
   replay: boolean,
 ) {
+  void replay;
+  // Exact id first — never let a goal match steal another worker's card.
+  const byId = ctx.transcriptRef.current.find(
+    (m) => m.role === "subagent" && m.subagent && m.subagent.id === node.id,
+  );
+  if (byId?.subagent) {
+    bindOntoCanvasHost(ctx, byId.subagent.id, node);
+    return;
+  }
+  const pendingHost = pickPendingCanvasHost(ctx.transcriptRef.current, node.goal);
+  if (pendingHost?.subagent) {
+    bindOntoCanvasHost(ctx, pendingHost.subagent.id, node);
+    return;
+  }
   const existing = ctx.transcriptRef.current.find(
     (m) =>
       m.role === "subagent" &&
       m.subagent &&
-      (m.subagent.id === node.id || sameSubagentSlot(m.subagent, node)),
+      sameSubagentSlot(m.subagent, node),
   );
   if (existing?.subagent) {
-    ctx.patchSubagent(existing.subagent.id, (s) => ({
-      ...s,
-      ...node,
-      id: s.id,
-      children: s.children,
-      transcript:
-        s.transcript?.length && !node.transcript.length ? s.transcript : node.transcript,
-    }));
+    bindOntoCanvasHost(ctx, existing.subagent.id, node);
     return;
   }
   const isHelper = node.kind === "task" || (!node.kind && node.role === "leaf");
@@ -155,30 +212,45 @@ function appendTopLevelSubagent(
     }
   }
   const stage = ctx.stageRef.current;
-  const declared = declaredDelegateSlotCount(ctx.transcriptRef.current, stage);
+  const toolDeclared = toolDeclaredSlotCount(ctx.transcriptRef.current, stage);
+  const frozen = declaredDelegateSlotCount(ctx.transcriptRef.current, stage);
   const current = ctx.transcriptRef.current.filter(
     (m) => m.role === "subagent" && (m.stage ?? 0) === stage && m.subagent,
   );
-  if (declared > 0 && current.length >= declared) {
+  // Never grow past the delegated task list (tool args), and never invent a
+  // 4th root when the board already has frozen slots with no vacant pending.
+  const cap = toolDeclared > 0 ? toolDeclared : frozen;
+  if (cap > 0 && current.length >= cap) {
     const host = pickPendingCanvasHost(ctx.transcriptRef.current, node.goal);
-    if (host?.subagent) {
-      ctx.patchSubagent(host.subagent.id, (s) => ({
-        ...s,
-        ...node,
-        children: s.children,
-        transcript:
-          s.transcript?.length && !node.transcript.length ? s.transcript : node.transcript,
-      }));
-    }
+    if (host?.subagent) bindOntoCanvasHost(ctx, host.subagent.id, node);
+    return;
+  }
+  if (cap <= 0 && current.length > 0) {
+    // No tool count yet but cards already exist — bind, don't append orphans.
+    const host =
+      pickPendingCanvasHost(ctx.transcriptRef.current, node.goal) || current[0];
+    if (host?.subagent) bindOntoCanvasHost(ctx, host.subagent.id, node);
     return;
   }
   const existingNodes = current
     .map((m) => m.subagent)
     .filter((n): n is SubNode => Boolean(n));
   replaceStageSubagents(ctx, [...existingNodes, node], stage);
-  if (!replay && node.kind !== "party" && node.kind !== "talk") {
-    ctx.setDetail({ type: "subagent", subagent: node });
-  }
+  // Do not auto-open detail — user clicks a canvas card to inspect that agent.
+}
+
+const PLAN_STATUSES = new Set([
+  "pending",
+  "running",
+  "done",
+  "skipped",
+  "error",
+  "cancelled",
+]);
+
+function normalizePlanStatus(raw: unknown): PlanTaskStatus {
+  const s = String(raw || "pending").trim().toLowerCase();
+  return (PLAN_STATUSES.has(s) ? s : "pending") as PlanTaskStatus;
 }
 
 function parsePlanTasks(raw: unknown): PlanTask[] {
@@ -207,7 +279,7 @@ function parsePlanTasks(raw: unknown): PlanTask[] {
       id: String(o.id || `task_${i}`),
       title,
       detail: String(o.detail || o.description || "").trim() || undefined,
-      status: String(o.status || "pending") as PlanTaskStatus,
+      status: normalizePlanStatus(o.status),
     });
   });
   return out;
@@ -231,41 +303,30 @@ function applyPlanStep(
   const planId = String(data.plan_id || prev?.planId || "");
   const summary = String(data.summary || prev?.summary || title || fallbackTitle);
 
-  let tasks: PlanTask[] = snapshot.length ? snapshot.map((t) => ({ ...t })) : [...(prev?.tasks || [])];
+  // Backend snapshot is authoritative (ids + statuses). Prefer it so the
+  // panel cannot drift from the step the agent is actually running.
+  let tasks: PlanTask[] = snapshot.length
+    ? snapshot.map((t) => ({ ...t }))
+    : [...(prev?.tasks || [])];
 
-  const markHit = (list: PlanTask[]): PlanTask[] => {
-    let hitIdx = taskId ? list.findIndex((t) => t.id === taskId) : -1;
+  if (!snapshot.length) {
+    let hitIdx = taskId ? tasks.findIndex((t) => t.id === taskId) : -1;
     if (hitIdx < 0 && Number.isFinite(index)) hitIdx = index;
-    if (hitIdx >= 0 && hitIdx < list.length) {
-      const next = [...list];
-      next[hitIdx] = {
-        ...next[hitIdx],
-        status,
-        title: title || next[hitIdx].title,
-      };
-      return next;
+    if (hitIdx >= 0 && hitIdx < tasks.length) {
+      tasks = tasks.map((t, i) =>
+        i === hitIdx ? { ...t, status, title: title || t.title } : t,
+      );
+    } else if (title || taskId) {
+      tasks = [
+        ...tasks,
+        {
+          id: taskId || `task_${tasks.length}`,
+          title: title || `步骤 ${tasks.length + 1}`,
+          status,
+        },
+      ];
     }
-    const row: PlanTask = {
-      id: taskId || `task_${Number.isFinite(index) ? index : list.length}`,
-      title: title || `步骤 ${(Number.isFinite(index) ? index : list.length) + 1}`,
-      status,
-    };
-    if (Number.isFinite(index) && index >= list.length) {
-      const padded = [...list];
-      while (padded.length < index) {
-        padded.push({
-          id: `task_${padded.length}`,
-          title: `步骤 ${padded.length + 1}`,
-          status: "pending",
-        });
-      }
-      padded.push(row);
-      return padded;
-    }
-    return [...list, row];
-  };
-
-  tasks = markHit(tasks);
+  }
 
   if (status === "running" && Number.isFinite(index) && index > 0) {
     tasks = tasks.map((t, i) =>
@@ -333,29 +394,9 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
   }
 
   if (type === "shell_job") {
+    // Refresh Jobs panel only — do not inject completion bubbles into the chat.
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("sidekick-shell-job", { detail: ev.data || {} }));
-    }
-    const jobId = String(ev.data?.job_id || "");
-    const status = String(ev.data?.status || "");
-    const phase = String(ev.data?.phase || "");
-    const message = String(ev.data?.message || "").trim();
-    if (
-      jobId &&
-      message &&
-      (phase === "done" || status === "exited" || status === "killed")
-    ) {
-      ctx.appendMsg({
-        id: `job-done-${jobId}`,
-        role: "assistant",
-        content: message,
-        jobNotice: {
-          job_id: jobId,
-          status,
-          exit_code:
-            typeof ev.data?.exit_code === "number" ? (ev.data.exit_code as number) : null,
-        },
-      });
     }
   }
 
@@ -448,23 +489,47 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
       ctx.setActivePlan(null);
     }
   }
-  if (type === "plan_step" && isRootPlanEvent) {
+  // Accept plan_step for the pinned executing plan even if parent_id is
+  // unexpectedly set — otherwise the composer checklist never strikethroughs.
+  if (type === "plan_step") {
     const planId = String(ev.data.plan_id || "");
-    if (planId) ctx.executingPlanIdRef.current = planId;
-    ctx.setPlanConfirm(null);
-    ctx.setActivePlan((prev) => {
-      // A step for a different plan than the one pinned means the panel is
-      // stale (e.g. leftover from a deleted turn) — start fresh from the
-      // event's own task snapshot instead of padding the old list.
-      const base = prev && planId && prev.planId && prev.planId !== planId ? null : prev;
-      return applyPlanStep(base, ev.data, ctx.t("taskPlanTitle"));
-    });
+    const pinned = String(ctx.executingPlanIdRef.current || "");
+    const forPinned = Boolean(planId && pinned && planId === pinned);
+    if (isRootPlanEvent || forPinned) {
+      if (planId) ctx.executingPlanIdRef.current = planId;
+      ctx.setPlanConfirm(null);
+      ctx.setActivePlan((prev) => {
+        const base = prev && planId && prev.planId && prev.planId !== planId ? null : prev;
+        return applyPlanStep(base, ev.data, ctx.t("taskPlanTitle"));
+      });
+    }
   }
   if (type === "plan_done" && isRootPlanEvent) {
     ctx.planPendingRef.current = false;
     ctx.executingPlanIdRef.current = null;
     ctx.setPlanConfirm(null);
-    ctx.setActivePlan(null);
+    const cancelled = Boolean(ev.data.cancelled);
+    // Keep the plan visible with final strikethroughs until the next turn.
+    ctx.setActivePlan((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        mode: "agent",
+        awaitingConfirm: false,
+        tasks: prev.tasks.map((t) => {
+          if (t.status === "done" || t.status === "skipped" || t.status === "error") {
+            return t;
+          }
+          if (t.status === "pending" || t.status === "running") {
+            return {
+              ...t,
+              status: cancelled ? ("cancelled" as const) : ("done" as const),
+            };
+          }
+          return t;
+        }),
+      };
+    });
   }
 
   // Subagent events share the bus — accumulate into subagent transcript.
@@ -564,6 +629,12 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
         ...s,
         transcript: ctx.sealSubassistant(s.transcript || []),
         activity: text || s.activity,
+      }));
+    } else if (childId && type === "goal_judge") {
+      const label = liveEventLabel(type, ev.data as Record<string, unknown>);
+      ctx.patchSubagent(childId, (s) => ({
+        ...s,
+        activity: label || s.activity,
       }));
     } else if (childId && type === "tool_call_delta") {
       const callId = String(ev.data.id || `stream_${ev.data.index ?? 0}`);
@@ -694,9 +765,7 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
         type !== "context_usage" &&
         type !== "llm_start"
       ) {
-        const label =
-          (ev.data.message as string) ||
-          `${type}${ev.data.name ? " " + ev.data.name : ""}`;
+        const label = liveEventLabel(type, ev.data);
         ctx.setLive((prev) =>
           [...prev, { id: uid(), text: `[子] ${label}`, kind: type }].slice(-120),
         );
@@ -714,6 +783,12 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
   }
 
   if (type === "context_usage" || type === "llm_start") {
+    const evSid = String(ev.data.session_id || "");
+    const activeSid = String(ctx.sessionIdRef.current || ctx.sessionId || "");
+    // Ignore usage from a background / previous chat after the user switched.
+    if (evSid && activeSid && evSid !== activeSid) {
+      return;
+    }
     const budget = (ev.data.budget || {}) as Record<string, unknown>;
     ctx.setCtx((c) => {
       const tokens = Number(ev.data.tokens ?? budget.tokens_est ?? c.tokens);
@@ -726,6 +801,11 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
   }
 
   if (type === "compress_start" || type === "compress_progress") {
+    const evSid = String(ev.data.session_id || "");
+    const activeSid = String(ctx.sessionIdRef.current || ctx.sessionId || "");
+    if (evSid && activeSid && evSid !== activeSid) {
+      return;
+    }
     const blocking = ev.data.blocking !== false && ev.data.background !== true;
     if (blocking) {
       ctx.setCompressState({
@@ -743,6 +823,11 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
   }
 
   if (type === "compress") {
+    const evSid = String(ev.data.session_id || "");
+    const activeSid = String(ctx.sessionIdRef.current || ctx.sessionId || "");
+    if (evSid && activeSid && evSid !== activeSid) {
+      return;
+    }
     const after = Number(ev.data.after || 0);
     const before = Number(ev.data.before || 0);
     const blocking = ev.data.blocking !== false && ev.data.background !== true;
@@ -816,8 +901,9 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
       ctx.syncToolPanel(tool, prevCallId);
       // Don't steal the detail panel if the user is inspecting another tool/file.
       if (isFileMutatingTool(tool.name)) {
+        // Only refresh if this tool is already open; never re-open after dismiss.
         ctx.setDetail((d) => {
-          if (d == null) return { type: "tool", tool };
+          if (d == null) return d;
           if (d.type !== "tool") return d;
           const same =
             d.tool.id === tool.id ||
@@ -973,9 +1059,12 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
               : s.transcript,
       }));
     } else if (pendingHost?.subagent) {
+      const nextId =
+        node.id && !isEphemeralCanvasId(node.id) ? node.id : pendingHost.subagent.id;
       ctx.patchSubagent(pendingHost.subagent.id, (s) => ({
         ...s,
         ...node,
+        id: nextId,
         children: s.children,
         transcript:
           s.transcript?.length && !transcript.length
@@ -1144,9 +1233,7 @@ export function handleRuntimeEvent(ev: RuntimeEvent, ctx: RuntimeEventHandlerCtx
     return;
   }
 
-  const label =
-    (ev.data.message as string) ||
-    `${type}${ev.data.name ? " " + ev.data.name : ""}`;
+  const label = liveEventLabel(type, ev.data as Record<string, unknown>);
   ctx.setLive((prev) =>
     [...prev, { id: uid(), text: label, kind: type }].slice(-120),
   );

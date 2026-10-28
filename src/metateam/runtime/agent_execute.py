@@ -199,7 +199,10 @@ class AgentExecuteMixin:
             name, tool, args=args, workspace=workspace
         )
         summary = summarize_tool_call(name, args, workspace=workspace)
-        mutating = bool(needs_ok) or name in ("delegate_task", "delegate_dialogue")
+        # Coordination (delegate / ask) is not a workspace mutation — keep it
+        # available during plan-prep so multi-agent is not blocked by Plan.
+        _COORDINATION = frozenset({"delegate_task", "delegate_dialogue", "ask_agent", "ask_user"})
+        mutating = bool(needs_ok) and name not in _COORDINATION
         # Read-only shell exploration (dir listing, git status, cat, ...) is
         # exploration, not a mutation — allow it during plan-prep the same
         # way list_dir/read_file already are. Still goes through the normal
@@ -497,6 +500,25 @@ class AgentExecuteMixin:
             )
 
         self._ingest_workspace_fact(name, args, content)
+        try:
+            from .tools.extension_budget import is_extension_tool, note_tool_success
+
+            if is_extension_tool(name) and content and not str(content).lstrip().startswith("ERROR"):
+                recent = list(getattr(self.settings, "recent_tool_successes", None) or [])
+                recent = note_tool_success(recent, name)
+                setattr(self.settings, "recent_tool_successes", recent)
+                sess_id = getattr(self, "session_id", None)
+                if sess_id:
+                    try:
+                        from ..services.store import STORE
+
+                        sess = STORE._get_live(str(sess_id)) if hasattr(STORE, "_get_live") else None
+                        if sess is not None:
+                            sess.recent_tool_successes = list(recent)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         self._emit_coherence_tool_events(name, args, content)
 
         blocked_result = _is_blocker_result(content)

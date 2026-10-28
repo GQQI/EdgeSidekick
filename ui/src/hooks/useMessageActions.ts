@@ -43,6 +43,7 @@ import { modelLabel } from "../types/modelSetup";
 import type { ModelSetup } from "../types/modelSetup";
 import type { MsgKey, Locale } from "../i18n";
 import type { ActivePlan } from "../types/plan";
+import { setAskEdges } from "../state/askEdgesStore";
 
 export type MessageActionsDeps = {
   t: (key: MsgKey, ...args: string[]) => string;
@@ -537,6 +538,9 @@ async function newChat() {
   resetContextUsage();
   setBusy(false);
   setSessionId(null);
+  // Re-clear after detaching so a late context_usage event cannot resurrect
+  // the previous chat's meter under the empty draft.
+  queueMicrotask(() => resetContextUsage());
   setToast(t("chatDraftStarted"));
   void refreshSessions(1);
 }
@@ -583,6 +587,7 @@ async function newChatInWorkspace(path: string) {
   if (navEpochRef.current !== nav) return;
   sessionIdRef.current = res.id;
   setSessionId(res.id);
+  resetContextUsage();
   if (res.workspace?.path) {
     setActiveWs(res.workspace);
   }
@@ -688,7 +693,13 @@ async function switchWorkspace(path: string, create = false) {
   setWsBusy(true);
   setSessionId(null);
   sessionIdRef.current = null;
+  detachListener();
   commit([]);
+  setLive([]);
+  setSubs([]);
+  setDetail(null);
+  resetContextUsage();
+  setBusy(false);
   try {
     const res = create ? await setWorkspace(path, true) : await rememberWorkspace(path);
     if (navEpochRef.current !== nav) return;
@@ -699,6 +710,7 @@ async function switchWorkspace(path: string, create = false) {
     setWorkspaces(res.items);
     await refreshSessions(1, { workspace: active.path, workspaceId: active.id || "" });
     if (navEpochRef.current !== nav) return;
+    resetContextUsage();
     setFsRefresh((n) => n + 1);
     setToast(`工作区：${active.path}`);
     void fetchHealth().then(setHealth).catch(() => undefined);
@@ -878,6 +890,7 @@ async function submitEdit(msgId: string, restoreFiles: boolean) {
   setDetail(null);
   setSubs([]);
   setLive([]);
+  setAskEdges([]);
   // The truncated turns may include the plan that is pinned above the composer.
   setActivePlan(null);
   setApproval(null);
