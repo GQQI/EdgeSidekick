@@ -12,7 +12,7 @@ files:
   - package.json
   - build/icon.png
 win:
-  icon: build/icon.png
+  icon: build/icon.ico
   executableName: EdgeSidekick
   extraResources:
     - from: ../packaging/windows/payload
