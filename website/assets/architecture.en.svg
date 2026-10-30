@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="EdgeSidekick task workflow: planning, reasoning and action, tool calls, and feedback">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10Z" fill="#4f7fca"/>
+    </marker>
+    <style>
+      .t{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;fill:#101a2b}
+      .muted{fill:#66768a}
+      .green{fill:#2f6fed}
+      .label{font-size:18px;font-weight:700}
+      .body{font-size:16px}
+      .small{font-size:14px}
+      .line{fill:none;stroke:#507fd0;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrow)}
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" rx="24" fill="#f2f5fa"/>
+
+  <!-- Planning -->
+  <g class="arch-node node-plan">
+  <text class="t green label" x="52" y="118">01  Task planning</text>
+  <rect x="40" y="144" width="285" height="574" rx="20" fill="#eef3fa" stroke="#d2deef" stroke-width="2"/>
+  <text class="t label" x="68" y="194">Understand goals and plan</text>
+  <text class="t muted body" x="68" y="231">Extract goals &amp; constraints</text>
+  <path d="M68 259H297" stroke="#dbe4f1" stroke-width="2"/>
+  <circle cx="82" cy="306" r="15" fill="#dce8fa"/><text class="t green small" x="82" y="311" text-anchor="middle" font-weight="700">1</text>
+  <text class="t label" x="110" y="312">Identify intent</text>
+  <text class="t muted small" x="110" y="339">Define scope and inputs</text>
+  <circle cx="82" cy="397" r="15" fill="#dce8fa"/><text class="t green small" x="82" y="402" text-anchor="middle" font-weight="700">2</text>
+  <text class="t label" x="110" y="403">Break down steps</text>
+  <text class="t muted small" x="110" y="430">Set order and approach</text>
+  <circle cx="82" cy="488" r="15" fill="#dce8fa"/><text class="t green small" x="82" y="493" text-anchor="middle" font-weight="700">3</text>
+  <text class="t label" x="110" y="494">Build a plan</text>
+  <text class="t muted small" x="110" y="521">Choose models and tools</text>
+  <rect x="65" y="576" width="235" height="94" rx="14" fill="#fff" stroke="#d7e3f3"/>
+  <text class="t green small" x="84" y="608" font-weight="700">Task status</text>
+  <text class="t muted small" x="84" y="638">Queued · Active · Done</text>
+  </g>
+
+  <!-- Reasoning and action loop -->
+  <g class="arch-node node-loop-title">
+  <text class="t green label" x="380" y="118">02  Reasoning &amp; action loop</text>
+  </g>
+  <rect x="365" y="144" width="840" height="574" rx="28" fill="#eaf1fd" stroke="#c6d7f0" stroke-width="2"/>
+  <ellipse cx="785" cy="447" rx="350" ry="232" fill="#f5f8fd" stroke="#dce7f7" stroke-width="2"/>
+
+  <!-- Loop connectors -->
+  <path class="line draw draw-1" pathLength="1" d="M325 267H408"/>
+  <path class="line draw draw-2" pathLength="1" d="M705 267H776"/>
+  <path class="line draw draw-3" pathLength="1" d="M953 330C1012 350 1058 374 1067 413"/>
+  <path class="line draw draw-4" pathLength="1" d="M1004 520C980 563 942 587 906 598"/>
+  <path class="line draw draw-5" pathLength="1" d="M664 600C606 585 563 555 551 523"/>
+  <path class="line draw draw-6" pathLength="1" d="M540 408C548 360 592 330 627 328"/>
+
+  <!-- Cycle nodes -->
+  <g class="arch-node node-context">
+  <rect x="418" y="205" width="287" height="125" rx="18" fill="#eaf0fb" stroke="#cbd7ed" stroke-width="2"/>
+  <text class="t green label" x="444" y="242">2.1  Context summary</text>
+  <text class="t muted body" x="444" y="276">Retrieve and compress context</text>
+  <text class="t muted small" x="444" y="304">Keep task context focused</text>
+  </g>
+
+  <g class="arch-node node-thought">
+  <rect x="776" y="205" width="352" height="125" rx="18" fill="#fff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t green label" x="802" y="242">2.2  Reasoning &amp; decision</text>
+  <text class="t muted body" x="802" y="276">Reason over plan and context</text>
+  <text class="t muted small" x="802" y="304">Answer or choose an action</text>
+  </g>
+
+  <g class="arch-node node-approval">
+  <rect x="926" y="413" width="250" height="132" rx="18" fill="#edf3ff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t" x="952" y="451" fill="#2f6fed" font-size="18" font-weight="700">2.3  Approval</text>
+  <text class="t muted body" x="952" y="485">File writes and commands</text>
+  <text class="t muted small" x="952" y="514">Confirm before execution</text>
+  </g>
+
+  <g class="arch-node node-action">
+  <rect x="664" y="558" width="304" height="118" rx="20" fill="#d9e7ff" stroke="#7eaaff" stroke-width="3"/>
+  <text class="t green" x="692" y="601" font-size="23" font-weight="800">2.4  Take action</text>
+  <text class="t muted body" x="692" y="635">Call tools to advance the task</text>
+  </g>
+
+  <g class="arch-node node-observe">
+  <rect x="418" y="408" width="270" height="126" rx="18" fill="#fff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t green label" x="444" y="447">2.5  Observe results</text>
+  <text class="t muted body" x="444" y="481">Check output and status</text>
+  <text class="t muted small" x="444" y="509">Continue if incomplete</text>
+  </g>
+
+  <g class="arch-node node-cycle-label">
+  <text class="t green" x="793" y="430" text-anchor="middle" font-size="21" font-weight="800">Task loop</text>
+  <text class="t muted small" x="793" y="459" text-anchor="middle">Think · act · observe</text>
+  <text class="t muted small" x="793" y="486" text-anchor="middle">Until done or stopped</text>
+  </g>
+
+  <!-- Capabilities -->
+  <g class="arch-node node-capabilities-title">
+  <text class="t green label" x="1240" y="118">03  Capabilities</text>
+  </g>
+  <g class="arch-node node-tools">
+  <rect x="1230" y="144" width="330" height="212" rx="20" fill="#edf3ff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t label" x="1258" y="184">Tools</text>
+  <text class="t muted body" x="1258" y="220">Files  Read, write, search</text>
+  <text class="t muted body" x="1258" y="253">Terminal  Commands &amp; tasks</text>
+  <text class="t muted body" x="1258" y="286">Browser  Web interactions</text>
+  <text class="t muted body" x="1258" y="319">Search  Code &amp; web</text>
+  </g>
+
+  <g class="arch-node node-extensions">
+  <rect x="1230" y="379" width="330" height="148" rx="20" fill="#edf2fc" stroke="#d3def0" stroke-width="2"/>
+  <text class="t label" x="1258" y="420">Extensions</text>
+  <text class="t muted body" x="1258" y="457">Skills  Load on demand</text>
+  <text class="t muted body" x="1258" y="490">MCP  Connect services</text>
+  </g>
+
+  <g class="arch-node node-agents">
+  <rect x="1230" y="550" width="330" height="168" rx="20" fill="#eef2fb" stroke="#cfdbee" stroke-width="2"/>
+  <text class="t label" x="1258" y="591">Agent collaboration</text>
+  <text class="t muted body" x="1258" y="628">Delegate subtasks</text>
+  <text class="t muted body" x="1258" y="661">Run in parallel, combine results</text>
+  </g>
+  <path class="line draw draw-7" pathLength="1" d="M968 617H1215"/>
+  <path class="draw draw-12" pathLength="1" d="M1215 250V630" fill="none" stroke="#507fd0" stroke-width="3" stroke-linecap="round"/>
+  <path class="line draw draw-8" pathLength="1" d="M1215 250H1228"/>
+  <path class="line draw draw-9" pathLength="1" d="M1215 450H1228"/>
+  <path class="line draw draw-10" pathLength="1" d="M1215 630H1228"/>
+
+  <!-- Delivery and learning -->
+  <path class="line draw draw-11" pathLength="1" d="M553 534C525 650 425 730 360 760V790C350 824 270 849 145 851"/>
+  <g class="arch-node node-feedback">
+  <text class="t green label" x="52" y="802">04  Delivery &amp; learning</text>
+  <rect x="40" y="822" width="1520" height="58" rx="18" fill="#e9eff8" stroke="#d6e0ed" stroke-width="2"/>
+  <text class="t label" x="280" y="858" text-anchor="middle">Deliver result</text>
+  <text class="t label" x="590" y="858" text-anchor="middle">Update memory</text>
+  <text class="t label" x="900" y="858" text-anchor="middle">Build skills</text>
+  <text class="t label" x="1210" y="858" text-anchor="middle">Improve coordination</text>
+  </g>
+  <path d="M1516 822V768C1516 743 1495 730 1473 720" fill="none" stroke="#5b87d1" stroke-width="2.5" stroke-dasharray="7 7" marker-end="url(#arrow)"/>
+</svg>

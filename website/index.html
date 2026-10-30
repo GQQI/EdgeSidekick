@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="EdgeSidekick — 本地多智能体 AI 工作台。开源、本地优先。">
-<title>EdgeSidekick · 本地多智能体 AI 工作台</title>
+<meta name="description" content="EdgeSidekick — 开源、本地优先的 AI 工作台。">
+<title>EdgeSidekick · 本地 AI 工作台</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -32,12 +32,11 @@
   <header class="hero">
     <div class="wrap hero-grid">
       <div class="reveal">
-        <span class="hero-badge"><i></i><span data-i18n="badge">开源 · 本地优先 · 多智能体</span></span>
-        <h1><span class="grad">EdgeSidekick</span><br><span data-i18n="hero_title_sub">本地多智能体 AI 工作台</span></h1>
-        <p class="hero-lead" data-i18n="hero_lead">打开本机文件夹，在浏览器或桌面端与主 / 子智能体协作。变更需确认；数据与密钥留在本地。</p>
+        <span class="hero-badge"><i></i><span data-i18n="badge">开源 · 本地优先</span></span>
+        <h1><span class="grad">EdgeSidekick</span><br><span data-i18n="hero_title_sub">本地 AI 工作台</span></h1>
+        <p class="hero-lead" data-i18n="hero_lead">面向项目任务的本地 AI 工作台，整合模型、浏览器与可扩展工具。</p>
         <div class="hero-cta">
           <a class="btn btn-p" href="#download" data-i18n="hero_cta1">下载 Windows 安装包</a>
-          <a class="btn btn-g" href="#architecture" data-i18n="hero_cta2">查看核心架构</a>
         </div>
       </div>
       <div class="shot-frame reveal reveal-d2">
@@ -47,31 +46,15 @@
     </div>
   </header>
 
-  <section class="section" id="highlights">
-    <div class="wrap">
-      <div class="reveal">
-        <span class="eyebrow">Highlights</span>
-        <h2 class="sec-title" data-i18n="home_hi_title">一句话能力</h2>
-        <p class="sec-sub" data-i18n="home_hi_sub">本地工作区、多智能体协作、按需扩展——三条短亮点。</p>
-      </div>
-      <div class="highlights">
-        <div class="highlight reveal reveal-d1"><div class="hk" data-i18n="hk1">LOCAL</div><h3 data-i18n="ht1">本地工作区</h3><p data-i18n="hd1">打开本机文件夹；历史与 Memory 留在你控制的磁盘。</p></div>
-        <div class="highlight reveal reveal-d2"><div class="hk" data-i18n="hk2">AGENTS</div><h3 data-i18n="ht2">多智能体协作</h3><p data-i18n="hd2">主智能体编排子智能体，变更需人工确认。</p></div>
-        <div class="highlight reveal reveal-d3"><div class="hk" data-i18n="hk3">EXTEND</div><h3 data-i18n="ht3">Skills · MCP · 桌面</h3><p data-i18n="hd3">按需扩展工具；Windows / 麒麟安装包可用。</p></div>
-      </div>
-    </div>
-  </section>
-
   <section class="section alt" id="architecture">
     <div class="wrap">
       <div class="reveal">
-        <span class="eyebrow">Architecture</span>
-        <h2 class="sec-title" data-i18n="arch_title">核心算法架构</h2>
-        <p class="sec-sub" data-i18n="arch_sub">意图理解与规划 → 推理-行动循环（工具 / 插件 / Skills / 多智能体）→ 交付 → 反馈与自我进化。</p>
+        <span class="eyebrow" data-i18n="arch_eyebrow">HOW IT WORKS</span>
+        <h2 class="sec-title" data-i18n="arch_title">任务执行流程</h2>
       </div>
       <div class="arch reveal reveal-d1">
         <!-- Inline SVG host: never an <a href> download -->
-        <div class="arch-frame" id="archInline" role="img" aria-label="EdgeSidekick core algorithm architecture"></div>
+        <div class="arch-frame" id="archInline" role="img" aria-label="EdgeSidekick task workflow"></div>
       </div>
     </div>
   </section>
@@ -79,54 +62,25 @@
   <section class="section" id="features">
     <div class="wrap">
       <div class="reveal">
-        <span class="eyebrow">Capabilities</span>
-        <h2 class="sec-title" data-i18n="home_feat_title">核心能力</h2>
-        <p class="sec-sub" data-i18n="home_feat_sub">对齐产品真实能力：工作台、多智能体、模型、浏览器沙盒、Skills、桌面端与本地优先。</p>
+        <span class="eyebrow" data-i18n="features_eyebrow">FEATURES</span>
+        <h2 class="sec-title" data-i18n="home_feat_title">功能概览</h2>
       </div>
-      <div class="feat-list">
-        <div class="feat-row reveal"><div class="feat-kicker" data-i18n="k1">WORKSPACE</div><div><h3 data-i18n="t1">工作台与工作区</h3><p data-i18n="d1">打开本地文件夹作为工作区。SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工作区文件联动的详情面板。</p></div></div>
-        <div class="feat-row reveal"><div class="feat-kicker" data-i18n="k2">AGENTS</div><div><h3 data-i18n="t2">多智能体协作</h3><p data-i18n="d2">主智能体编排子智能体：单人回答、并行分工、接力流水线或多视角讨论；计划卡展示分工，失败可转交。</p></div></div>
-        <div class="feat-row reveal"><div class="feat-kicker" data-i18n="k3">MODELS</div><div><h3 data-i18n="t3">模型与密钥</h3><p data-i18n="d3">主模型 / 子智能体 / 压缩模型可分开配置。自备 OpenAI 兼容、DeepSeek、Ollama 等 API；密钥本机加密存储。</p></div></div>
-        <div class="feat-row reveal"><div class="feat-kicker" data-i18n="k4">BROWSER</div><div><h3 data-i18n="t4">浏览器沙盒</h3><p data-i18n="d4">桌面 Electron BrowserView 实况预览；Web 端 Playwright。Select Mode 点选 DOM，Agent 使用 browser_* 工具。</p></div></div>
-        <div class="feat-row reveal"><div class="feat-kicker" data-i18n="k5">EXTEND</div><div><h3 data-i18n="t5">Skills · MCP · 插件</h3><p data-i18n="d5">技能包按需 /skill 调用；设置中连接 MCP；插件市场安装扩展（独立进程，写操作需确认）。</p></div></div>
-        <div class="feat-row reveal"><div class="feat-kicker" data-i18n="k6">DESKTOP</div><div><h3 data-i18n="t6">桌面端与本地优先</h3><p data-i18n="d6">Windows / 麒麟安装包或 start-desktop.bat。历史、Memory、配置均在本机磁盘；默认仅绑定 127.0.0.1。</p></div></div>
-      </div>
-
-      <div class="split reveal">
-        <div class="panel">
-          <h3 data-i18n="local_title">本机默认安全</h3>
-          <ul class="check">
-            <li data-i18n="local_1">仅绑定 127.0.0.1</li>
-            <li data-i18n="local_2">本地令牌鉴权（X-Sidekick-Token）</li>
-            <li data-i18n="local_3">模型 API Key 加密存储</li>
-            <li data-i18n="local_4">Shell / 写文件走审批门</li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3 data-i18n="slash_title">常用斜杠命令</h3>
-          <p class="mono" style="font-size:13px;color:var(--muted);line-height:1.8" data-i18n="slash_body">/help · /new · /clear · /skills · /skill &lt;name&gt; · /memory · /history · /browser · /stop</p>
-        </div>
-      </div>
-
-      <div class="reveal" style="margin-top:48px">
-        <h2 class="sec-title" style="font-size:26px" data-i18n="how_title">上手流程</h2>
-      </div>
-      <div class="flow">
-        <div class="flow-item reveal reveal-d1"><div class="n">01</div><h3 data-i18n="s1t">打开工作区</h3><p data-i18n="s1d">选择本地文件夹；历史与 Memory 落在你控制的磁盘。</p></div>
-        <div class="flow-item reveal reveal-d2"><div class="n">02</div><h3 data-i18n="s2t">配置模型</h3><p data-i18n="s2d">设置主 / 子 / 压缩模型与 API Key，或接入 Ollama。</p></div>
-        <div class="flow-item reveal reveal-d3"><div class="n">03</div><h3 data-i18n="s3t">对话与确认</h3><p data-i18n="s3d">写文件、Shell、记忆等变更先征求批准再执行。</p></div>
-        <div class="flow-item reveal reveal-d4"><div class="n">04</div><h3 data-i18n="s4t">按需扩展</h3><p data-i18n="s4d">挂载 Skills、浏览器沙盒、MCP 与插件。</p></div>
+      <div class="feature-grid">
+        <article class="feature-card reveal reveal-d1"><span class="feature-icon">01</span><h3 data-i18n="f_workspace_t">项目工作区</h3><p data-i18n="f_workspace_d">项目文件、对话与任务集中管理。</p></article>
+        <article class="feature-card reveal reveal-d2"><span class="feature-icon">02</span><h3 data-i18n="f_agent_t">智能体协作</h3><p data-i18n="f_agent_d">拆分子任务，并行执行并汇总结果。</p></article>
+        <article class="feature-card reveal reveal-d3"><span class="feature-icon">03</span><h3 data-i18n="f_models_t">模型配置</h3><p data-i18n="f_models_d">支持 OpenAI 兼容接口、DeepSeek、Ollama 等。</p></article>
+        <article class="feature-card reveal reveal-d1"><span class="feature-icon">04</span><h3 data-i18n="f_browser_t">浏览器操作</h3><p data-i18n="f_browser_d">内置网页浏览与页面元素交互能力。</p></article>
+        <article class="feature-card reveal reveal-d2"><span class="feature-icon">05</span><h3 data-i18n="f_extend_t">工具扩展</h3><p data-i18n="f_extend_d">通过 Skills、MCP 和插件接入额外工具。</p></article>
+        <article class="feature-card reveal reveal-d3"><span class="feature-icon">06</span><h3 data-i18n="f_desktop_t">桌面应用</h3><p data-i18n="f_desktop_d">提供 Windows、麒麟与 Linux 版本。</p></article>
       </div>
     </div>
   </section>
 
-
   <section class="section alt" id="demo">
     <div class="wrap">
       <div class="reveal">
-        <span class="eyebrow">Demo</span>
-        <h2 class="sec-title" data-i18n="demo_title">产品演示</h2>
-        <p class="sec-sub" data-i18n="demo_sub">本地工作台一览：打开工作区、多智能体协作与审批确认。</p>
+        <span class="eyebrow" data-i18n="demo_eyebrow">PREVIEW</span>
+        <h2 class="sec-title" data-i18n="demo_title">界面演示</h2>
       </div>
       <div class="video-frame reveal reveal-d1">
         <video
@@ -139,29 +93,6 @@
           <source src="assets/edgesidekick-intro.mp4" type="video/mp4">
         </video>
       </div>
-      <p class="video-note reveal reveal-d2" data-i18n="demo_note">介绍片约 46 秒 · 也可打开全屏动画版。</p>
-      <div class="reveal reveal-d2" style="margin-top:12px">
-        <a class="btn btn-g" href="promo.html" target="_blank" rel="noopener" data-i18n="demo_open">全屏动画版</a>
-      </div>
-    </div>
-  </section>
-
-  <section class="section" id="screenshots">
-    <div class="wrap">
-      <div class="reveal">
-        <span class="eyebrow">Preview</span>
-        <h2 class="sec-title" data-i18n="shots_title">界面预览</h2>
-      </div>
-      <div class="shots">
-        <figure class="shot-card reveal reveal-d1">
-          <img src="assets/gallery-workbench-light.png" alt="Light workbench">
-          <figcaption><b data-i18n="shot1">浅色工作台</b><span>LIGHT</span></figcaption>
-        </figure>
-        <figure class="shot-card reveal reveal-d2">
-          <img src="assets/gallery-workbench-dark.png" alt="Dark workbench">
-          <figcaption><b data-i18n="shot2">深色工作台</b><span>DARK</span></figcaption>
-        </figure>
-      </div>
     </div>
   </section>
 
@@ -170,30 +101,26 @@
       <div class="reveal">
         <span class="eyebrow">Download</span>
         <h2 class="sec-title" data-i18n="dl_page_title">下载</h2>
-        <p class="sec-sub" data-i18n="dl_page_sub">获取 Windows 安装包，或从源码运行。</p>
       </div>
 
       <div class="card reveal" id="win" style="margin-top:24px">
         <span class="os">WINDOWS · x64</span>
         <h3 data-i18n="dl_win_title">Windows 安装包</h3>
-        <p data-i18n="dl_win_desc">双击安装，无需预装 Python / Node。目标机可离线安装。</p>
+        <p data-i18n="dl_win_desc">适用于 Windows x64 的桌面安装包。</p>
         <div class="dl-hero">
-          <a class="btn btn-p" id="dlSetup" href="https://github.com/GQQI/EdgeSidekick/releases/latest/download/EdgeSidekick-Setup-0.3.1-win-x64.exe" data-i18n="dl_btn">下载 Setup.exe</a>
+          <a class="btn btn-p" id="dlSetup" href="https://github.com/GQQI/EdgeSidekick/releases/latest/download/EdgeSidekick-Setup-0.3.1-win-x64.exe" data-i18n="dl_btn">下载安装包</a>
           <a class="btn btn-g" id="dlZip" href="https://github.com/GQQI/EdgeSidekick/releases/latest/download/EdgeSidekick-0.3.1-win-x64.zip" data-i18n="dl_zip">便携版 ZIP</a>
           <a class="btn btn-g" id="dlReleases" href="https://github.com/GQQI/EdgeSidekick/releases" data-i18n="dl_releases">GitHub Releases</a>
         </div>
-        <p class="dl-note" data-i18n="dl_note">安装包来自 GitHub Releases 最新资源（EdgeSidekick-Setup-*-win-x64.exe）。本地构建产物：desktop/dist/。若 Releases 尚无资源，请先发布 Setup，或按下方从源码运行。</p>
-        <p class="mono" style="margin-top:12px;font-size:13px;color:var(--muted)">Expected asset: EdgeSidekick-Setup-0.3.1-win-x64.exe | build: desktop/dist/</p>
       </div>
 
       <div class="grid-2 reveal">
-        <div class="card"><span class="os">KYLIN · LINUX</span><h3 data-i18n="d2t">麒麟 / Linux</h3><p data-i18n="d2d">deb / AppImage / tar.gz，含 arm64。见 packaging/kylin/README.md。</p><span class="fmt">.deb / AppImage</span></div>
-        <div class="card"><span class="os">SOURCE</span><h3 data-i18n="d3t">源码直跑</h3><p data-i18n="d3d">Python 3.10+ · Node 18+；或 start-desktop.bat。</p><span class="fmt">python main.py</span></div>
+        <div class="card"><span class="os">KYLIN · LINUX</span><h3 data-i18n="d2t">麒麟 / Linux</h3><p data-i18n="d2d">提供 deb、AppImage 与 tar.gz 安装包。</p><span class="fmt">.deb / AppImage</span></div>
+        <div class="card"><span class="os">SOURCE</span><h3 data-i18n="d3t">源码运行</h3><p data-i18n="d3d">需要 Python 3.10+ 与 Node 18+。</p><span class="fmt">python main.py</span></div>
       </div>
 
       <div class="start-box reveal">
         <h3 data-i18n="start_title">从源码启动</h3>
-        <p data-i18n="start_sub">选择工作区 → 配置模型与 API Key → 开始对话。</p>
         <div class="start-cmd">
 <span class="cm"># Windows / macOS / Linux</span><br>
 <span class="p">$</span> python -m pip install -r requirements.txt<br>
@@ -209,11 +136,11 @@
   <div class="foot">
     <div class="foot-brand">
       <img src="assets/brand-icon.png" width="24" height="24" alt="">
-      <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+      <span data-i18n="foot">EdgeSidekick</span>
     </div>
     <div class="foot-links">
       <a href="#demo" data-i18n="demo_title">产品演示</a>
-      <a href="#architecture" data-i18n="arch_title">核心算法架构</a>
+      <a href="#features" data-i18n="home_feat_title">功能概览</a>
       <a href="#download" data-i18n="dl_page_title">下载</a>
       <a href="docs/user-guide.zh.html" data-i18n-guide data-i18n="nav_docs">手册</a>
       <a href="https://github.com/GQQI/EdgeSidekick">GitHub</a>

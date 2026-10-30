@@ -1,176 +1,139 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 730" width="1280" height="730" role="img" aria-label="EdgeSidekick core algorithm architecture">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="EdgeSidekick 任务执行流程：任务规划、推理行动循环、工具调用与结果反馈">
   <defs>
-    <linearGradient id="gBlue" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#3b82f6"/>
-      <stop offset="100%" stop-color="#1d4ed8"/>
-    </linearGradient>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10Z" fill="#4f7fca"/>
     </marker>
-    <marker id="arrBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 0 L10 5 L0 10 z" fill="#2563eb"/>
-    </marker>
-    <filter id="sh" x="-4%" y="-4%" width="108%" height="108%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.06"/>
-    </filter>
     <style>
-      .t{font-family:Segoe UI,PingFang SC,Microsoft YaHei,system-ui,sans-serif}
-      .tb{font-weight:700}
-      .tm{font-weight:600}
+      .t{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;fill:#101a2b}
+      .muted{fill:#66768a}
+      .green{fill:#2f6fed}
+      .label{font-size:18px;font-weight:700}
+      .body{font-size:16px}
+      .small{font-size:14px}
+      .line{fill:none;stroke:#507fd0;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrow)}
     </style>
   </defs>
 
-  <rect width="1280" height="730" rx="16" fill="#f8fafc" stroke="#e6ebf2" stroke-width="1"/>
-  <text class="t tb" x="640" y="34" text-anchor="middle" fill="#0f172a" font-size="20">EdgeSidekick 核心算法架构</text>
-  <text class="t" x="640" y="52" text-anchor="middle" fill="#64748b" font-size="11">Core Algorithm Architecture · Intent → Reason-Act → Deliver → Evolve</text>
+  <rect width="1600" height="900" rx="24" fill="#f2f5fa"/>
 
-  <!-- ===== 1 Intent / Plan (left) ===== -->
-  <g filter="url(#sh)">
-    <rect x="24" y="80" width="250" height="420" rx="16" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <!-- Planning -->
+  <g class="arch-node node-plan">
+  <text class="t green label" x="52" y="118">01　任务规划</text>
+  <rect x="40" y="144" width="285" height="574" rx="20" fill="#eef3fa" stroke="#d2deef" stroke-width="2"/>
+  <text class="t label" x="68" y="194">理解目标，制定步骤</text>
+  <text class="t muted body" x="68" y="231">从请求中提取目标与约束</text>
+  <path d="M68 259H297" stroke="#dbe4f1" stroke-width="2"/>
+  <circle cx="82" cy="306" r="15" fill="#dce8fa"/><text class="t green small" x="82" y="311" text-anchor="middle" font-weight="700">1</text>
+  <text class="t label" x="110" y="312">识别意图</text>
+  <text class="t muted small" x="110" y="339">明确任务范围与输入</text>
+  <circle cx="82" cy="397" r="15" fill="#dce8fa"/><text class="t green small" x="82" y="402" text-anchor="middle" font-weight="700">2</text>
+  <text class="t label" x="110" y="403">拆分步骤</text>
+  <text class="t muted small" x="110" y="430">安排顺序与执行方式</text>
+  <circle cx="82" cy="488" r="15" fill="#dce8fa"/><text class="t green small" x="82" y="493" text-anchor="middle" font-weight="700">3</text>
+  <text class="t label" x="110" y="494">建立计划</text>
+  <text class="t muted small" x="110" y="521">选择模型与可用能力</text>
+  <rect x="65" y="576" width="235" height="94" rx="14" fill="#fff" stroke="#d7e3f3"/>
+  <text class="t green small" x="84" y="608" font-weight="700">任务状态</text>
+  <text class="t muted small" x="84" y="638">待执行 · 进行中 · 已完成</text>
   </g>
-  <rect x="24" y="80" width="250" height="58" rx="16" fill="url(#gBlue)"/>
-  <rect x="24" y="118" width="250" height="20" fill="url(#gBlue)"/>
-  <text class="t tb" x="149" y="104" text-anchor="middle" fill="#fff" font-size="14">1 意图理解与规划</text>
-  <text class="t" x="149" y="124" text-anchor="middle" fill="#eff6ff" font-size="11">Intent · Plan · Ground</text>
 
-  <rect x="40" y="156" width="218" height="96" rx="12" fill="#fff" stroke="#bfdbfe"/>
-  <text class="t tb" x="52" y="176" fill="#2563eb" font-size="12">轮次分级 · Turn grading</text>
-  <text class="t" x="52" y="196" fill="#475569" font-size="10">闲聊 · 定点修改 · 结构增补 · 大规模重构</text>
-  <text class="t" x="52" y="212" fill="#64748b" font-size="10">Small talk · Patch · Extend · Rebuild</text>
-  <text class="t" x="52" y="236" fill="#64748b" font-size="10">越大变更越优先对齐现有代码</text>
-
-  <rect x="40" y="264" width="218" height="90" rx="12" fill="#fff" stroke="#bfdbfe"/>
-  <text class="t tb" x="52" y="286" fill="#2563eb" font-size="12">任务规划 · Task planning</text>
-  <text class="t" x="52" y="308" fill="#475569" font-size="10">信息收集 · 步骤拆解 · 执行确认</text>
-  <text class="t" x="52" y="326" fill="#64748b" font-size="10">Gather · Break down · Confirm</text>
-
-  <rect x="40" y="368" width="218" height="110" rx="12" fill="#fff" stroke="#bfdbfe"/>
-  <text class="t tb" x="52" y="390" fill="#2563eb" font-size="12">澄清与落地 · Clarify &amp; ground</text>
-  <text class="t" x="52" y="412" fill="#475569" font-size="10">信息不足时追问澄清</text>
-  <text class="t" x="52" y="430" fill="#475569" font-size="10">注入项目规则与工作区约束</text>
-  <text class="t" x="52" y="454" fill="#64748b" font-size="10">Ask · Inject workspace rules</text>
-
-  <!-- Arrow 1 -> 2 -->
-  <path d="M274 290 H300" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#arrBlue)"/>
-
-  <!-- ===== 2 Reason-Act loop (center) ===== -->
-  <g filter="url(#sh)">
-    <rect x="300" y="80" width="520" height="500" rx="16" fill="#fff" stroke="#e2e8f0" stroke-width="1.5"/>
+  <!-- Reasoning and action loop -->
+  <g class="arch-node node-loop-title">
+  <text class="t green label" x="380" y="118">02　推理与行动循环</text>
   </g>
-  <text class="t tb" x="560" y="106" text-anchor="middle" fill="#0f172a" font-size="15">2 推理-行动循环 · Reason–Act Loop</text>
-  <text class="t" x="560" y="124" text-anchor="middle" fill="#64748b" font-size="10">直至完成或阻塞 / 人工停止 · Until done, blocked, or stopped</text>
+  <rect x="365" y="144" width="840" height="574" rx="28" fill="#eaf1fd" stroke="#c6d7f0" stroke-width="2"/>
+  <ellipse cx="785" cy="447" rx="350" ry="232" fill="#f5f8fd" stroke="#dce7f7" stroke-width="2"/>
 
-  <!-- 2.1 Context compression -->
-  <rect x="320" y="144" width="230" height="118" rx="12" fill="#f0f9ff" stroke="#7dd3fc"/>
-  <text class="t tb" x="334" y="166" fill="#0369a1" font-size="12">2.1 上下文压缩</text>
-  <text class="t" x="334" y="182" fill="#0369a1" font-size="10">Context compression · &gt;70%</text>
-  <text class="t" x="334" y="202" fill="#475569" font-size="10">System 静态 · Key 不摘要 · Memory 摘要</text>
-  <text class="t" x="334" y="218" fill="#475569" font-size="10">Recent 原文 · This turn 保护</text>
-  <text class="t" x="334" y="240" fill="#64748b" font-size="10">整理 · 摘要 · 裁剪最旧消息</text>
+  <!-- Loop connectors -->
+  <path class="line draw draw-1" pathLength="1" d="M325 267H408"/>
+  <path class="line draw draw-2" pathLength="1" d="M705 267H776"/>
+  <path class="line draw draw-3" pathLength="1" d="M953 330C1012 350 1058 374 1067 413"/>
+  <path class="line draw draw-4" pathLength="1" d="M1004 520C980 563 942 587 906 598"/>
+  <path class="line draw draw-5" pathLength="1" d="M664 600C606 585 563 555 551 523"/>
+  <path class="line draw draw-6" pathLength="1" d="M540 408C548 360 592 330 627 328"/>
 
-  <!-- 2.2 Thinking -->
-  <rect x="570" y="144" width="230" height="118" rx="12" fill="#eff6ff" stroke="#93c5fd"/>
-  <text class="t tb" x="584" y="166" fill="#1d4ed8" font-size="12">2.2 思考 · Thinking</text>
-  <text class="t" x="584" y="186" fill="#475569" font-size="10">主模型推理，结合 Memory 与上下文</text>
-  <text class="t" x="584" y="204" fill="#475569" font-size="10">决定直接回答或调用工具</text>
-  <text class="t" x="584" y="228" fill="#64748b" font-size="10">Answer · or · Tool call</text>
-
-  <!-- 2.3 Approval -->
-  <rect x="570" y="282" width="230" height="100" rx="12" fill="#fef2f2" stroke="#fca5a5"/>
-  <text class="t tb" x="584" y="304" fill="#dc2626" font-size="12">2.3 审批 · Approval</text>
-  <text class="t" x="584" y="324" fill="#475569" font-size="10">高风险：写文件 · 删文件 · 跑命令</text>
-  <text class="t" x="584" y="342" fill="#475569" font-size="10">只读操作可跳过审批门</text>
-  <text class="t" x="584" y="364" fill="#64748b" font-size="10">Writes / Shell gated · Reads bypass</text>
-
-  <!-- 2.4 Action -->
-  <rect x="570" y="402" width="230" height="72" rx="12" fill="#ecfdf5" stroke="#6ee7b7"/>
-  <text class="t tb" x="584" y="426" fill="#047857" font-size="12">2.4 行动 · Action</text>
-  <text class="t" x="584" y="448" fill="#475569" font-size="10">执行选定工具 / 插件 / Skills / 子智能体</text>
-
-  <!-- 2.5 Observation -->
-  <rect x="320" y="402" width="230" height="72" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
-  <text class="t tb" x="334" y="426" fill="#334155" font-size="12">2.5 观察结果 · Observe</text>
-  <text class="t" x="334" y="448" fill="#64748b" font-size="10">写回上下文 · 过长输出截断</text>
-
-  <!-- 2.6 Goal check -->
-  <rect x="320" y="282" width="230" height="100" rx="12" fill="#fff7ed" stroke="#fdba74"/>
-  <text class="t tb" x="334" y="304" fill="#c2410c" font-size="12">2.6 目标判定 · Goal check</text>
-  <text class="t" x="334" y="324" fill="#475569" font-size="10">未完成 → 回到 2.1</text>
-  <text class="t" x="334" y="342" fill="#475569" font-size="10">完成 / 阻塞 → 交付</text>
-  <text class="t" x="334" y="364" fill="#64748b" font-size="10">Loop · Deliver · or continuous</text>
-
-  <!-- Loop arrows inside -->
-  <path d="M550 203 H570" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <path d="M685 262 V282" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <path d="M685 382 V402" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <path d="M570 438 H550" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <path d="M435 402 V382" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <path d="M320 332 H300 H290 V203 H320" stroke="#94a3b8" stroke-width="1.5" fill="none" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-  <text class="t" x="292" y="270" fill="#94a3b8" font-size="9" transform="rotate(-90 292 270)">loop</text>
-
-  <!-- Arrow Action -> External -->
-  <path d="M800 438 H830" stroke="#047857" stroke-width="2" fill="none" marker-end="url(#arrBlue)"/>
-
-  <!-- ===== External capabilities (right) ===== -->
-  <g filter="url(#sh)">
-    <rect x="830" y="80" width="426" height="500" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <!-- Cycle nodes -->
+  <g class="arch-node node-context">
+  <rect x="418" y="205" width="287" height="125" rx="18" fill="#eaf0fb" stroke="#cbd7ed" stroke-width="2"/>
+  <text class="t green label" x="444" y="242">2.1　上下文整理</text>
+  <text class="t muted body" x="444" y="276">提取相关信息，压缩历史</text>
+  <text class="t muted small" x="444" y="304">保持当前任务所需的上下文</text>
   </g>
-  <text class="t tb" x="1043" y="106" text-anchor="middle" fill="#0f172a" font-size="14">外部能力与扩展 · Capabilities</text>
 
-  <rect x="846" y="124" width="394" height="72" rx="10" fill="#fff" stroke="#bfdbfe"/>
-  <text class="t tb" x="860" y="146" fill="#2563eb" font-size="12">工具调用 · Tool calling</text>
-  <text class="t" x="860" y="166" fill="#475569" font-size="10">文件 R/W/Del · 终端命令 · 浏览器点击/输入 · 检索（代码索引 / Web）</text>
-  <text class="t" x="860" y="182" fill="#64748b" font-size="10">Files · Terminal · Browser · Retrieval</text>
-
-  <rect x="846" y="206" width="394" height="58" rx="10" fill="#fff" stroke="#bfdbfe"/>
-  <text class="t tb" x="860" y="228" fill="#2563eb" font-size="12">扩展服务 · Extended services</text>
-  <text class="t" x="860" y="248" fill="#475569" font-size="10">本地/远程进程连接 · 工具列表 · 插件注册表</text>
-
-  <rect x="846" y="274" width="394" height="58" rx="10" fill="#fff" stroke="#c4b5fd"/>
-  <text class="t tb" x="860" y="296" fill="#6d28d9" font-size="12">插件 · Plugins</text>
-  <text class="t" x="860" y="316" fill="#475569" font-size="10">市场 / 手动上传 · 凭据管理 · 独立进程调用</text>
-
-  <rect x="846" y="342" width="394" height="58" rx="10" fill="#fff" stroke="#93c5fd"/>
-  <text class="t tb" x="860" y="364" fill="#1d4ed8" font-size="12">Skills 技能</text>
-  <text class="t" x="860" y="384" fill="#475569" font-size="10">按需加载完整流程 · /skill 即时工具 · 入库积累</text>
-
-  <rect x="846" y="410" width="394" height="148" rx="10" fill="#f5f3ff" stroke="#c4b5fd"/>
-  <text class="t tb" x="860" y="434" fill="#6d28d9" font-size="12">多智能体协作 · Multi-agent</text>
-  <text class="t" x="860" y="456" fill="#475569" font-size="10">子任务委托并附带上下文</text>
-  <text class="t" x="860" y="474" fill="#475569" font-size="10">并行执行（最多 3）· 计划卡展示分工</text>
-  <text class="t" x="860" y="492" fill="#475569" font-size="10">失败可转交 · 群体共识 / 多视角讨论</text>
-  <text class="t" x="860" y="518" fill="#64748b" font-size="10">Delegate · Parallel ≤3 · Reassign · Consensus</text>
-  <text class="t" x="860" y="540" fill="#64748b" font-size="10">Main agent orchestrates sub-agents</text>
-
-  <!-- ===== 3 Delivery ===== -->
-  <g filter="url(#sh)">
-    <rect x="300" y="600" width="250" height="110" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <g class="arch-node node-thought">
+  <rect x="776" y="205" width="352" height="125" rx="18" fill="#fff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t green label" x="802" y="242">2.2　思考与决策</text>
+  <text class="t muted body" x="802" y="276">结合计划与上下文推理</text>
+  <text class="t muted small" x="802" y="304">继续回答，或选择执行能力</text>
   </g>
-  <text class="t tb" x="425" y="628" text-anchor="middle" fill="#047857" font-size="13">3 交付结果 · Deliver</text>
-  <text class="t" x="318" y="652" fill="#475569" font-size="10">流式响应 · Streaming replies</text>
-  <text class="t" x="318" y="670" fill="#475569" font-size="10">可审可逆变更 · Reviewable / reversible</text>
-  <text class="t" x="318" y="688" fill="#475569" font-size="10">历史归档 · Full history archive</text>
 
-  <path d="M435 580 V600" stroke="#047857" stroke-width="2" fill="none" marker-end="url(#arrBlue)"/>
-  <text class="t" x="445" y="592" fill="#047857" font-size="9">done</text>
-
-  <!-- ===== 4 Feedback / Evolution ===== -->
-  <g filter="url(#sh)">
-    <rect x="570" y="600" width="686" height="110" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <g class="arch-node node-approval">
+  <rect x="926" y="413" width="250" height="132" rx="18" fill="#edf3ff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t" x="952" y="451" fill="#2f6fed" font-size="18" font-weight="700">2.3　审批检查</text>
+  <text class="t muted body" x="952" y="485">写入与命令操作</text>
+  <text class="t muted small" x="952" y="514">按权限规则确认后执行</text>
   </g>
-  <text class="t tb" x="913" y="628" text-anchor="middle" fill="#1d4ed8" font-size="13">4 反馈与自我进化 · Feedback &amp; self-evolution</text>
-  <text class="t" x="590" y="654" fill="#475569" font-size="10">轮次复盘（每 6 轮）· Round review</text>
-  <text class="t" x="590" y="672" fill="#475569" font-size="10">写入 Memory · 偏好与环境事实入库</text>
-  <text class="t" x="860" y="654" fill="#475569" font-size="10">修补 Skills · 可复用流程固化</text>
-  <text class="t" x="860" y="672" fill="#475569" font-size="10">协作策略积累 · 定时任务触发</text>
-  <text class="t" x="590" y="694" fill="#64748b" font-size="10">Memory write · Skill mend · Collab strategy · Scheduled tasks</text>
 
-  <!-- Feedback dashed loops -->
-  <path d="M300 655 H160 V520" stroke="#94a3b8" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arr)"/>
-  <text class="t" x="168" y="590" fill="#94a3b8" font-size="9">经验 / 对话记忆</text>
-  <text class="t" x="168" y="604" fill="#94a3b8" font-size="9">Experience → Plan</text>
+  <g class="arch-node node-action">
+  <rect x="664" y="558" width="304" height="118" rx="20" fill="#d9e7ff" stroke="#7eaaff" stroke-width="3"/>
+  <text class="t green" x="692" y="601" font-size="23" font-weight="800">2.4　执行行动</text>
+  <text class="t muted body" x="692" y="635">调用所选工具，推进任务</text>
+  </g>
 
-  <path d="M1040 558 V600" stroke="#7c3aed" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arrBlue)"/>
-  <text class="t" x="1050" y="582" fill="#7c3aed" font-size="9">新 Skill 回流</text>
+  <g class="arch-node node-observe">
+  <rect x="418" y="408" width="270" height="126" rx="18" fill="#fff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t green label" x="444" y="447">2.5　观察结果</text>
+  <text class="t muted body" x="444" y="481">读取输出并检查状态</text>
+  <text class="t muted small" x="444" y="509">未完成则进入下一轮</text>
+  </g>
+
+  <g class="arch-node node-cycle-label">
+  <text class="t green" x="793" y="430" text-anchor="middle" font-size="21" font-weight="800">任务循环</text>
+  <text class="t muted small" x="793" y="459" text-anchor="middle">思考 · 行动 · 观察</text>
+  <text class="t muted small" x="793" y="486" text-anchor="middle">直到完成或停止</text>
+  </g>
+
+  <!-- Capabilities -->
+  <g class="arch-node node-capabilities-title">
+  <text class="t green label" x="1240" y="118">03　能力调用</text>
+  </g>
+  <g class="arch-node node-tools">
+  <rect x="1230" y="144" width="330" height="212" rx="20" fill="#edf3ff" stroke="#cbdaf3" stroke-width="2"/>
+  <text class="t label" x="1258" y="184">工具</text>
+  <text class="t muted body" x="1258" y="220">文件　读写与搜索</text>
+  <text class="t muted body" x="1258" y="253">终端　命令与任务</text>
+  <text class="t muted body" x="1258" y="286">浏览器　网页与交互</text>
+  <text class="t muted body" x="1258" y="319">检索　代码与网页</text>
+  </g>
+
+  <g class="arch-node node-extensions">
+  <rect x="1230" y="379" width="330" height="148" rx="20" fill="#edf2fc" stroke="#d3def0" stroke-width="2"/>
+  <text class="t label" x="1258" y="420">扩展</text>
+  <text class="t muted body" x="1258" y="457">Skills　按需加载能力</text>
+  <text class="t muted body" x="1258" y="490">MCP　连接外部服务</text>
+  </g>
+
+  <g class="arch-node node-agents">
+  <rect x="1230" y="550" width="330" height="168" rx="20" fill="#eef2fb" stroke="#cfdbee" stroke-width="2"/>
+  <text class="t label" x="1258" y="591">多智能体协作</text>
+  <text class="t muted body" x="1258" y="628">主智能体分派子任务</text>
+  <text class="t muted body" x="1258" y="661">并行执行，汇总结果</text>
+  </g>
+  <path class="line draw draw-7" pathLength="1" d="M968 617H1215"/>
+  <path class="draw draw-12" pathLength="1" d="M1215 250V630" fill="none" stroke="#507fd0" stroke-width="3" stroke-linecap="round"/>
+  <path class="line draw draw-8" pathLength="1" d="M1215 250H1228"/>
+  <path class="line draw draw-9" pathLength="1" d="M1215 450H1228"/>
+  <path class="line draw draw-10" pathLength="1" d="M1215 630H1228"/>
+
+  <!-- Delivery and learning -->
+  <path class="line draw draw-11" pathLength="1" d="M553 534C525 650 425 730 360 760V790C350 824 270 849 145 851"/>
+  <g class="arch-node node-feedback">
+  <text class="t green label" x="52" y="802">04　交付与反馈</text>
+  <rect x="40" y="822" width="1520" height="58" rx="18" fill="#e9eff8" stroke="#d6e0ed" stroke-width="2"/>
+  <text class="t label" x="280" y="858" text-anchor="middle">输出结果</text>
+  <text class="t label" x="590" y="858" text-anchor="middle">更新记忆</text>
+  <text class="t label" x="900" y="858" text-anchor="middle">沉淀技能</text>
+  <text class="t label" x="1210" y="858" text-anchor="middle">优化协作策略</text>
+  </g>
+  <path d="M1516 822V768C1516 743 1495 730 1473 720" fill="none" stroke="#5b87d1" stroke-width="2.5" stroke-dasharray="7 7" marker-end="url(#arrow)"/>
 </svg>

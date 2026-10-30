@@ -1,114 +1,62 @@
 (function () {
   var i18n = {
     zh: {
-      badge: '开源 · 本地优先 · 多智能体',
-      hero_title_sub: '本地多智能体 AI 工作台',
-      hero_lead: '打开本机文件夹，在浏览器或桌面端与主 / 子智能体协作。变更需确认；数据与密钥留在本地。',
+      badge: '开源 · 本地优先',
+      hero_title_sub: '本地 AI 工作台',
+      hero_lead: '面向项目任务的本地 AI 工作台，整合模型、浏览器与可扩展工具。',
       hero_cta1: '下载 Windows 安装包',
-      hero_cta2: '查看核心架构',
-      home_hi_title: '一句话能力',
-      home_hi_sub: '本地工作区、多智能体协作、按需扩展——三条短亮点。',
-      hk1: 'LOCAL', ht1: '本地工作区', hd1: '打开本机文件夹；历史与 Memory 留在你控制的磁盘。',
-      hk2: 'AGENTS', ht2: '多智能体协作', hd2: '主智能体编排子智能体，变更需人工确认。',
-      hk3: 'EXTEND', ht3: 'Skills · MCP · 桌面', hd3: '按需扩展工具；Windows / 麒麟安装包可用。',
-      arch_title: '核心算法架构',
-      arch_sub: '意图理解与规划 → 推理-行动循环（工具 / 插件 / Skills / 多智能体）→ 交付 → 反馈与自我进化。',
-
-      home_feat_title: '核心能力',
-      home_feat_sub: '对齐产品真实能力：工作台、多智能体、模型、浏览器沙盒、Skills、桌面端与本地优先。',
-      k1: 'WORKSPACE', t1: '工作台与工作区', d1: '打开本地文件夹作为工作区。SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工作区文件联动的详情面板。',
-      k2: 'AGENTS', t2: '多智能体协作', d2: '主智能体编排子智能体：单人回答、并行分工、接力流水线或多视角讨论；计划卡展示分工，失败可转交。',
-      k3: 'MODELS', t3: '模型与密钥', d3: '主模型 / 子智能体 / 压缩模型可分开配置。自备 OpenAI 兼容、DeepSeek、Ollama 等 API；密钥本机加密存储。',
-      k4: 'BROWSER', t4: '浏览器沙盒', d4: '桌面 Electron BrowserView 实况预览；Web 端 Playwright。Select Mode 点选 DOM，Agent 使用 browser_* 工具。',
-      k5: 'EXTEND', t5: 'Skills · MCP · 插件', d5: '技能包按需 /skill 调用；设置中连接 MCP；插件市场安装扩展（独立进程，写操作需确认）。',
-      k6: 'DESKTOP', t6: '桌面端与本地优先', d6: 'Windows / 麒麟安装包或 start-desktop.bat。历史、Memory、配置均在本机磁盘；默认仅绑定 127.0.0.1。',
-      local_title: '本机默认安全',
-      local_1: '仅绑定 127.0.0.1',
-      local_2: '本地令牌鉴权（X-Sidekick-Token）',
-      local_3: '模型 API Key 加密存储',
-      local_4: 'Shell / 写文件走审批门',
-      slash_title: '常用斜杠命令',
-      slash_body: '/help · /new · /clear · /skills · /skill <name> · /memory · /history · /browser · /stop',
-      how_title: '上手流程',
-      s1t: '打开工作区', s1d: '选择本地文件夹；历史与 Memory 落在你控制的磁盘。',
-      s2t: '配置模型', s2d: '设置主 / 子 / 压缩模型与 API Key，或接入 Ollama。',
-      s3t: '对话与确认', s3d: '写文件、Shell、记忆等变更先征求批准再执行。',
-      s4t: '按需扩展', s4d: '挂载 Skills、浏览器沙盒、MCP 与插件。',
-      shots_title: '界面预览',
-      shot1: '浅色工作台', shot2: '深色工作台',
+      arch_eyebrow: 'HOW IT WORKS',
+      arch_title: '任务执行流程',
+      features_eyebrow: 'FEATURES',
+      home_feat_title: '功能概览',
+      f_workspace_t: '项目工作区', f_workspace_d: '项目文件、对话与任务集中管理。',
+      f_agent_t: '智能体协作', f_agent_d: '拆分子任务，并行执行并汇总结果。',
+      f_models_t: '模型配置', f_models_d: '支持 OpenAI 兼容接口、DeepSeek、Ollama 等。',
+      f_browser_t: '浏览器操作', f_browser_d: '内置网页浏览与页面元素交互能力。',
+      f_extend_t: '工具扩展', f_extend_d: '通过 Skills、MCP 和插件接入额外工具。',
+      f_desktop_t: '桌面应用', f_desktop_d: '提供 Windows、麒麟与 Linux 版本。',
       dl_page_title: '下载',
-      dl_page_sub: '获取 Windows 安装包，或从源码运行。',
       dl_win_title: 'Windows 安装包',
-      dl_win_desc: '双击安装，无需预装 Python / Node。目标机可离线安装。',
-      dl_btn: '下载 Setup.exe', dl_zip: '便携版 ZIP', dl_releases: 'GitHub Releases',
-      dl_note: '安装包来自 GitHub Releases 最新资源（EdgeSidekick-Setup-*-win-x64.exe）。本地构建产物：desktop/dist/。若 Releases 尚无资源，请先发布 Setup，或按下方从源码运行。',
-      d2t: '麒麟 / Linux', d2d: 'deb / AppImage / tar.gz，含 arm64。见 packaging/kylin/README.md。',
-      d3t: '源码直跑', d3d: 'Python 3.10+ · Node 18+；或 start-desktop.bat。',
-      start_title: '从源码启动',
-      start_sub: '选择工作区 → 配置模型与 API Key → 开始对话。',
-      demo_title: '产品演示',
-      demo_sub: '本地工作台一览：打开工作区、多智能体协作与审批确认。',
-      demo_note: '介绍片约 46 秒 · 也可打开全屏动画版。',
-      demo_open: '全屏动画版',
-      foot: 'EdgeSidekick · 本地多智能体 AI 工作台',
+      dl_win_desc: '适用于 Windows x64 的桌面安装包。',
+      dl_btn: '下载安装包', dl_zip: '便携版 ZIP', dl_releases: 'GitHub Releases',
+      d2t: '麒麟 / Linux', d2d: '提供 deb、AppImage 与 tar.gz 安装包。',
+      d3t: '源码运行', d3d: '需要 Python 3.10+ 与 Node 18+。',
+      start_title: '命令行启动',
+      demo_eyebrow: 'PREVIEW',
+      demo_title: '界面演示',
+      foot: 'EdgeSidekick',
       nav_docs: '手册',
-      page_title_home: 'EdgeSidekick · 本地多智能体 AI 工作台',
-      page_desc_home: 'EdgeSidekick — 本地多智能体 AI 工作台。开源、本地优先。'
+      page_title_home: 'EdgeSidekick · 本地 AI 工作台',
+      page_desc_home: 'EdgeSidekick — 开源、本地优先的 AI 工作台。'
     },
     en: {
-      badge: 'OPEN SOURCE · LOCAL-FIRST · MULTI-AGENT',
-      hero_title_sub: 'Local multi-agent AI workbench',
-      hero_lead: 'Open a local folder and collaborate with main / sub-agents in the browser or desktop app. Changes need approval; data and keys stay on your machine.',
+      badge: 'OPEN SOURCE · LOCAL-FIRST',
+      hero_title_sub: 'Local AI workbench',
+      hero_lead: 'A local AI workbench for project tasks, models, browser actions, and extensible tools.',
       hero_cta1: 'Download Windows installer',
-      hero_cta2: 'See core architecture',
-      home_hi_title: 'At a glance',
-      home_hi_sub: 'Local workspace, multi-agent collaboration, extend on demand — three short highlights.',
-      hk1: 'LOCAL', ht1: 'Local workspace', hd1: 'Open a local folder; history and Memory stay on disk you control.',
-      hk2: 'AGENTS', ht2: 'Multi-agent collaboration', hd2: 'Main agent orchestrates sub-agents; changes need human approval.',
-      hk3: 'EXTEND', ht3: 'Skills · MCP · Desktop', hd3: 'Extend on demand; Windows / Kylin installers available.',
-      arch_title: 'Core algorithm architecture',
-      arch_sub: 'Intent & plan → reason–act loop (tools / plugins / Skills / multi-agent) → deliver → feedback & self-evolution.',
-
-      home_feat_title: 'Core capabilities',
-      home_feat_sub: 'Grounded in the real product: workbench, multi-agent, models, browser sandbox, Skills, desktop, and local-first defaults.',
-      k1: 'WORKSPACE', t1: 'Workbench & workspace', d1: 'Open a local folder as the workspace. SSE chat, attachments, stop / edit-resend, content search, and a detail panel tied to workspace files.',
-      k2: 'AGENTS', t2: 'Multi-agent collaboration', d2: 'Main agent orchestrates sub-agents: single reply, parallel split, pipeline handoff, or multi-angle discussion — with a plan card and reassignment on failure.',
-      k3: 'MODELS', t3: 'Models & keys', d3: 'Separate main / sub / compress models. Bring OpenAI-compatible, DeepSeek, Ollama, and more. API keys encrypted at rest locally.',
-      k4: 'BROWSER', t4: 'Browser sandbox', d4: 'Desktop Electron BrowserView live preview; web Playwright. Select Mode picks DOM; agents use browser_* tools.',
-      k5: 'EXTEND', t5: 'Skills · MCP · plugins', d5: 'Invoke skill packs with /skill; connect MCP in Settings; install plugins from the marketplace (separate process, writes need confirmation).',
-      k6: 'DESKTOP', t6: 'Desktop & local-first', d6: 'Windows / Kylin installers or start-desktop.bat. History, Memory, and config stay on disk. Default bind is 127.0.0.1 only.',
-      local_title: 'Local security defaults',
-      local_1: 'Binds 127.0.0.1 only',
-      local_2: 'Local token auth (X-Sidekick-Token)',
-      local_3: 'Model API keys encrypted at rest',
-      local_4: 'Shell / writes go through approval',
-      slash_title: 'Slash commands',
-      slash_body: '/help · /new · /clear · /skills · /skill <name> · /memory · /history · /browser · /stop',
-      how_title: 'Getting started',
-      s1t: 'Open a workspace', s1d: 'Pick a local folder. History and Memory stay on disk you control.',
-      s2t: 'Configure models', s2d: 'Set main / sub / compress models and API key, or plug in Ollama.',
-      s3t: 'Chat with approval', s3d: 'Writes, shell, and memory changes ask first.',
-      s4t: 'Extend on demand', s4d: 'Mount Skills, browser sandbox, MCP, and plugins.',
-      shots_title: 'Screenshots',
-      shot1: 'Light workbench', shot2: 'Dark workbench',
+      arch_eyebrow: 'HOW IT WORKS',
+      arch_title: 'Task workflow',
+      features_eyebrow: 'FEATURES',
+      home_feat_title: 'Features',
+      f_workspace_t: 'Project workspace', f_workspace_d: 'Manage project files, chats, and tasks together.',
+      f_agent_t: 'Agent collaboration', f_agent_d: 'Delegate subtasks, run them in parallel, and combine results.',
+      f_models_t: 'Model setup', f_models_d: 'Supports OpenAI-compatible APIs, DeepSeek, Ollama, and more.',
+      f_browser_t: 'Browser actions', f_browser_d: 'Browse websites and interact with page elements.',
+      f_extend_t: 'Tool extensions', f_extend_d: 'Add tools through Skills, MCP, and plugins.',
+      f_desktop_t: 'Desktop app', f_desktop_d: 'Available for Windows, Kylin, and Linux.',
       dl_page_title: 'Download',
-      dl_page_sub: 'Get the Windows installer, or run from source.',
       dl_win_title: 'Windows installer',
-      dl_win_desc: 'Double-click install. No Python / Node preinstall. Offline-capable targets.',
-      dl_btn: 'Download Setup.exe', dl_zip: 'Portable ZIP', dl_releases: 'GitHub Releases',
-      dl_note: 'Installer comes from the latest GitHub Release asset (EdgeSidekick-Setup-*-win-x64.exe). Local build output: desktop/dist/. If no Release asset exists yet, publish the Setup file first, or run from source below.',
-      d2t: 'Kylin / Linux', d2d: 'deb / AppImage / tar.gz, including arm64. See packaging/kylin/README.md.',
-      d3t: 'From source', d3d: 'Python 3.10+ · Node 18+, or start-desktop.bat.',
-      start_title: 'Run from source',
-      start_sub: 'Pick a workspace → set model & API key → start chatting.',
-      demo_title: 'Product demo',
-      demo_sub: 'A quick look at the local workbench: workspace, multi-agent collaboration, and approval.',
-      demo_note: 'Intro ~46s · or open the fullscreen animation.',
-      demo_open: 'Fullscreen animation',
-      foot: 'EdgeSidekick · Local multi-agent AI workbench',
+      dl_win_desc: 'Desktop installer for Windows x64.',
+      dl_btn: 'Download installer', dl_zip: 'Portable ZIP', dl_releases: 'GitHub Releases',
+      d2t: 'Kylin / Linux', d2d: 'Available as deb, AppImage, and tar.gz.',
+      d3t: 'Run from source', d3d: 'Requires Python 3.10+ and Node 18+.',
+      start_title: 'Command line',
+      demo_eyebrow: 'PREVIEW',
+      demo_title: 'Interface preview',
+      foot: 'EdgeSidekick',
       nav_docs: 'Docs',
-      page_title_home: 'EdgeSidekick · Local multi-agent AI workbench',
-      page_desc_home: 'EdgeSidekick — local multi-agent AI workbench. Open source, local-first.'
+      page_title_home: 'EdgeSidekick · Local AI workbench',
+      page_desc_home: 'EdgeSidekick — open-source, local-first AI workbench.'
     }
   };
 
@@ -123,6 +71,7 @@
 
   var lang = localStorage.getItem('esk-lang') || 'zh';
   var theme = localStorage.getItem('esk-theme') || 'light';
+  var architectureRequestId = 0;
 
   function applyTheme(t) {
     theme = t;
@@ -153,6 +102,7 @@
     if (dict.page_title_home) document.title = dict.page_title_home;
     var meta = document.querySelector('meta[name="description"]');
     if (meta && dict.page_desc_home) meta.setAttribute('content', dict.page_desc_home);
+    embedArchitecture(l === 'en' ? 'en' : 'zh');
   }
 
   applyTheme(theme);
@@ -167,10 +117,6 @@
   function initReveal() {
     var nodes = document.querySelectorAll('.reveal');
     if (!nodes.length) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      nodes.forEach(function (n) { n.classList.add('in'); });
-      return;
-    }
     if (!('IntersectionObserver' in window)) {
       nodes.forEach(function (n) { n.classList.add('in'); });
       return;
@@ -179,21 +125,50 @@
       entries.forEach(function (e) {
         if (e.isIntersecting) {
           e.target.classList.add('in');
-          io.unobserve(e.target);
+        } else {
+          var rect = e.boundingClientRect;
+          var aboveViewport = rect.bottom < window.innerHeight * 0.06;
+          var belowViewport = rect.top > window.innerHeight * 0.92;
+          if (aboveViewport || belowViewport) e.target.classList.remove('in');
         }
       });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
+    }, { rootMargin: '-6% 0px -8% 0px', threshold: 0.08 });
     nodes.forEach(function (n) { io.observe(n); });
   }
   initReveal();
 
+  /* Scroll progress line under the sticky navigation. */
+  function initScrollProgress() {
+    var scheduled = false;
+    function update() {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(function () {
+        scheduled = false;
+        var range = document.documentElement.scrollHeight - window.innerHeight;
+        var progress = range > 0 ? window.scrollY / range : 0;
+        document.documentElement.style.setProperty('--scroll-progress', String(Math.max(0, Math.min(1, progress))));
+      });
+    }
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  }
+  initScrollProgress();
+
   /* Inline SVG: fetch and embed so there is never an <a href=svg> download */
-  function embedArchitecture() {
+  function embedArchitecture(language) {
     var host = document.getElementById('archInline');
     if (!host) return;
-    fetch('assets/architecture.svg')
+    var english = language === 'en';
+    var asset = english ? 'assets/architecture.en.svg' : 'assets/architecture.svg';
+    var label = english ? 'EdgeSidekick task workflow' : 'EdgeSidekick 任务执行流程';
+    var requestId = ++architectureRequestId;
+    host.setAttribute('aria-label', label);
+    fetch(asset)
       .then(function (r) { return r.ok ? r.text() : Promise.reject(); })
       .then(function (svgText) {
+        if (requestId !== architectureRequestId) return;
         host.innerHTML = svgText;
         var svg = host.querySelector('svg');
         if (svg) {
@@ -203,14 +178,15 @@
           svg.style.width = '100%';
           svg.style.height = 'auto';
           svg.setAttribute('aria-hidden', 'false');
+          svg.setAttribute('aria-label', label);
         }
       })
       .catch(function () {
+        if (requestId !== architectureRequestId) return;
         /* fallback: object without download link behavior */
-        host.innerHTML = '<object type="image/svg+xml" data="assets/architecture.svg" class="arch-inline" aria-label="EdgeSidekick architecture"></object>';
+        host.innerHTML = '<object type="image/svg+xml" data="' + asset + '" class="arch-inline" aria-label="' + label + '"></object>';
       });
   }
-  embedArchitecture();
 
   function wireDownload() {
     var setupBtn = document.getElementById('dlSetup');
