@@ -13,7 +13,7 @@
       hk3: 'EXTEND', ht3: 'Skills · MCP · 桌面', hd3: '按需扩展工具；Windows / 麒麟安装包可用。',
       arch_title: '核心算法架构',
       arch_sub: '意图理解与规划 → 推理-行动循环（工具 / 插件 / Skills / 多智能体）→ 交付 → 反馈与自我进化。',
-      arch_cap: 'Web / 桌面 → REST+SSE → 主智能体（规划、工具、审批、压缩）→ 工作区 / Skills / Memory / MCP / 你的模型 API。',
+
       home_feat_title: '核心能力',
       home_feat_sub: '对齐产品真实能力：工作台、多智能体、模型、浏览器沙盒、Skills、桌面端与本地优先。',
       k1: 'WORKSPACE', t1: '工作台与工作区', d1: '打开本地文件夹作为工作区。SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工作区文件联动的详情面板。',
@@ -64,7 +64,7 @@
       hk3: 'EXTEND', ht3: 'Skills · MCP · Desktop', hd3: 'Extend on demand; Windows / Kylin installers available.',
       arch_title: 'Core algorithm architecture',
       arch_sub: 'Intent & plan → reason–act loop (tools / plugins / Skills / multi-agent) → deliver → feedback & self-evolution.',
-      arch_cap: 'Web / Desktop → REST+SSE → main agent (plan, tools, approval, compression) → workspace / Skills / Memory / MCP / your model API.',
+
       home_feat_title: 'Core capabilities',
       home_feat_sub: 'Grounded in the real product: workbench, multi-agent, models, browser sandbox, Skills, desktop, and local-first defaults.',
       k1: 'WORKSPACE', t1: 'Workbench & workspace', d1: 'Open a local folder as the workspace. SSE chat, attachments, stop / edit-resend, content search, and a detail panel tied to workspace files.',

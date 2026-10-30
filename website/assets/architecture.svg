@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 860" width="1280" height="860" role="img" aria-label="EdgeSidekick core algorithm architecture">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 730" width="1280" height="730" role="img" aria-label="EdgeSidekick core algorithm architecture">
   <defs>
     <linearGradient id="gBlue" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#3b82f6"/>
@@ -21,7 +21,7 @@
     </style>
   </defs>
 
-  <rect width="1280" height="860" rx="20" fill="#f8fafc"/>
+  <rect width="1280" height="730" rx="20" fill="#f8fafc"/>
   <text class="t tb" x="640" y="36" text-anchor="middle" fill="#0f172a" font-size="22">EdgeSidekick 核心算法架构</text>
   <text class="t" x="640" y="56" text-anchor="middle" fill="#64748b" font-size="12">Core Algorithm Architecture · Intent → Reason-Act → Deliver → Evolve</text>
 
@@ -29,16 +29,16 @@
   <g filter="url(#sh)">
     <rect x="24" y="80" width="250" height="420" rx="16" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
   </g>
-  <rect x="24" y="80" width="250" height="44" rx="16" fill="url(#gBlue)"/>
-  <rect x="24" y="108" width="250" height="16" fill="url(#gBlue)"/>
-  <text class="t tb" x="149" y="108" text-anchor="middle" fill="#fff" font-size="14">1 意图理解与规划</text>
-  <text class="t" x="149" y="128" text-anchor="middle" fill="#dbeafe" font-size="10">Intent · Plan · Ground</text>
+  <rect x="24" y="80" width="250" height="58" rx="16" fill="url(#gBlue)"/>
+  <rect x="24" y="118" width="250" height="20" fill="url(#gBlue)"/>
+  <text class="t tb" x="149" y="104" text-anchor="middle" fill="#fff" font-size="14">1 意图理解与规划</text>
+  <text class="t" x="149" y="124" text-anchor="middle" fill="#eff6ff" font-size="11">Intent · Plan · Ground</text>
 
-  <rect x="40" y="150" width="218" height="100" rx="12" fill="#fff" stroke="#bfdbfe"/>
-  <text class="t tb" x="52" y="172" fill="#2563eb" font-size="12">轮次分级 · Turn grading</text>
-  <text class="t" x="52" y="192" fill="#475569" font-size="10">闲聊 · 定点修改 · 结构增补 · 大规模重构</text>
-  <text class="t" x="52" y="208" fill="#64748b" font-size="10">Small talk · Patch · Extend · Rebuild</text>
-  <text class="t" x="52" y="230" fill="#64748b" font-size="10">越大变更越优先对齐现有代码</text>
+  <rect x="40" y="156" width="218" height="96" rx="12" fill="#fff" stroke="#bfdbfe"/>
+  <text class="t tb" x="52" y="176" fill="#2563eb" font-size="12">轮次分级 · Turn grading</text>
+  <text class="t" x="52" y="196" fill="#475569" font-size="10">闲聊 · 定点修改 · 结构增补 · 大规模重构</text>
+  <text class="t" x="52" y="212" fill="#64748b" font-size="10">Small talk · Patch · Extend · Rebuild</text>
+  <text class="t" x="52" y="236" fill="#64748b" font-size="10">越大变更越优先对齐现有代码</text>
 
   <rect x="40" y="264" width="218" height="90" rx="12" fill="#fff" stroke="#bfdbfe"/>
   <text class="t tb" x="52" y="286" fill="#2563eb" font-size="12">任务规划 · Task planning</text>
@@ -173,11 +173,4 @@
 
   <path d="M1040 558 V600" stroke="#7c3aed" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arrBlue)"/>
   <text class="t" x="1050" y="582" fill="#7c3aed" font-size="9">新 Skill 回流</text>
-
-  <!-- Bottom legend -->
-  <rect x="24" y="740" width="1232" height="96" rx="14" fill="#fff" stroke="#e2e8f0"/>
-  <text class="t tb" x="40" y="766" fill="#0f172a" font-size="12">EdgeSidekick runtime layers</text>
-  <text class="t" x="40" y="788" fill="#475569" font-size="11">Web / Desktop clients → REST + SSE API → Main agent (plan · tools · approval · compression)</text>
-  <text class="t" x="40" y="808" fill="#475569" font-size="11">→ Workspace / Skills / Memory / MCP / Plugins / your model API · Local-first · 127.0.0.1 · approval gate</text>
-  <text class="t" x="40" y="824" fill="#94a3b8" font-size="10">Blue = flow · Red = high-risk approval · Green = action / deliver · Purple = multi-agent &amp; plugins</text>
 </svg>
