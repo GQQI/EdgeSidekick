@@ -26,7 +26,7 @@
 
 Built to be **forked** (clear Python + Vite layers) and **cheap to run** (context compression, on-demand Skills, separate main / sub / compress models).
 
-**Windows · macOS · Linux** · default API **http://127.0.0.1:8787**
+**Windows · macOS · Linux**
 
 ## Screenshots
 
@@ -64,7 +64,7 @@ python3 -m pip install -r requirements.txt
 python3 main.py
 ```
 
-Open **http://127.0.0.1:8787** → pick a workspace folder → Settings → Model → API key.
+Open the local URL shown after start → pick a workspace folder → Settings → Model → API key.
 
 ### Tests
 
@@ -147,7 +147,7 @@ flowchart TB
     UI["Web UI (ui/, Vite + React)"]
     DESK["Desktop shell (desktop/, Electron)"]
   end
-  subgraph Server["Backend: python main.py (127.0.0.1:8787)"]
+  subgraph Server["Backend: python main.py"]
     API["REST + SSE API (src/metateam/api)"]
     AGENT["Main agent: plan, tools, approval, compression"]
     SUB["Sub-agents (delegate)"]

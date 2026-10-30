@@ -26,7 +26,7 @@
 
 为**二开**而设计（Python + Vite 分层清楚），也为**省 Token**而设计（上下文压缩、Skills 按需调用、主 / 子 / 压缩模型可拆开配置）。
 
-**Windows · macOS · Linux** · 默认 API **http://127.0.0.1:8787**
+**Windows · macOS · Linux**
 
 ## 界面预览
 
@@ -64,7 +64,7 @@ python3 -m pip install -r requirements.txt
 python3 main.py
 ```
 
-打开 **http://127.0.0.1:8787** → 选择工作区文件夹 → 设置 → 模型 → API Key。
+启动后打开终端提示的本机地址 → 选择工作区文件夹 → 设置 → 模型 → API Key。
 
 ### 测试
 
@@ -147,7 +147,7 @@ flowchart TB
     UI["Web 界面 (ui/, Vite + React)"]
     DESK["桌面端 (desktop/, Electron)"]
   end
-  subgraph Server["后端: python main.py (127.0.0.1:8787)"]
+  subgraph Server["后端: python main.py"]
     API["REST + SSE 接口 (src/metateam/api)"]
     AGENT["主智能体: 规划 / 工具 / 审批 / 压缩"]
     SUB["子智能体 (委派)"]
