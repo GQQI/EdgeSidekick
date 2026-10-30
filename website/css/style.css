@@ -180,7 +180,31 @@ main { flex: 1; }
   background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow);
   overflow-x: auto;
 }
-.arch svg { width: 100%; min-width: 720px; height: auto; display: block; }
+.arch img, .arch object, .arch svg {
+  width: 100%; max-width: 100%; min-width: 640px; height: auto;
+  display: block; min-height: 240px; background: #fff; border-radius: 12px;
+}
+.arch-teaser {
+  margin-top: 24px; display: grid; grid-template-columns: 1.2fr .8fr; gap: 20px; align-items: center;
+  padding: 20px; border-radius: 16px; background: var(--card); border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.arch-teaser img {
+  width: 100%; height: auto; display: block; border-radius: 10px; background: #fff;
+  border: 1px solid var(--line);
+}
+.arch-teaser .teaser-copy h3 { font-size: 18px; font-weight: 750; margin: 8px 0; }
+.arch-teaser .teaser-copy p { color: var(--muted); font-size: 14.5px; margin-bottom: 14px; }
+.highlights {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px;
+}
+.highlight {
+  padding: 18px; border-radius: 14px; border: 1px solid var(--line);
+  background: var(--card); box-shadow: var(--shadow);
+}
+.highlight .hk { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--blue); font-weight: 700; margin-bottom: 8px; }
+.highlight h3 { font-size: 15.5px; font-weight: 750; margin-bottom: 6px; }
+.highlight p { color: var(--muted); font-size: 13.5px; }
 .arch-caption { margin-top: 12px; color: var(--muted); font-size: 13.5px; }
 
 /* ---- Feature rows / lists (not all cards) ---- */
@@ -298,6 +322,8 @@ footer {
 .foot-links a:hover { color: var(--blue); }
 
 @media (max-width: 900px) {
+  .arch-teaser, .highlights { grid-template-columns: 1fr; }
+  .arch img, .arch object, .arch svg { min-width: 0; }
   .nav-links { display: none; }
   .nav-toggle { display: flex; }
   .nav-switches { padding-right: 0; border-right: none; }
