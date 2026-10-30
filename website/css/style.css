@@ -122,14 +122,14 @@ main { flex: 1; }
 .reveal.in .sec-title::after { transform: scaleX(1); transition-delay: .18s; }
 .sec-sub { color: var(--muted); font-size: 15px; max-width: 620px; line-height: 1.55; }
 
-/* ---- Scroll reveal ---- */
-.reveal {
+/* ---- Scroll reveal (only when JS marks html.js; otherwise stay visible) ---- */
+html.js .reveal {
   opacity: 0;
   transform: translate3d(0, 30px, 0) scale(.985);
   filter: blur(3px);
   transition: opacity .68s cubic-bezier(.22,1,.36,1), transform .68s cubic-bezier(.22,1,.36,1), filter .68s ease;
 }
-.reveal.in {
+html.js .reveal.in {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
   filter: blur(0);
@@ -140,6 +140,12 @@ main { flex: 1; }
 .reveal-d4 { transition-delay: .32s; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+  html.js .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
 }
 
 /* ---- Hero ---- */
@@ -177,8 +183,8 @@ main { flex: 1; }
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
   overflow: hidden; box-shadow: var(--shadow);
 }
-.shot-frame.reveal { transform: translate3d(58px, 0, 0) perspective(1000px) rotateY(-4deg) scale(.96); transform-origin: right center; }
-.shot-frame.reveal.in { transform: translate3d(0, 0, 0) perspective(1000px) rotateY(0) scale(1); }
+html.js .shot-frame.reveal { transform: translate3d(58px, 0, 0) perspective(1000px) rotateY(-4deg) scale(.96); transform-origin: right center; }
+html.js .shot-frame.reveal.in { transform: translate3d(0, 0, 0) perspective(1000px) rotateY(0) scale(1); }
 .shot-bar {
   display: flex; align-items: center; gap: 6px; padding: 9px 12px;
   border-bottom: 1px solid var(--line); background: var(--bg2); color: var(--muted); font-size: 11.5px;
@@ -263,18 +269,18 @@ main { flex: 1; }
   transition: transform .55s cubic-bezier(.22,1,.36,1);
 }
 .feature-card.in::before { transform: scaleX(1); transition-delay: .22s; }
-.feature-card.reveal { transform: translate3d(0, 46px, 0) rotateX(7deg) scale(.94); transform-origin: center bottom; }
-.feature-card.reveal.in { transform: translate3d(0, 0, 0) rotateX(0) scale(1); }
-.feature-card:nth-child(3n + 2).reveal { transform: translate3d(20px, 38px, 0) rotateY(-5deg) scale(.95); }
-.feature-card:nth-child(3n + 2).reveal.in { transform: translate3d(0, 0, 0) rotateY(0) scale(1); }
-.feature-card:nth-child(3n + 3).reveal { transform: translate3d(-20px, 38px, 0) rotateY(5deg) scale(.95); }
-.feature-card:nth-child(3n + 3).reveal.in { transform: translate3d(0, 0, 0) rotateY(0) scale(1); }
-.feature-card.reveal { transition: opacity .68s cubic-bezier(.22,1,.36,1), transform .68s cubic-bezier(.22,1,.36,1), filter .68s ease, border-color .2s ease, box-shadow .2s ease; }
+html.js .feature-card.reveal { transform: translate3d(0, 46px, 0) rotateX(7deg) scale(.94); transform-origin: center bottom; }
+html.js .feature-card.reveal.in { transform: translate3d(0, 0, 0) rotateX(0) scale(1); }
+html.js .feature-card:nth-child(3n + 2).reveal { transform: translate3d(20px, 38px, 0) rotateY(-5deg) scale(.95); }
+html.js .feature-card:nth-child(3n + 2).reveal.in { transform: translate3d(0, 0, 0) rotateY(0) scale(1); }
+html.js .feature-card:nth-child(3n + 3).reveal { transform: translate3d(-20px, 38px, 0) rotateY(5deg) scale(.95); }
+html.js .feature-card:nth-child(3n + 3).reveal.in { transform: translate3d(0, 0, 0) rotateY(0) scale(1); }
+html.js .feature-card.reveal { transition: opacity .68s cubic-bezier(.22,1,.36,1), transform .68s cubic-bezier(.22,1,.36,1), filter .68s ease, border-color .2s ease, box-shadow .2s ease; }
 .feature-card.reveal-d1 { transition-delay: .06s; }
 .feature-card.reveal-d2 { transition-delay: .16s; }
 .feature-card.reveal-d3 { transition-delay: .26s; }
 .feature-card:hover { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: var(--shadow); }
-.feature-card.reveal.in:hover { transform: translate3d(0, -3px, 0) scale(1); }
+html.js .feature-card.reveal.in:hover { transform: translate3d(0, -3px, 0) scale(1); }
 .feature-icon {
   display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 14px;
   border-radius: 10px; background: var(--blue-soft); color: var(--blue);

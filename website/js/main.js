@@ -82,7 +82,7 @@
   }
 
   function guideHref(l) {
-    return 'docs/' + (l === 'en' ? 'user-guide.en.html' : 'user-guide.zh.html');
+    return '/EdgeSidekick/docs/' + (l === 'en' ? 'user-guide.en.html' : 'user-guide.zh.html');
   }
 
   function applyLang(l) {
@@ -161,7 +161,7 @@
     var host = document.getElementById('archInline');
     if (!host) return;
     var english = language === 'en';
-    var asset = english ? 'assets/architecture.en.svg' : 'assets/architecture.svg';
+    var asset = english ? '/EdgeSidekick/assets/architecture.en.svg' : '/EdgeSidekick/assets/architecture.svg';
     var label = english ? 'EdgeSidekick task workflow' : 'EdgeSidekick 任务执行流程';
     var requestId = ++architectureRequestId;
     host.setAttribute('aria-label', label);

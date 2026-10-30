@@ -164,7 +164,7 @@
 
   // When embedded in the homepage iframe, keep navigation on the parent page.
   if (window.parent && window.parent !== window) {
-    document.querySelectorAll('a[href="index.html"]').forEach(function (a) {
+    document.querySelectorAll('a[href="/EdgeSidekick/"]').forEach(function (a) {
       a.setAttribute('target', '_parent');
     });
   }
