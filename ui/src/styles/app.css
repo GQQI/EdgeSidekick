@@ -117,10 +117,6 @@ body {
   pointer-events: none;
   z-index: 0;
   background-color: transparent;
-  background-image: url("/app-bg.png");
-  background-size: cover;
-  background-position: right top;
-  background-repeat: no-repeat;
 }
 
 .wash::after {

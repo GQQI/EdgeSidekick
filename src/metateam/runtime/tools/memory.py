@@ -41,6 +41,23 @@ def register_memory_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
             max_chars=8000,
         )
 
+    def memory_search(
+        query: str,
+        category: str = "",
+        tags: str = "",
+        top_k: int = 5,
+    ) -> str:
+        from ...services.memory import search_library
+
+        return search_library(
+            settings.memory_file,
+            query,
+            category=category,
+            tags=tags,
+            top_k=top_k,
+            include_disabled=False,
+        )
+
     def memory_list() -> str:
         from ...services.memory import list_library_text
 
@@ -74,7 +91,7 @@ def register_memory_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
             "memory_append",
             "Save a durable note into the memory library (not the workspace). "
             "Pass category (creates it if missing), optional title and comma-separated tags. "
-            "The user chooses which notes are injected via the Memory library. "
+            "Enabled notes appear in the catalog; pin short prefs for auto-inject. "
             "Requires user approval.",
             {
                 "type": "object",
@@ -144,10 +161,36 @@ def register_memory_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
     )
     reg.register(
         Tool(
+            "memory_search",
+            "Search the memory library by keywords (title/tags/content). "
+            "Returns ranked ids and summaries — then call memory_read(memory_id=…) "
+            "for full bodies. Prefer this over dumping the whole library.",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Keywords or phrase to match",
+                    },
+                    "category": {"type": "string"},
+                    "tags": {"type": "string"},
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Max hits (default 5, max 20)",
+                    },
+                },
+                "required": ["query"],
+            },
+            memory_search,
+            parallel_safe=True,
+        )
+    )
+    reg.register(
+        Tool(
             "memory_read",
-            "Read memory-library notes. Optional filters: category, tags, memory_id. "
-            "Includes disabled notes so you can see what exists; only enabled notes "
-            "are auto-injected into the system prompt.",
+            "Read memory-library note bodies. Prefer memory_id from memory_search "
+            "or memory_list. Optional filters: category, tags. Includes disabled "
+            "notes; only enabled notes appear in the catalog / search by default.",
             {
                 "type": "object",
                 "properties": {
@@ -164,8 +207,9 @@ def register_memory_tools(reg: ToolRegistry, ctx: ToolContext) -> None:
     reg.register(
         Tool(
             "memory_list",
-            "List memory-library categories and notes (id, title, tags, ON/off). "
-            "Use before memory_read/write when you need an id.",
+            "List memory-library categories and notes (id, title, tags, ON/off/pin). "
+            "Use before memory_read/write when you need an id; prefer memory_search "
+            "when looking for a topic.",
             {"type": "object", "properties": {}, "required": []},
             memory_list,
             parallel_safe=True,

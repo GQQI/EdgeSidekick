@@ -114,10 +114,8 @@ docs/CLEANUP-final.md
 /package.json
 /pytest.ini
 scripts/screenshot-logo-style.mjs
-/tests/*
-!/tests/conftest.py
-!/tests/test_plugins.py
-!/tests/test_auth_register.py
+# Keep the full unit suite in git (synced with upstream backend).
+# Local scratch dirs stay ignored via tests/.scratch/ above.
 /landing.html
 *.bak
 scripts/verify_group_chat/

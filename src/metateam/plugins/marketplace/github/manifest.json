@@ -3,7 +3,7 @@
   "id": "github",
   "name": "GitHub",
   "version": "1.0.0",
-  "author": "EdgeSidekick",
+  "author": "GQQI",
   "description": "搜索仓库与 Issue、阅读 PR 与代码文件、查看提交记录，并能创建 Issue 和发表评论。支持 GitHub Enterprise。",
   "category": "开发协作",
   "tags": ["git", "issue", "pull request", "code review"],

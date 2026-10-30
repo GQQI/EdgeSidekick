@@ -49,7 +49,7 @@
 **Windows（PowerShell）**
 
 ```powershell
-cd path\to\Sidekick
+cd path\to\EdgeSidekick
 python -m pip install -r requirements.txt
 python main.py
 ```
@@ -59,27 +59,12 @@ python main.py
 **macOS / Linux**
 
 ```bash
-cd /path/to/Sidekick
+cd /path/to/EdgeSidekick
 python3 -m pip install -r requirements.txt
 python3 main.py
 ```
 
 打开 **http://127.0.0.1:8787** → 选择工作区文件夹 → 设置 → 模型 → API Key。
-
-### 无 API Key 的离线演示
-
-`scripts/mock_llm.py` 是一个 OpenAI 兼容的离线演示模型，能识别会话版的编排和成员提示词，方便在没有 Key 时体验和验证完整的群聊协作流程（真实使用请在「设置 → 模型」配置你自己的模型）：
-
-```bash
-python scripts/mock_llm.py --port 18931
-SIDEKICK_DATA_DIR=/tmp/sidekick-demo META_PORT=18787 \
-OPENAI_API_KEY=mock OPENAI_BASE_URL=http://127.0.0.1:18931/v1 OPENAI_MODEL=mock-team \
-python main.py
-```
-
-打开 http://127.0.0.1:18787 。修改 UI 后需要先 `cd ui && npm install && npm run build`。
-
-如果你在「设置 → 模型」里另存了模型配置，账号会改用那份配置；API Key 留空会进入 Demo 模式，所有成员只会回复「【Demo 模式】…」。指向 mock 模型时随便填一个 Key（如 `mock`）即可。
 
 ### 测试
 
@@ -217,4 +202,3 @@ EdgeSidekick 采用 [MIT 许可证](LICENSE) 发布。
 
 ---
 
-**产品名：** EdgeSidekick · **默认绑定：** 127.0.0.1:8787

@@ -1,0 +1,63 @@
+"""Goal completion package."""
+
+from .intent import (
+    TOOL_INTENT_CONTINUE_LIMIT,
+    TOOL_INTENT_NUDGE,
+    TOOL_INTENT_SOFT_NUDGE,
+    looks_like_tool_intent_only,
+    intent_probe_text,
+    mentions_extension_tools,
+    resolve_display_named_plugin_tools,
+    extract_named_tool_ids,
+    tool_leaf_aliases,
+    resolve_mentioned_tools,
+    tool_intent_unavailable_message,
+    should_continue_for_tool_intent,
+)
+from .verdict import (
+    parse_goal_verdict,
+    parse_goal_state,
+    is_control_user_message,
+    active_obligation,
+    tool_evidence,
+    coalesce_internal_nudge,
+    prior_assistant_substance,
+    assess_goal_verdict,
+    assess_goal_state,
+)
+from .nudge import (
+    GOAL_CONTINUE_NUDGE,
+    goal_continue_nudge,
+    status_for_goal_verdict,
+    should_continue_for_goal,
+    should_run_next_plan_step,
+)
+
+__all__ = [
+    "TOOL_INTENT_CONTINUE_LIMIT",
+    "TOOL_INTENT_NUDGE",
+    "TOOL_INTENT_SOFT_NUDGE",
+    "GOAL_CONTINUE_NUDGE",
+    "looks_like_tool_intent_only",
+    "intent_probe_text",
+    "mentions_extension_tools",
+    "resolve_display_named_plugin_tools",
+    "extract_named_tool_ids",
+    "tool_leaf_aliases",
+    "resolve_mentioned_tools",
+    "tool_intent_unavailable_message",
+    "should_continue_for_tool_intent",
+    "parse_goal_verdict",
+    "parse_goal_state",
+    "is_control_user_message",
+    "active_obligation",
+    "tool_evidence",
+    "coalesce_internal_nudge",
+    "prior_assistant_substance",
+    "assess_goal_verdict",
+    "assess_goal_state",
+    "goal_continue_nudge",
+    "status_for_goal_verdict",
+    "should_continue_for_goal",
+    "should_run_next_plan_step",
+]

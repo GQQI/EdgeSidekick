@@ -172,6 +172,8 @@ _EXPLORE_TOOLS = frozenset(
         "codebase_impact",
         "coherence_checklist",
         "memory_read",
+        "memory_search",
+        "memory_list",
     }
 )
 

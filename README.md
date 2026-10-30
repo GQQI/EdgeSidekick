@@ -49,7 +49,7 @@ More product pages and the bilingual marketing site live under [website/](./webs
 **Windows (PowerShell)**
 
 ```powershell
-cd path\to\Sidekick
+cd path\to\EdgeSidekick
 python -m pip install -r requirements.txt
 python main.py
 ```
@@ -59,27 +59,12 @@ Or double-click **start.bat**.
 **macOS / Linux**
 
 ```bash
-cd /path/to/Sidekick
+cd /path/to/EdgeSidekick
 python3 -m pip install -r requirements.txt
 python3 main.py
 ```
 
 Open **http://127.0.0.1:8787** → pick a workspace folder → Settings → Model → API key.
-
-### Offline demo without an API key
-
-`scripts/mock_llm.py` is an OpenAI-compatible offline demo model that understands the Social-mode planner and member prompts, so you can try the full group collaboration flow without a key (for real use, configure your own model in Settings → Model):
-
-```bash
-python scripts/mock_llm.py --port 18931
-SIDEKICK_DATA_DIR=/tmp/sidekick-demo META_PORT=18787 \
-OPENAI_API_KEY=mock OPENAI_BASE_URL=http://127.0.0.1:18931/v1 OPENAI_MODEL=mock-team \
-python main.py
-```
-
-Then open http://127.0.0.1:18787. After changing the UI, rebuild it with `cd ui && npm install && npm run build`.
-
-If you save a model in Settings → Model, that account uses it instead of the environment variables. Leaving its API key empty switches to Demo mode, where every member only replies "【Demo 模式】…"; when pointing at the mock model, any key (e.g. `mock`) works.
 
 ### Tests
 
@@ -217,4 +202,3 @@ EdgeSidekick is released under the [MIT License](LICENSE).
 
 ---
 
-**Product name:** EdgeSidekick · **Default bind:** 127.0.0.1:8787

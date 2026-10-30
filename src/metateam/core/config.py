@@ -154,7 +154,9 @@ class Settings:
     # 0 = 40% of main context_limit, capped. Each child uses this budget, not the parent's.
     subagent_context_limit: int = int(os.getenv("META_SUB_CONTEXT_LIMIT", "0") or "0")
 
-    # 0 = no cap; the loop runs until the model stops or the user hits Stop.
+    # 0 = no cap for the lead; the loop runs until the model stops or the user
+    # hits Stop. A leaf worker with 0 uses the runtime's finite safety ceiling
+    # so a model that never yields a reply cannot loop forever.
     max_iterations: int = int(os.getenv("META_MAX_ITERS", "0") or "0")
     subagent_max_iterations: int = int(os.getenv("META_SUB_MAX_ITERS", "0") or "0")
     max_concurrent_children: int = int(os.getenv("META_MAX_CHILDREN", "3"))
@@ -223,7 +225,10 @@ class Settings:
         self.memory_file.parent.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.workspace.mkdir(parents=True, exist_ok=True)
-        if not self.memory_file.exists():
+        # Seed only when both MEMORY.md and library.json are missing — never
+        # overwrite user notes on reinstall / upgrade.
+        lib_path = self.memory_file.parent / "library.json"
+        if not self.memory_file.exists() and not lib_path.is_file():
             bundled = SRC_ROOT / "memory" / "MEMORY.md"
             if bundled.is_file() and bundled.resolve() != self.memory_file.resolve():
                 shutil.copy2(bundled, self.memory_file)

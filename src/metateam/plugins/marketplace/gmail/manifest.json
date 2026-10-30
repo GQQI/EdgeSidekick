@@ -3,7 +3,7 @@
   "id": "gmail",
   "name": "Gmail",
   "version": "1.0.1",
-  "author": "EdgeSidekick",
+  "author": "GQQI",
   "description": "按 Gmail 搜索语法查找邮件、阅读邮件与会话、查看标签，并能起草或发送邮件（发送前会请你确认）。",
   "category": "办公沟通",
   "tags": [

@@ -3,7 +3,7 @@
   "id": "gitlab",
   "name": "GitLab",
   "version": "1.0.0",
-  "author": "EdgeSidekick",
+  "author": "GQQI",
   "description": "查询项目、Issue 和合并请求（MR），阅读 MR 改动与仓库文件，并能创建 Issue、发表评论。支持 gitlab.com 与自建 GitLab。",
   "category": "开发协作",
   "tags": ["git", "issue", "merge request", "code review", "self-hosted"],
