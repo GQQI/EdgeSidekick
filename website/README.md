@@ -4,19 +4,22 @@ Path: `website/`. Deployed by `.github/workflows/pages.yml`.
 
 Live: https://gqqi.github.io/EdgeSidekick/
 
-## Pages
+## Single page
 
-| File | Role |
+Primary UX is **one scrolling `index.html`**:
+
+| Anchor | Section |
 |---|---|
-| `index.html` | Home — hero, architecture diagram, capability rows |
-| `features.html` | Features — architecture, capability detail, flow, screenshots |
-| `download.html` | Download — Windows Setup from GitHub Releases |
-| `docs/user-guide.*.html` | Handbook |
-| `promo.html` | Optional promo animation |
-| `assets/architecture.svg` | Static architecture diagram |
-| `assets/brand-icon.png` | Header brand icon |
+| `#top` / hero | Product intro |
+| `#highlights` | Three short highlights |
+| `#architecture` | Inline core-algorithm SVG (no download link) |
+| `#features` | Capabilities, security, getting started |
+| `#screenshots` | Workbench previews |
+| `#download` | Windows installer + source run |
 
-Nav links open **separate HTML pages**. Language and theme controls are spaced apart in the header.
+`features.html` and `download.html` redirect to `#features` / `#download`.
+
+Minimal header: brand icon + language / theme toggles only (no page-nav buttons).
 
 ## Download URL
 
@@ -26,8 +29,6 @@ https://github.com/GQQI/EdgeSidekick/releases/latest/download/EdgeSidekick-Setup
 
 `js/main.js` also queries the Releases API for the latest Setup / ZIP assets.
 
-Local build output (not in git): `desktop/dist/EdgeSidekick-Setup-<version>-win-x64.exe`
-
 ## Preview locally
 
 ```powershell
@@ -36,5 +37,5 @@ python -m http.server 8080
 ```
 
 - http://127.0.0.1:8080/
-- http://127.0.0.1:8080/features.html
-- http://127.0.0.1:8080/download.html
+- http://127.0.0.1:8080/#architecture
+- http://127.0.0.1:8080/#download

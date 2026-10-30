@@ -1,67 +1,183 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-label="EdgeSidekick architecture">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 860" width="1280" height="860" role="img" aria-label="EdgeSidekick core algorithm architecture">
   <defs>
-    <linearGradient id="eskGrad" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="gBlue" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#3b82f6"/>
       <stop offset="100%" stop-color="#1d4ed8"/>
     </linearGradient>
-    <marker id="eskArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
     </marker>
+    <marker id="arrBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2563eb"/>
+    </marker>
+    <filter id="sh" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.06"/>
+    </filter>
+    <style>
+      .t{font-family:Segoe UI,PingFang SC,Microsoft YaHei,system-ui,sans-serif}
+      .tb{font-weight:700}
+      .tm{font-weight:600}
+    </style>
   </defs>
 
-  <!-- background so dark pages still show a plate when used as img -->
-  <rect x="0" y="0" width="960" height="420" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <rect width="1280" height="860" rx="20" fill="#f8fafc"/>
+  <text class="t tb" x="640" y="36" text-anchor="middle" fill="#0f172a" font-size="22">EdgeSidekick 核心算法架构</text>
+  <text class="t" x="640" y="56" text-anchor="middle" fill="#64748b" font-size="12">Core Algorithm Architecture · Intent → Reason-Act → Deliver → Evolve</text>
 
-  <!-- Clients group -->
-  <rect x="24" y="24" width="220" height="180" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 4"/>
-  <text x="40" y="48" fill="#2563eb" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="700">Clients</text>
-  <rect x="40" y="64" width="188" height="52" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="54" y="86" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">Web UI</text>
-  <text x="54" y="104" fill="#64748b" font-family="Segoe UI, system-ui, sans-serif" font-size="11">ui/ - Vite + React</text>
-  <rect x="40" y="128" width="188" height="52" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="54" y="150" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">Desktop shell</text>
-  <text x="54" y="168" fill="#64748b" font-family="Segoe UI, system-ui, sans-serif" font-size="11">desktop/ - Electron</text>
+  <!-- ===== 1 Intent / Plan (left) ===== -->
+  <g filter="url(#sh)">
+    <rect x="24" y="80" width="250" height="420" rx="16" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  </g>
+  <rect x="24" y="80" width="250" height="44" rx="16" fill="url(#gBlue)"/>
+  <rect x="24" y="108" width="250" height="16" fill="url(#gBlue)"/>
+  <text class="t tb" x="149" y="108" text-anchor="middle" fill="#fff" font-size="14">1 意图理解与规划</text>
+  <text class="t" x="149" y="128" text-anchor="middle" fill="#dbeafe" font-size="10">Intent · Plan · Ground</text>
 
-  <!-- Backend group -->
-  <rect x="300" y="24" width="360" height="280" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 4"/>
-  <text x="316" y="48" fill="#2563eb" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="700">Backend - python main.py</text>
-  <rect x="316" y="64" width="328" height="44" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="330" y="91" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">REST + SSE API - src/metateam/api</text>
-  <rect x="316" y="124" width="328" height="56" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="330" y="146" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">Main agent</text>
-  <text x="330" y="164" fill="#64748b" font-family="Segoe UI, system-ui, sans-serif" font-size="11">plan / tools / approval / compression</text>
-  <rect x="316" y="196" width="152" height="44" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="330" y="223" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">Sub-agents</text>
-  <rect x="492" y="196" width="152" height="44" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="506" y="223" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="12" font-weight="600">Browser sandbox</text>
-  <rect x="316" y="252" width="328" height="36" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="330" y="275" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">MCP servers / Plugins</text>
+  <rect x="40" y="150" width="218" height="100" rx="12" fill="#fff" stroke="#bfdbfe"/>
+  <text class="t tb" x="52" y="172" fill="#2563eb" font-size="12">轮次分级 · Turn grading</text>
+  <text class="t" x="52" y="192" fill="#475569" font-size="10">闲聊 · 定点修改 · 结构增补 · 大规模重构</text>
+  <text class="t" x="52" y="208" fill="#64748b" font-size="10">Small talk · Patch · Extend · Rebuild</text>
+  <text class="t" x="52" y="230" fill="#64748b" font-size="10">越大变更越优先对齐现有代码</text>
 
-  <!-- Disk group -->
-  <rect x="720" y="24" width="216" height="220" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 4"/>
-  <text x="736" y="48" fill="#2563eb" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="700">Local disk</text>
-  <rect x="736" y="64" width="184" height="36" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="748" y="87" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="12" font-weight="600">Workspace folder</text>
-  <rect x="736" y="112" width="184" height="36" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="748" y="135" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="12" font-weight="600">Skills</text>
-  <rect x="736" y="160" width="184" height="36" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="748" y="183" fill="#0f172a" font-family="Segoe UI, system-ui, sans-serif" font-size="12" font-weight="600">Memory (MEMORY.md)</text>
-  <rect x="736" y="208" width="184" height="24" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-  <text x="748" y="224" fill="#64748b" font-family="Segoe UI, system-ui, sans-serif" font-size="11">Runtime data / model config</text>
+  <rect x="40" y="264" width="218" height="90" rx="12" fill="#fff" stroke="#bfdbfe"/>
+  <text class="t tb" x="52" y="286" fill="#2563eb" font-size="12">任务规划 · Task planning</text>
+  <text class="t" x="52" y="308" fill="#475569" font-size="10">信息收集 · 步骤拆解 · 执行确认</text>
+  <text class="t" x="52" y="326" fill="#64748b" font-size="10">Gather · Break down · Confirm</text>
 
-  <!-- LLM -->
-  <rect x="300" y="340" width="360" height="52" rx="12" fill="url(#eskGrad)"/>
-  <text x="480" y="362" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="700">Your model API</text>
-  <text x="480" y="380" text-anchor="middle" fill="#dbeafe" font-family="Segoe UI, system-ui, sans-serif" font-size="11">OpenAI-compatible / DeepSeek / Ollama</text>
+  <rect x="40" y="368" width="218" height="110" rx="12" fill="#fff" stroke="#bfdbfe"/>
+  <text class="t tb" x="52" y="390" fill="#2563eb" font-size="12">澄清与落地 · Clarify &amp; ground</text>
+  <text class="t" x="52" y="412" fill="#475569" font-size="10">信息不足时追问澄清</text>
+  <text class="t" x="52" y="430" fill="#475569" font-size="10">注入项目规则与工作区约束</text>
+  <text class="t" x="52" y="454" fill="#64748b" font-size="10">Ask · Inject workspace rules</text>
 
-  <!-- arrows -->
-  <line x1="244" y1="90" x2="300" y2="90" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
-  <line x1="244" y1="154" x2="300" y2="154" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
-  <line x1="480" y1="108" x2="480" y2="124" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
-  <line x1="400" y1="180" x2="400" y2="196" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
-  <line x1="560" y1="180" x2="560" y2="196" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
-  <line x1="480" y1="240" x2="480" y2="252" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
-  <line x1="660" y1="152" x2="720" y2="152" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
-  <line x1="480" y1="304" x2="480" y2="340" stroke="#64748b" stroke-width="1.5" marker-end="url(#eskArr)"/>
+  <!-- Arrow 1 -> 2 -->
+  <path d="M274 290 H300" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#arrBlue)"/>
+
+  <!-- ===== 2 Reason-Act loop (center) ===== -->
+  <g filter="url(#sh)">
+    <rect x="300" y="80" width="520" height="500" rx="16" fill="#fff" stroke="#e2e8f0" stroke-width="1.5"/>
+  </g>
+  <text class="t tb" x="560" y="106" text-anchor="middle" fill="#0f172a" font-size="15">2 推理-行动循环 · Reason–Act Loop</text>
+  <text class="t" x="560" y="124" text-anchor="middle" fill="#64748b" font-size="10">直至完成或阻塞 / 人工停止 · Until done, blocked, or stopped</text>
+
+  <!-- 2.1 Context compression -->
+  <rect x="320" y="144" width="230" height="118" rx="12" fill="#f0f9ff" stroke="#7dd3fc"/>
+  <text class="t tb" x="334" y="166" fill="#0369a1" font-size="12">2.1 上下文压缩</text>
+  <text class="t" x="334" y="182" fill="#0369a1" font-size="10">Context compression · &gt;70%</text>
+  <text class="t" x="334" y="202" fill="#475569" font-size="10">System 静态 · Key 不摘要 · Memory 摘要</text>
+  <text class="t" x="334" y="218" fill="#475569" font-size="10">Recent 原文 · This turn 保护</text>
+  <text class="t" x="334" y="240" fill="#64748b" font-size="10">整理 · 摘要 · 裁剪最旧消息</text>
+
+  <!-- 2.2 Thinking -->
+  <rect x="570" y="144" width="230" height="118" rx="12" fill="#eff6ff" stroke="#93c5fd"/>
+  <text class="t tb" x="584" y="166" fill="#1d4ed8" font-size="12">2.2 思考 · Thinking</text>
+  <text class="t" x="584" y="186" fill="#475569" font-size="10">主模型推理，结合 Memory 与上下文</text>
+  <text class="t" x="584" y="204" fill="#475569" font-size="10">决定直接回答或调用工具</text>
+  <text class="t" x="584" y="228" fill="#64748b" font-size="10">Answer · or · Tool call</text>
+
+  <!-- 2.3 Approval -->
+  <rect x="570" y="282" width="230" height="100" rx="12" fill="#fef2f2" stroke="#fca5a5"/>
+  <text class="t tb" x="584" y="304" fill="#dc2626" font-size="12">2.3 审批 · Approval</text>
+  <text class="t" x="584" y="324" fill="#475569" font-size="10">高风险：写文件 · 删文件 · 跑命令</text>
+  <text class="t" x="584" y="342" fill="#475569" font-size="10">只读操作可跳过审批门</text>
+  <text class="t" x="584" y="364" fill="#64748b" font-size="10">Writes / Shell gated · Reads bypass</text>
+
+  <!-- 2.4 Action -->
+  <rect x="570" y="402" width="230" height="72" rx="12" fill="#ecfdf5" stroke="#6ee7b7"/>
+  <text class="t tb" x="584" y="426" fill="#047857" font-size="12">2.4 行动 · Action</text>
+  <text class="t" x="584" y="448" fill="#475569" font-size="10">执行选定工具 / 插件 / Skills / 子智能体</text>
+
+  <!-- 2.5 Observation -->
+  <rect x="320" y="402" width="230" height="72" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="t tb" x="334" y="426" fill="#334155" font-size="12">2.5 观察结果 · Observe</text>
+  <text class="t" x="334" y="448" fill="#64748b" font-size="10">写回上下文 · 过长输出截断</text>
+
+  <!-- 2.6 Goal check -->
+  <rect x="320" y="282" width="230" height="100" rx="12" fill="#fff7ed" stroke="#fdba74"/>
+  <text class="t tb" x="334" y="304" fill="#c2410c" font-size="12">2.6 目标判定 · Goal check</text>
+  <text class="t" x="334" y="324" fill="#475569" font-size="10">未完成 → 回到 2.1</text>
+  <text class="t" x="334" y="342" fill="#475569" font-size="10">完成 / 阻塞 → 交付</text>
+  <text class="t" x="334" y="364" fill="#64748b" font-size="10">Loop · Deliver · or continuous</text>
+
+  <!-- Loop arrows inside -->
+  <path d="M550 203 H570" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M685 262 V282" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M685 382 V402" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M570 438 H550" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M435 402 V382" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M320 332 H300 H290 V203 H320" stroke="#94a3b8" stroke-width="1.5" fill="none" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+  <text class="t" x="292" y="270" fill="#94a3b8" font-size="9" transform="rotate(-90 292 270)">loop</text>
+
+  <!-- Arrow Action -> External -->
+  <path d="M800 438 H830" stroke="#047857" stroke-width="2" fill="none" marker-end="url(#arrBlue)"/>
+
+  <!-- ===== External capabilities (right) ===== -->
+  <g filter="url(#sh)">
+    <rect x="830" y="80" width="426" height="500" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  </g>
+  <text class="t tb" x="1043" y="106" text-anchor="middle" fill="#0f172a" font-size="14">外部能力与扩展 · Capabilities</text>
+
+  <rect x="846" y="124" width="394" height="72" rx="10" fill="#fff" stroke="#bfdbfe"/>
+  <text class="t tb" x="860" y="146" fill="#2563eb" font-size="12">工具调用 · Tool calling</text>
+  <text class="t" x="860" y="166" fill="#475569" font-size="10">文件 R/W/Del · 终端命令 · 浏览器点击/输入 · 检索（代码索引 / Web）</text>
+  <text class="t" x="860" y="182" fill="#64748b" font-size="10">Files · Terminal · Browser · Retrieval</text>
+
+  <rect x="846" y="206" width="394" height="58" rx="10" fill="#fff" stroke="#bfdbfe"/>
+  <text class="t tb" x="860" y="228" fill="#2563eb" font-size="12">扩展服务 · Extended services</text>
+  <text class="t" x="860" y="248" fill="#475569" font-size="10">本地/远程进程连接 · 工具列表 · 插件注册表</text>
+
+  <rect x="846" y="274" width="394" height="58" rx="10" fill="#fff" stroke="#c4b5fd"/>
+  <text class="t tb" x="860" y="296" fill="#6d28d9" font-size="12">插件 · Plugins</text>
+  <text class="t" x="860" y="316" fill="#475569" font-size="10">市场 / 手动上传 · 凭据管理 · 独立进程调用</text>
+
+  <rect x="846" y="342" width="394" height="58" rx="10" fill="#fff" stroke="#93c5fd"/>
+  <text class="t tb" x="860" y="364" fill="#1d4ed8" font-size="12">Skills 技能</text>
+  <text class="t" x="860" y="384" fill="#475569" font-size="10">按需加载完整流程 · /skill 即时工具 · 入库积累</text>
+
+  <rect x="846" y="410" width="394" height="148" rx="10" fill="#f5f3ff" stroke="#c4b5fd"/>
+  <text class="t tb" x="860" y="434" fill="#6d28d9" font-size="12">多智能体协作 · Multi-agent</text>
+  <text class="t" x="860" y="456" fill="#475569" font-size="10">子任务委托并附带上下文</text>
+  <text class="t" x="860" y="474" fill="#475569" font-size="10">并行执行（最多 3）· 计划卡展示分工</text>
+  <text class="t" x="860" y="492" fill="#475569" font-size="10">失败可转交 · 群体共识 / 多视角讨论</text>
+  <text class="t" x="860" y="518" fill="#64748b" font-size="10">Delegate · Parallel ≤3 · Reassign · Consensus</text>
+  <text class="t" x="860" y="540" fill="#64748b" font-size="10">Main agent orchestrates sub-agents</text>
+
+  <!-- ===== 3 Delivery ===== -->
+  <g filter="url(#sh)">
+    <rect x="300" y="600" width="250" height="110" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  </g>
+  <text class="t tb" x="425" y="628" text-anchor="middle" fill="#047857" font-size="13">3 交付结果 · Deliver</text>
+  <text class="t" x="318" y="652" fill="#475569" font-size="10">流式响应 · Streaming replies</text>
+  <text class="t" x="318" y="670" fill="#475569" font-size="10">可审可逆变更 · Reviewable / reversible</text>
+  <text class="t" x="318" y="688" fill="#475569" font-size="10">历史归档 · Full history archive</text>
+
+  <path d="M435 580 V600" stroke="#047857" stroke-width="2" fill="none" marker-end="url(#arrBlue)"/>
+  <text class="t" x="445" y="592" fill="#047857" font-size="9">done</text>
+
+  <!-- ===== 4 Feedback / Evolution ===== -->
+  <g filter="url(#sh)">
+    <rect x="570" y="600" width="686" height="110" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  </g>
+  <text class="t tb" x="913" y="628" text-anchor="middle" fill="#1d4ed8" font-size="13">4 反馈与自我进化 · Feedback &amp; self-evolution</text>
+  <text class="t" x="590" y="654" fill="#475569" font-size="10">轮次复盘（每 6 轮）· Round review</text>
+  <text class="t" x="590" y="672" fill="#475569" font-size="10">写入 Memory · 偏好与环境事实入库</text>
+  <text class="t" x="860" y="654" fill="#475569" font-size="10">修补 Skills · 可复用流程固化</text>
+  <text class="t" x="860" y="672" fill="#475569" font-size="10">协作策略积累 · 定时任务触发</text>
+  <text class="t" x="590" y="694" fill="#64748b" font-size="10">Memory write · Skill mend · Collab strategy · Scheduled tasks</text>
+
+  <!-- Feedback dashed loops -->
+  <path d="M300 655 H160 V520" stroke="#94a3b8" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+  <text class="t" x="168" y="590" fill="#94a3b8" font-size="9">经验 / 对话记忆</text>
+  <text class="t" x="168" y="604" fill="#94a3b8" font-size="9">Experience → Plan</text>
+
+  <path d="M1040 558 V600" stroke="#7c3aed" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arrBlue)"/>
+  <text class="t" x="1050" y="582" fill="#7c3aed" font-size="9">新 Skill 回流</text>
+
+  <!-- Bottom legend -->
+  <rect x="24" y="740" width="1232" height="96" rx="14" fill="#fff" stroke="#e2e8f0"/>
+  <text class="t tb" x="40" y="766" fill="#0f172a" font-size="12">EdgeSidekick runtime layers</text>
+  <text class="t" x="40" y="788" fill="#475569" font-size="11">Web / Desktop clients → REST + SSE API → Main agent (plan · tools · approval · compression)</text>
+  <text class="t" x="40" y="808" fill="#475569" font-size="11">→ Workspace / Skills / Memory / MCP / Plugins / your model API · Local-first · 127.0.0.1 · approval gate</text>
+  <text class="t" x="40" y="824" fill="#94a3b8" font-size="10">Blue = flow · Red = high-risk approval · Green = action / deliver · Purple = multi-agent &amp; plugins</text>
 </svg>
