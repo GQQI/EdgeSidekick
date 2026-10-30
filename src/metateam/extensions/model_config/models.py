@@ -1,5 +1,6 @@
 from __future__ import annotations
-from .paths import _mask_key
+import copy
+from .paths import VENDOR_TEMPLATES, _mask_key
 from dataclasses import dataclass, field
 from typing import Any
 from ...session.secret_store import decrypt_secret, encrypt_secret, looks_encrypted
@@ -145,6 +146,8 @@ class ModelSetup:
 
         def _auto_preview(role_ref: ModelRef, resolved_name: str) -> str:
             """When a role is 'Auto' and unresolved, show what it would pick right now."""
+            from .paths import is_auto_ref
+            from .auto import auto_pick_ref
             if resolved_name or not is_auto_ref(role_ref):
                 return resolved_name
             preview = auto_pick_ref(self, "")

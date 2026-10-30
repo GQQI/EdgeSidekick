@@ -107,7 +107,7 @@ if errorlevel 1 (
     pause
     exit /b 1
   )
-  "node_modules\@esbuild\win32-x64\esbuild.exe" src\main.tsx --bundle --format=esm --target=es2020 --jsx=automatic --external:/app-bg.png --outfile=dist\assets\index-two-phase.js
+  "node_modules\@esbuild\win32-x64\esbuild.exe" src\main.tsx --bundle --format=esm --target=es2020 --jsx=automatic --outfile=dist\assets\index-two-phase.js
   if errorlevel 1 (
     echo Failed: local fallback build in ui\
     popd

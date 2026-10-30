@@ -975,7 +975,7 @@ class AgentLoopMixin:
                 final = self._stream_final_reply()
             if not (final or "").strip():
                 final = (
-                    "（本轮已处理工具结果，但模型未返回可见回复。请继续下达指令。）"
+                    "（本轮已处理工具结果，但模型未返回可见回复。请继续输入任务。）"
                     if had_tools
                     else "（本轮已完成）"
                 )
