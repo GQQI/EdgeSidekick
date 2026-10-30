@@ -14,6 +14,7 @@ Primary UX is **one scrolling `index.html`**:
 | `#highlights` | Three short highlights |
 | `#architecture` | Inline core-algorithm SVG (no download link) |
 | `#features` | Capabilities, security, getting started |
+| `#demo` | Intro video (`assets/edgesidekick-intro.mp4`) |
 | `#screenshots` | Workbench previews |
 | `#download` | Windows installer + source run |
 
