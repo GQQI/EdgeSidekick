@@ -12,8 +12,8 @@
 <nav class="nav" id="nav">
   <div class="nav-in">
     <a class="logo" href="index.html">
-      <span class="logo-mark"><img src="assets/favicon.svg" alt=""></span>
-      EdgeSidekick
+      <img class="logo-icon" src="assets/brand-icon.png" width="40" height="40" alt="EdgeSidekick">
+      <span class="logo-text">EdgeSidekick</span>
     </a>
     <div class="nav-links">
       <a href="index.html" data-i18n="nav_home">首页</a>
@@ -22,11 +22,15 @@
       <a href="download.html" class="active" data-i18n="nav_download">下载</a>
     </div>
     <div class="nav-actions">
-      <div class="nav-switches">
-        <button class="icon-btn" id="langToggle" type="button" title="Language">EN</button>
-        <button class="icon-btn" id="themeToggle" type="button" title="Theme">☾</button>
+      <div class="nav-switches" role="group" aria-label="Language and theme">
+        <button class="switch-btn" id="langToggle" type="button" title="Switch language" aria-label="Switch language">
+          <span id="langToggleLabel">EN</span>
+        </button>
+        <button class="switch-btn" id="themeToggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="ico" id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+        </button>
       </div>
-      <a class="nav-cta" href="#win" data-i18n="nav_cta">下载安装包</a>
+      <a class="nav-cta" href="download.html" data-i18n="nav_cta">下载安装包</a>
       <button class="nav-toggle" id="menuToggle" type="button" aria-label="Menu"><span></span><span></span><span></span></button>
     </div>
   </div>
@@ -44,7 +48,7 @@
     <h1 class="page-title" data-i18n="dl_page_title">下载</h1>
     <p class="page-sub" data-i18n="dl_page_sub">获取 Windows 安装包，或从源码运行。</p>
 
-    <div class="card" id="win" style="margin-top:28px">
+    <div class="card" id="win" style="margin-top:24px">
       <span class="os">WINDOWS · x64</span>
       <h3 data-i18n="dl_win_title">Windows 安装包</h3>
       <p data-i18n="dl_win_desc">双击安装，无需预装 Python / Node。目标机可离线安装。</p>
@@ -53,8 +57,8 @@
         <a class="btn btn-g" id="dlZip" href="https://github.com/GQQI/EdgeSidekick/releases/latest/download/EdgeSidekick-0.3.1-win-x64.zip" data-i18n="dl_zip">便携版 ZIP</a>
         <a class="btn btn-g" id="dlReleases" href="https://github.com/GQQI/EdgeSidekick/releases" data-i18n="dl_releases">GitHub Releases</a>
       </div>
-      <p class="dl-note" data-i18n="dl_note">安装包来自 GitHub Releases 最新资源（EdgeSidekick-Setup-*-win-x64.exe）。本地构建产物路径：desktop/dist/。若 Releases 尚无资源，请先发布该 Setup 文件，或按下方从源码运行。</p>
-      <p style="margin-top:12px;font-size:13px;color:var(--muted)" class="mono">Expected asset: EdgeSidekick-Setup-0.3.1-win-x64.exe | build: desktop/dist/</p>
+      <p class="dl-note" data-i18n="dl_note">安装包来自 GitHub Releases 最新资源（EdgeSidekick-Setup-*-win-x64.exe）。本地构建产物：desktop/dist/。若 Releases 尚无资源，请先发布 Setup，或按下方从源码运行。</p>
+      <p class="mono" style="margin-top:12px;font-size:13px;color:var(--muted)">Expected asset: EdgeSidekick-Setup-0.3.1-win-x64.exe | build: desktop/dist/</p>
     </div>
 
     <div class="grid-2">
@@ -77,10 +81,13 @@
 
 <footer>
   <div class="foot">
-    <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+    <div class="foot-brand">
+      <img src="assets/brand-icon.png" width="24" height="24" alt="">
+      <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+    </div>
     <div class="foot-links">
-      <a href="index.html" data-i18n="nav_home">首页</a>
       <a href="features.html" data-i18n="nav_features">功能</a>
+      <a href="download.html" data-i18n="nav_download">下载</a>
       <a href="docs/user-guide.zh.html" data-i18n-guide data-i18n="nav_docs">手册</a>
       <a href="https://github.com/GQQI/EdgeSidekick">GitHub</a>
     </div>

@@ -12,8 +12,8 @@
 <nav class="nav" id="nav">
   <div class="nav-in">
     <a class="logo" href="index.html">
-      <span class="logo-mark"><img src="assets/favicon.svg" alt=""></span>
-      EdgeSidekick
+      <img class="logo-icon" src="assets/brand-icon.png" width="40" height="40" alt="EdgeSidekick">
+      <span class="logo-text">EdgeSidekick</span>
     </a>
     <div class="nav-links">
       <a href="index.html" class="active" data-i18n="nav_home">首页</a>
@@ -22,9 +22,13 @@
       <a href="download.html" data-i18n="nav_download">下载</a>
     </div>
     <div class="nav-actions">
-      <div class="nav-switches">
-        <button class="icon-btn" id="langToggle" type="button" title="Language">EN</button>
-        <button class="icon-btn" id="themeToggle" type="button" title="Theme">☾</button>
+      <div class="nav-switches" role="group" aria-label="Language and theme">
+        <button class="switch-btn" id="langToggle" type="button" title="Switch language" aria-label="Switch language">
+          <span id="langToggleLabel">EN</span>
+        </button>
+        <button class="switch-btn" id="themeToggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="ico" id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+        </button>
       </div>
       <a class="nav-cta" href="download.html" data-i18n="nav_cta">下载安装包</a>
       <button class="nav-toggle" id="menuToggle" type="button" aria-label="Menu"><span></span><span></span><span></span></button>
@@ -39,44 +43,83 @@
 </div>
 
 <header class="hero">
-  <div class="hero-in">
-    <span class="hero-badge"><i></i><span data-i18n="badge">开源 · 本地优先 · 多智能体</span></span>
-    <h1><span class="grad">EdgeSidekick</span><br><span data-i18n="hero_title_sub">本地多智能体 AI 工作台</span></h1>
-    <p class="hero-lead" data-i18n="hero_lead">在本机运行多智能体协作。数据留在本地，模型自备。</p>
-    <div class="hero-cta">
-      <a class="btn btn-p" href="download.html" data-i18n="hero_cta1">下载 Windows 安装包</a>
-      <a class="btn btn-g" href="features.html" data-i18n="hero_cta2">查看功能</a>
-    </div>
-    <div class="hero-shot">
-      <div class="shot-frame">
-        <div class="shot-bar"><i></i><i></i><i></i><span>http://127.0.0.1:8787</span></div>
-        <img src="assets/gallery-workbench-light.png" alt="EdgeSidekick workbench">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="hero-badge"><i></i><span data-i18n="badge">开源 · 本地优先 · 多智能体</span></span>
+      <h1><span class="grad">EdgeSidekick</span><br><span data-i18n="hero_title_sub">本地多智能体 AI 工作台</span></h1>
+      <p class="hero-lead" data-i18n="hero_lead">打开本机文件夹，在浏览器或桌面端与主 / 子智能体协作。变更需确认；数据与密钥留在本地。</p>
+      <div class="hero-cta">
+        <a class="btn btn-p" href="download.html" data-i18n="hero_cta1">下载 Windows 安装包</a>
+        <a class="btn btn-g" href="features.html" data-i18n="hero_cta2">功能与架构</a>
       </div>
+    </div>
+    <div class="shot-frame">
+      <div class="shot-bar"><i></i><i></i><i></i><span>http://127.0.0.1:8787</span></div>
+      <img src="assets/gallery-workbench-light.png" alt="EdgeSidekick workbench">
     </div>
   </div>
 </header>
 
-<main>
-  <section class="page" style="padding-top:32px">
-    <div class="wrap">
-      <span class="eyebrow">Features</span>
-      <h2 class="page-title" data-i18n="home_feat_title">核心能力</h2>
-      <p class="page-sub" data-i18n="home_feat_sub">对话、浏览器沙箱、Skills、桌面端与 MCP——够用即可，不堆营销词。</p>
-      <div class="grid-3">
-        <article class="card"><span class="tag">CHAT</span><h3 data-i18n="f1t">多智能体对话</h3><p data-i18n="f1d">主智能体调度子智能体，SSE 流式输出，变更需确认。</p></article>
-        <article class="card"><span class="tag">BROWSER</span><h3 data-i18n="f2t">浏览器沙箱</h3><p data-i18n="f2d">桌面 BrowserView / Playwright；Select Mode 点选 DOM。</p></article>
-        <article class="card"><span class="tag">EXTEND</span><h3 data-i18n="f3t">Skills · MCP</h3><p data-i18n="f3d">按需加载技能包与外部工具，不把巨型 prompt 塞进每一轮。</p></article>
-      </div>
-      <div style="margin-top:24px">
-        <a class="btn btn-g" href="features.html" data-i18n="more_features">全部功能</a>
-      </div>
+<section class="section alt">
+  <div class="wrap">
+    <span class="eyebrow">Architecture</span>
+    <h2 class="sec-title" data-i18n="arch_title">核心架构</h2>
+    <p class="sec-sub" data-i18n="arch_sub">客户端、后端智能体运行时与本地磁盘分层清楚，便于二开与本机部署。</p>
+    <div class="arch">
+      <img src="assets/architecture.svg" alt="EdgeSidekick architecture diagram" width="960" height="420">
+      <p class="arch-caption" data-i18n="arch_cap">Web / 桌面 → REST+SSE API → 主智能体（规划、工具、审批、压缩）→ 工作区 / Skills / Memory / 你的模型 API。</p>
     </div>
-  </section>
-</main>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Capabilities</span>
+    <h2 class="sec-title" data-i18n="home_feat_title">核心能力</h2>
+    <p class="sec-sub" data-i18n="home_feat_sub">对齐产品真实能力：工作台、多智能体协作、模型配置、浏览器沙盒、Skills、桌面端与本地优先。</p>
+    <div class="feat-list">
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k1">WORKSPACE</div><div><h3 data-i18n="t1">工作台与工作区</h3><p data-i18n="d1">打开本地文件夹作为工作区。SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工作区文件联动的详情面板。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k2">AGENTS</div><div><h3 data-i18n="t2">多智能体协作</h3><p data-i18n="d2">主智能体编排子智能体：单人回答、并行分工、接力流水线或多视角讨论；计划卡展示分工，失败可转交。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k3">MODELS</div><div><h3 data-i18n="t3">模型与密钥</h3><p data-i18n="d3">主模型 / 子智能体 / 压缩模型可分开配置。自备 OpenAI 兼容、DeepSeek、Ollama 等 API；密钥本机加密存储。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k4">BROWSER</div><div><h3 data-i18n="t4">浏览器沙盒</h3><p data-i18n="d4">桌面 Electron BrowserView 实况预览；Web 端 Playwright。Select Mode 点选 DOM，Agent 使用 browser_* 工具。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k5">EXTEND</div><div><h3 data-i18n="t5">Skills · MCP · 插件</h3><p data-i18n="d5">技能包按需 /skill 调用；设置中连接 MCP；插件市场安装扩展（独立进程，写操作需确认）。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k6">DESKTOP</div><div><h3 data-i18n="t6">桌面端与本地优先</h3><p data-i18n="d6">Windows / 麒麟安装包或 start-desktop.bat。历史、Memory、配置均在本机磁盘；默认仅绑定 127.0.0.1。</p></div></div>
+    </div>
+    <div class="inline-cta">
+      <a class="btn btn-g" href="features.html" data-i18n="more_features">查看完整功能与架构图</a>
+      <a class="btn btn-p" href="download.html" data-i18n="nav_cta">下载安装包</a>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap split">
+    <div class="panel">
+      <h3 data-i18n="local_title">本机默认安全</h3>
+      <ul class="check">
+        <li data-i18n="local_1">仅绑定 127.0.0.1</li>
+        <li data-i18n="local_2">本地令牌鉴权（X-Sidekick-Token）</li>
+        <li data-i18n="local_3">模型 API Key 加密存储</li>
+        <li data-i18n="local_4">Shell / 写文件走审批门</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3 data-i18n="who_title">适合谁</h3>
+      <ul class="check">
+        <li data-i18n="who_1">需要本机多智能体工作台的个人与团队</li>
+        <li data-i18n="who_2">希望自备模型、数据不出机的场景</li>
+        <li data-i18n="who_3">要二次开发（Python + Vite 分层）的开发者</li>
+      </ul>
+    </div>
+  </div>
+</section>
 
 <footer>
   <div class="foot">
-    <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+    <div class="foot-brand">
+      <img src="assets/brand-icon.png" width="24" height="24" alt="">
+      <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+    </div>
     <div class="foot-links">
       <a href="features.html" data-i18n="nav_features">功能</a>
       <a href="download.html" data-i18n="nav_download">下载</a>

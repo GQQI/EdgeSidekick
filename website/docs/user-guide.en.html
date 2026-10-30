@@ -29,7 +29,10 @@
 <body>
 <nav class="nav scrolled" id="nav">
   <div class="nav-in">
-    <a class="logo" href="../index.html"><span class="logo-mark"><img src="../assets/favicon.svg" alt=""></span>EdgeSidekick</a>
+    <a class="logo" href="../index.html">
+      <img class="logo-icon" src="../assets/brand-icon.png" width="40" height="40" alt="EdgeSidekick">
+      <span class="logo-text">EdgeSidekick</span>
+    </a>
     <div class="nav-links">
       <a href="../index.html">Home</a>
       <a href="../features.html">Features</a>
@@ -37,9 +40,11 @@
       <a href="../download.html">Download</a>
     </div>
     <div class="nav-actions">
-      <div class="nav-switches">
-        <a class="icon-btn" href="user-guide.zh.html" title="Chinese" style="text-decoration:none;display:grid;place-items:center;width:36px;height:36px">中文</a>
-        <button class="icon-btn" id="themeToggle" type="button" title="Theme">☾</button>
+      <div class="nav-switches" role="group" aria-label="Language and theme">
+        <a class="switch-btn" href="user-guide.zh.html" title="Chinese" style="text-decoration:none">中文</a>
+        <button class="switch-btn" id="themeToggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="ico" id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+        </button>
       </div>
       <a class="nav-cta" href="../download.html">Get installer</a>
     </div>

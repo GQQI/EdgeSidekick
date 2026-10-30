@@ -1,0 +1,70 @@
+<svg viewBox="0 0 960 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="EdgeSidekick architecture">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#3b82f6"/><stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <style>
+    .box { fill: #fff; stroke: #e2e8f0; stroke-width: 1.5; }
+    .box-d { fill: #f8fafc; stroke: #e2e8f0; stroke-width: 1.5; }
+    .ttl { font: 700 13px system-ui,sans-serif; fill: #2563eb; }
+    .lab { font: 600 12.5px system-ui,sans-serif; fill: #0f172a; }
+    .sub { font: 400 11px system-ui,sans-serif; fill: #64748b; }
+    .ln { stroke: #94a3b8; stroke-width: 1.5; fill: none; marker-end: url(#arr); }
+    .grp { fill: none; stroke: #cbd5e1; stroke-width: 1.25; stroke-dasharray: 4 3; }
+  </style>
+  <!-- Clients -->
+  <rect class="grp" x="24" y="24" width="220" height="180" rx="14"/>
+  <text class="ttl" x="40" y="48">Clients</text>
+  <rect class="box" x="40" y="64" width="188" height="52" rx="10"/>
+  <text class="lab" x="54" y="86">Web UI</text>
+  <text class="sub" x="54" y="104">ui/ · Vite + React</text>
+  <rect class="box" x="40" y="128" width="188" height="52" rx="10"/>
+  <text class="lab" x="54" y="150">Desktop shell</text>
+  <text class="sub" x="54" y="168">desktop/ · Electron</text>
+
+  <!-- Backend -->
+  <rect class="grp" x="300" y="24" width="360" height="280" rx="14"/>
+  <text class="ttl" x="316" y="48">Backend · python main.py</text>
+  <rect class="box" x="316" y="64" width="328" height="44" rx="10"/>
+  <text class="lab" x="330" y="91">REST + SSE API · src/metateam/api</text>
+  <rect class="box" x="316" y="124" width="328" height="56" rx="10"/>
+  <text class="lab" x="330" y="146">Main agent</text>
+  <text class="sub" x="330" y="164">plan · tools · approval · compression</text>
+  <rect class="box" x="316" y="196" width="152" height="44" rx="10"/>
+  <text class="lab" x="330" y="223">Sub-agents</text>
+  <rect class="box" x="492" y="196" width="152" height="44" rx="10"/>
+  <text class="lab" x="506" y="223">Browser sandbox</text>
+  <rect class="box" x="316" y="252" width="328" height="36" rx="10"/>
+  <text class="lab" x="330" y="275">MCP servers · Plugins</text>
+
+  <!-- Disk -->
+  <rect class="grp" x="720" y="24" width="216" height="220" rx="14"/>
+  <text class="ttl" x="736" y="48">Local disk</text>
+  <rect class="box-d" x="736" y="64" width="184" height="36" rx="8"/>
+  <text class="lab" x="748" y="87">Workspace folder</text>
+  <rect class="box-d" x="736" y="112" width="184" height="36" rx="8"/>
+  <text class="lab" x="748" y="135">Skills</text>
+  <rect class="box-d" x="736" y="160" width="184" height="36" rx="8"/>
+  <text class="lab" x="748" y="183">Memory (MEMORY.md)</text>
+  <rect class="box-d" x="736" y="208" width="184" height="24" rx="8"/>
+  <text class="sub" x="748" y="224">Runtime data / model config</text>
+
+  <!-- LLM -->
+  <rect x="300" y="340" width="360" height="52" rx="12" fill="url(#g)"/>
+  <text x="480" y="362" text-anchor="middle" font="700 13px system-ui" fill="#fff" style="font:700 13px system-ui,sans-serif">Your model API</text>
+  <text x="480" y="380" text-anchor="middle" style="font:400 11px system-ui,sans-serif" fill="#dbeafe">OpenAI-compatible · DeepSeek · Ollama · …</text>
+
+  <!-- arrows -->
+  <path class="ln" d="M244 90 H300"/>
+  <path class="ln" d="M244 154 H300"/>
+  <path class="ln" d="M480 108 V124"/>
+  <path class="ln" d="M400 180 V196"/>
+  <path class="ln" d="M560 180 V196"/>
+  <path class="ln" d="M480 248 V252"/>
+  <path class="ln" d="M660 152 H720"/>
+  <path class="ln" d="M480 308 V340"/>
+</svg>

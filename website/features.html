@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="EdgeSidekick 功能：多智能体、浏览器沙箱、Skills、桌面端。">
+<meta name="description" content="EdgeSidekick 功能与架构：工作台、多智能体、模型、浏览器沙盒、Skills、桌面端。">
 <title>功能 · EdgeSidekick</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
@@ -12,8 +12,8 @@
 <nav class="nav" id="nav">
   <div class="nav-in">
     <a class="logo" href="index.html">
-      <span class="logo-mark"><img src="assets/favicon.svg" alt=""></span>
-      EdgeSidekick
+      <img class="logo-icon" src="assets/brand-icon.png" width="40" height="40" alt="EdgeSidekick">
+      <span class="logo-text">EdgeSidekick</span>
     </a>
     <div class="nav-links">
       <a href="index.html" data-i18n="nav_home">首页</a>
@@ -22,9 +22,13 @@
       <a href="download.html" data-i18n="nav_download">下载</a>
     </div>
     <div class="nav-actions">
-      <div class="nav-switches">
-        <button class="icon-btn" id="langToggle" type="button" title="Language">EN</button>
-        <button class="icon-btn" id="themeToggle" type="button" title="Theme">☾</button>
+      <div class="nav-switches" role="group" aria-label="Language and theme">
+        <button class="switch-btn" id="langToggle" type="button" title="Switch language" aria-label="Switch language">
+          <span id="langToggleLabel">EN</span>
+        </button>
+        <button class="switch-btn" id="themeToggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="ico" id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+        </button>
       </div>
       <a class="nav-cta" href="download.html" data-i18n="nav_cta">下载安装包</a>
       <button class="nav-toggle" id="menuToggle" type="button" aria-label="Menu"><span></span><span></span><span></span></button>
@@ -41,51 +45,81 @@
 <main class="page">
   <div class="wrap">
     <span class="eyebrow">Features</span>
-    <h1 class="page-title" data-i18n="feat_page_title">功能</h1>
-    <p class="page-sub" data-i18n="feat_page_sub">为真实工作流准备的能力清单。</p>
+    <h1 class="page-title" data-i18n="feat_page_title">功能与架构</h1>
+    <p class="page-sub" data-i18n="feat_page_sub">从工作区到多智能体、模型、桌面端与扩展能力的完整说明。</p>
 
-    <div class="grid-3" style="margin-top:28px">
-      <article class="card"><span class="tag">CHAT</span><h3 data-i18n="f1t">多智能体对话</h3><p data-i18n="f1d">主智能体调度子智能体，SSE 流式输出，变更需确认。</p></article>
-      <article class="card"><span class="tag">BROWSER</span><h3 data-i18n="f2t">浏览器沙箱</h3><p data-i18n="f2d">桌面 BrowserView / Playwright；Select Mode 点选 DOM。</p></article>
-      <article class="card"><span class="tag">SKILLS</span><h3 data-i18n="f3t">Skills · MCP</h3><p data-i18n="f3d">按需加载技能包与外部工具，不把巨型 prompt 塞进每一轮。</p></article>
-      <article class="card"><span class="tag">DESKTOP</span><h3 data-i18n="f4t">桌面应用</h3><p data-i18n="f4d">Windows 安装包、麒麟/Linux deb/AppImage，或 start-desktop.bat。</p></article>
-      <article class="card"><span class="tag">MEMORY</span><h3 data-i18n="f5t">记忆 · 任务</h3><p data-i18n="f5d">MEMORY.md 可追加/改写（需确认）；任务面板跟进进度。</p></article>
-      <article class="card"><span class="tag">THEME</span><h3 data-i18n="f6t">浅色 / 深色</h3><p data-i18n="f6d">浅蓝白主视觉，一键深色；中英双语。</p></article>
+    <h2 class="sec-title" style="margin-top:36px;font-size:26px" data-i18n="arch_title">核心架构</h2>
+    <p class="sec-sub" data-i18n="arch_sub">客户端、后端智能体运行时与本地磁盘分层清楚，便于二开与本机部署。</p>
+    <div class="arch">
+      <img src="assets/architecture.svg" alt="EdgeSidekick architecture diagram" width="960" height="420">
+      <p class="arch-caption" data-i18n="arch_cap">Web / 桌面 → REST+SSE API → 主智能体（规划、工具、审批、压缩）→ 工作区 / Skills / Memory / 你的模型 API。</p>
     </div>
 
-    <h2 class="page-title" style="margin-top:48px;font-size:28px" data-i18n="how_title">四步上手</h2>
-    <div class="steps">
-      <div class="step"><div class="n">01</div><h3 data-i18n="s1t">打开工作区</h3><p data-i18n="s1d">选择本地文件夹，历史与 Memory 落在你控制的磁盘上。</p></div>
-      <div class="step"><div class="n">02</div><h3 data-i18n="s2t">配置模型</h3><p data-i18n="s2d">主模型 / 子智能体 / 压缩模型可分开设置，自备 API Key 或 Ollama。</p></div>
-      <div class="step"><div class="n">03</div><h3 data-i18n="s3t">对话与确认</h3><p data-i18n="s3d">写文件、Shell、记忆等变更先征求批准再执行。</p></div>
-      <div class="step"><div class="n">04</div><h3 data-i18n="s4t">扩展能力</h3><p data-i18n="s4d">Skills、浏览器沙箱、MCP 按需挂载。</p></div>
+    <h2 class="sec-title" style="margin-top:48px;font-size:26px" data-i18n="home_feat_title">核心能力</h2>
+    <div class="feat-list">
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k1">WORKSPACE</div><div><h3 data-i18n="t1">工作台与工作区</h3><p data-i18n="d1">打开本地文件夹作为工作区。SSE 流式对话、附件、停止 / 编辑重发、内容搜索，以及与工作区文件联动的详情面板。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k2">AGENTS</div><div><h3 data-i18n="t2">多智能体协作</h3><p data-i18n="d2">主智能体编排子智能体：单人回答、并行分工、接力流水线或多视角讨论；计划卡展示分工，失败可转交。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k3">MODELS</div><div><h3 data-i18n="t3">模型与密钥</h3><p data-i18n="d3">主模型 / 子智能体 / 压缩模型可分开配置。自备 OpenAI 兼容、DeepSeek、Ollama 等 API；密钥本机加密存储。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k4">BROWSER</div><div><h3 data-i18n="t4">浏览器沙盒</h3><p data-i18n="d4">桌面 Electron BrowserView 实况预览；Web 端 Playwright。Select Mode 点选 DOM，Agent 使用 browser_* 工具。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k5">EXTEND</div><div><h3 data-i18n="t5">Skills · MCP · 插件</h3><p data-i18n="d5">技能包按需 /skill 调用；设置中连接 MCP；插件市场安装扩展（独立进程，写操作需确认）。</p></div></div>
+      <div class="feat-row"><div class="feat-kicker" data-i18n="k6">DESKTOP</div><div><h3 data-i18n="t6">桌面端与本地优先</h3><p data-i18n="d6">Windows / 麒麟安装包或 start-desktop.bat。历史、Memory、配置均在本机磁盘；默认仅绑定 127.0.0.1。</p></div></div>
     </div>
 
-    <h2 class="page-title" style="margin-top:48px;font-size:28px" data-i18n="shots_title">界面预览</h2>
+    <div class="split" style="margin-top:40px">
+      <div class="panel">
+        <h3 data-i18n="local_title">本机默认安全</h3>
+        <ul class="check">
+          <li data-i18n="local_1">仅绑定 127.0.0.1</li>
+          <li data-i18n="local_2">本地令牌鉴权（X-Sidekick-Token）</li>
+          <li data-i18n="local_3">模型 API Key 加密存储</li>
+          <li data-i18n="local_4">Shell / 写文件走审批门</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3 data-i18n="slash_title">常用斜杠命令</h3>
+        <p class="mono" style="font-size:13px;color:var(--muted);line-height:1.8" data-i18n="slash_body">/help · /new · /clear · /skills · /skill &lt;name&gt; · /memory · /history · /browser · /stop</p>
+      </div>
+    </div>
+
+    <h2 class="sec-title" style="margin-top:48px;font-size:26px" data-i18n="how_title">上手流程</h2>
+    <div class="flow">
+      <div class="flow-item"><div class="n">01</div><h3 data-i18n="s1t">打开工作区</h3><p data-i18n="s1d">选择本地文件夹；历史与 Memory 落在你控制的磁盘。</p></div>
+      <div class="flow-item"><div class="n">02</div><h3 data-i18n="s2t">配置模型</h3><p data-i18n="s2d">设置主 / 子 / 压缩模型与 API Key，或接入 Ollama。</p></div>
+      <div class="flow-item"><div class="n">03</div><h3 data-i18n="s3t">对话与确认</h3><p data-i18n="s3d">写文件、Shell、记忆等变更先征求批准再执行。</p></div>
+      <div class="flow-item"><div class="n">04</div><h3 data-i18n="s4t">按需扩展</h3><p data-i18n="s4d">挂载 Skills、浏览器沙盒、MCP 与插件。</p></div>
+    </div>
+
+    <h2 class="sec-title" style="margin-top:48px;font-size:26px" data-i18n="shots_title">界面预览</h2>
     <div class="shots">
       <figure class="shot-card">
         <img src="assets/gallery-workbench-light.png" alt="Light workbench">
-        <figcaption><b data-i18n="shot1">浅色</b><span>LIGHT</span></figcaption>
+        <figcaption><b data-i18n="shot1">浅色工作台</b><span>LIGHT</span></figcaption>
       </figure>
       <figure class="shot-card">
         <img src="assets/gallery-workbench-dark.png" alt="Dark workbench">
-        <figcaption><b data-i18n="shot2">深色</b><span>DARK</span></figcaption>
+        <figcaption><b data-i18n="shot2">深色工作台</b><span>DARK</span></figcaption>
       </figure>
     </div>
 
-    <div style="margin-top:28px">
-      <span class="eyebrow">Demo</span>
-      <h2 class="page-title" style="font-size:28px" data-i18n="demo_title">演示</h2>
-      <a class="btn btn-g" href="promo.html" data-i18n="demo_open">打开演示页</a>
+    <div class="inline-cta">
+      <div>
+        <span class="eyebrow">Demo</span>
+        <h2 class="sec-title" style="font-size:22px;margin:8px 0 12px" data-i18n="demo_title">演示页</h2>
+        <a class="btn btn-g" href="promo.html" data-i18n="demo_open">打开演示动画</a>
+      </div>
+      <a class="btn btn-p" href="download.html" data-i18n="nav_cta">下载安装包</a>
     </div>
   </div>
 </main>
 
 <footer>
   <div class="foot">
-    <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+    <div class="foot-brand">
+      <img src="assets/brand-icon.png" width="24" height="24" alt="">
+      <span data-i18n="foot">EdgeSidekick · 本地多智能体 AI 工作台</span>
+    </div>
     <div class="foot-links">
-      <a href="index.html" data-i18n="nav_home">首页</a>
+      <a href="features.html" data-i18n="nav_features">功能</a>
       <a href="download.html" data-i18n="nav_download">下载</a>
       <a href="docs/user-guide.zh.html" data-i18n-guide data-i18n="nav_docs">手册</a>
       <a href="https://github.com/GQQI/EdgeSidekick">GitHub</a>
