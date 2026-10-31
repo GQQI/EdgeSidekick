@@ -7,7 +7,9 @@ directories:
   buildResources: build
 files:
   - main.mjs
+  - navUrl.mjs
   - preload.cjs
+  - guest-preload.cjs
   - select-bootstrap.cjs
   - package.json
   - build/icon.png
