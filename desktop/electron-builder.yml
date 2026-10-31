@@ -30,6 +30,8 @@ win:
         - x64
   artifactName: ${productName}-${version}-win-${arch}.${ext}
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
